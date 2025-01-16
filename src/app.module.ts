@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { OtpModule } from './otp/otp.module';
+import { BookGenerationModule } from './book-generation/book-generation.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { OtpModule } from './otp/otp.module';
     AuthModule,
     UsersModule,
     OtpModule,
+    BookGenerationModule,
   ],
 })
 export class AppModule {}

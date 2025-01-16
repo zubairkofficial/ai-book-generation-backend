@@ -14,6 +14,7 @@ const auth_module_1 = require("./auth/auth.module");
 const users_module_1 = require("./users/users.module");
 const typeorm_1 = require("@nestjs/typeorm");
 const otp_module_1 = require("./otp/otp.module");
+const book_generation_module_1 = require("./book-generation/book-generation.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -47,6 +48,7 @@ exports.AppModule = AppModule = __decorate([
             auth_module_1.AuthModule,
             users_module_1.UsersModule,
             otp_module_1.OtpModule,
+            book_generation_module_1.BookGenerationModule,
         ],
     })
 ], AppModule);

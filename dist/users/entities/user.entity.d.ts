@@ -1,4 +1,8 @@
 import { BaseEntity } from 'src/common/entities/base.entity';
+export declare enum UserRole {
+    USER = "user",
+    ADMIN = "admin"
+}
 export declare class User extends BaseEntity {
     name: string;
     email: string;
@@ -6,4 +10,5 @@ export declare class User extends BaseEntity {
     phoneNumber: string;
     isEmailVerified: boolean;
     twoFactorSecret: string;
+    role: UserRole;
 }

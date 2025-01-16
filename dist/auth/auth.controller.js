@@ -109,7 +109,7 @@ let AuthController = class AuthController {
         }
         catch (error) {
             return {
-                url: 'https://your-frontend.com/verification-failure?reason=' + encodeURIComponent(error.message),
+                url: `${process.env.FRONTEND_URL}/verification-failure?reason=` + encodeURIComponent(error.message),
             };
         }
     }

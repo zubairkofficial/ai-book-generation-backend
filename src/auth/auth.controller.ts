@@ -188,7 +188,7 @@ export class AuthController {
       //
       // For a friendlier UX, we often prefer redirecting to a custom error page.
       return {
-        url: 'https://your-frontend.com/verification-failure?reason=' + encodeURIComponent(error.message),
+        url: `${process.env.FRONTEND_URL}/verification-failure?reason=` + encodeURIComponent(error.message),
       };
     }
   }

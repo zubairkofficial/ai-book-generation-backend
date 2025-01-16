@@ -1,6 +1,11 @@
 import { BaseEntity } from 'src/common/entities/base.entity';
 import { Entity, Column } from 'typeorm';
 
+export enum UserRole {
+  USER = 'user',
+  ADMIN = 'admin',
+}
+
 @Entity() // Marks this class as an entity
 export class User extends BaseEntity {
   @Column({ type: 'varchar', length: 100, nullable: false }) // Name column
@@ -20,4 +25,11 @@ export class User extends BaseEntity {
 
   @Column({ type: 'varchar', nullable: true })
   twoFactorSecret: string;
+
+  @Column({
+    type: 'enum',
+    enum: UserRole,
+    default: UserRole.USER,
+  })
+  role: UserRole;
 }
