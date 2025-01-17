@@ -70,9 +70,10 @@ let AuthService = class AuthService {
         if (!user) {
             throw new common_1.UnauthorizedException('User not found');
         }
+        const oneDay = this.configService.get('ACCESS_TOKEN_EXPIRES_IN');
         const payload = { email: user.email, sub: user.id, name: user.name };
         const accessToken = this.jwtService.sign(payload, {
-            expiresIn: this.configService.get('ACCESS_TOKEN_EXPIRES_IN'),
+            expiresIn: oneDay,
         });
         const refreshToken = this.jwtService.sign(payload, {
             expiresIn: this.configService.get('REFRESH_TOKEN_EXPIRES_IN'),

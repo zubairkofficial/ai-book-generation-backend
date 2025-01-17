@@ -93,11 +93,11 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
-
+const oneDay=this.configService.get<string>('ACCESS_TOKEN_EXPIRES_IN')
     // Generate tokens
     const payload = { email: user.email, sub: user.id, name: user.name };
     const accessToken = this.jwtService.sign(payload, {
-      expiresIn: this.configService.get<string>('ACCESS_TOKEN_EXPIRES_IN'),
+      expiresIn: oneDay,
     });
     const refreshToken = this.jwtService.sign(payload, {
       expiresIn: this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN'),
