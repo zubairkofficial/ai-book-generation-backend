@@ -12,8 +12,12 @@ const passport_1 = require("@nestjs/passport");
 let JwtAuthGuard = class JwtAuthGuard extends (0, passport_1.AuthGuard)('jwt') {
     canActivate(context) {
         const request = context.switchToHttp().getRequest();
+        console.log('Request Headers:', request.headers);
         const authHeader = request.headers.authorization;
         console.log('Authorization Header:', authHeader);
+        if (!authHeader) {
+            throw new common_1.UnauthorizedException('Authorization header is missing.');
+        }
         return super.canActivate(context);
     }
     handleRequest(err, user, info, context) {

@@ -7,14 +7,16 @@ import {
   UnauthorizedException,
   InternalServerErrorException,
   Logger,
+  Get,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'; // Adjust the import path
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { BookGenerationService } from './book-generation.service';
 import { BookGenerationDto } from './dto/create-book-generation.dto';
-import { RequestWithUser } from '../auth/types/request-with-user.interface'; // Adjust the import path
-import { ApiOperation, ApiResponse, ApiBody, ApiTags } from '@nestjs/swagger';
+import { RequestWithUser } from '../auth/types/request-with-user.interface';
+import { ApiOperation, ApiResponse, ApiBody, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('books')
+@ApiBearerAuth('JWT-auth') // Add this decorator
 @Controller('book-generation')
 export class BookGenerationController {
   private readonly logger = new Logger(BookGenerationController.name);
@@ -62,4 +64,29 @@ export class BookGenerationController {
       throw new InternalServerErrorException('An error occurred while generating and saving the book.');
     }
   }
+  @UseGuards(JwtAuthGuard)
+  @Get('all')
+  @ApiOperation({ summary: 'Get all books for the authenticated user' })
+  @ApiResponse({ status: 200, description: 'Successfully retrieved books.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 500, description: 'Internal Server Error.' })
+  async getAllBooks(@Req() request: RequestWithUser) {
+    const userId = request.user?.id;
+    this.logger.log(`Fetching all books for user ID: ${userId}`);
+
+    if (!userId) {
+      this.logger.error('Unauthorized: User ID not found in the request.');
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+
+    try {
+      const books = await this.bookGenerationService.getAllBooksByUser(userId);
+      return {
+        message: 'Books successfully retrieved.',
+        data: books,
+      };
+    } catch (error) {
+      this.logger.error(`Error retrieving books for user ID: ${userId}`, error.stack);
+      throw new InternalServerErrorException('An error occurred while fetching books.');
+    }}
 }

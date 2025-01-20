@@ -87,6 +87,12 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiProperty)({ description: 'Additional content or notes for the book', required: false }),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
     __metadata("design:type", String)
 ], BookGenerationDto.prototype, "additionalContent", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Advanced options for generating a book cover image', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Object)
+], BookGenerationDto.prototype, "advancedOptions", void 0);
 //# sourceMappingURL=create-book-generation.dto.js.map

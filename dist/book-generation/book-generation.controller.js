@@ -47,6 +47,25 @@ let BookGenerationController = BookGenerationController_1 = class BookGeneration
             throw new common_1.InternalServerErrorException('An error occurred while generating and saving the book.');
         }
     }
+    async getAllBooks(request) {
+        const userId = request.user?.id;
+        this.logger.log(`Fetching all books for user ID: ${userId}`);
+        if (!userId) {
+            this.logger.error('Unauthorized: User ID not found in the request.');
+            throw new common_1.UnauthorizedException('Unauthorized: User ID not found in the request.');
+        }
+        try {
+            const books = await this.bookGenerationService.getAllBooksByUser(userId);
+            return {
+                message: 'Books successfully retrieved.',
+                data: books,
+            };
+        }
+        catch (error) {
+            this.logger.error(`Error retrieving books for user ID: ${userId}`, error.stack);
+            throw new common_1.InternalServerErrorException('An error occurred while fetching books.');
+        }
+    }
 };
 exports.BookGenerationController = BookGenerationController;
 __decorate([
@@ -64,8 +83,21 @@ __decorate([
     __metadata("design:paramtypes", [create_book_generation_dto_1.BookGenerationDto, Object]),
     __metadata("design:returntype", Promise)
 ], BookGenerationController.prototype, "generateBook", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Get)('all'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all books for the authenticated user' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Successfully retrieved books.' }),
+    (0, swagger_1.ApiResponse)({ status: 401, description: 'Unauthorized.' }),
+    (0, swagger_1.ApiResponse)({ status: 500, description: 'Internal Server Error.' }),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], BookGenerationController.prototype, "getAllBooks", null);
 exports.BookGenerationController = BookGenerationController = BookGenerationController_1 = __decorate([
     (0, swagger_1.ApiTags)('books'),
+    (0, swagger_1.ApiBearerAuth)('JWT-auth'),
     (0, common_1.Controller)('book-generation'),
     __metadata("design:paramtypes", [book_generation_service_1.BookGenerationService])
 ], BookGenerationController);

@@ -3,12 +3,16 @@ import { AuthGuard } from '@nestjs/passport';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
-  
   canActivate(context: ExecutionContext) {
-
     const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers.authorization; // Log the entire Authorization header
+    console.log('Request Headers:', request.headers); // Log all headers
+    const authHeader = request.headers.authorization;
     console.log('Authorization Header:', authHeader);
+
+    if (!authHeader) {
+      throw new UnauthorizedException('Authorization header is missing.');
+    }
+
     return super.canActivate(context);
   }
 

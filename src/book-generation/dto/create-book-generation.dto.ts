@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsNotEmpty } from 'class-validator';
+import { IsString, IsNumber, IsNotEmpty, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 
@@ -62,5 +62,14 @@ export class BookGenerationDto {
 
   @ApiProperty({ description: 'Additional content or notes for the book', required: false })
   @IsString()
+  @IsOptional()
   additionalContent: string; // Optional field
+
+  @ApiProperty({ description: 'Advanced options for generating a book cover image', required: false })
+  @IsOptional()
+  advancedOptions?: {
+    coverImagePrompt?: string; // Prompt for generating the book cover image
+    colorScheme?: string; // Preferred color scheme for the book cover
+    fontStyle?: string; // Preferred font style for the book cover
+  };
 }

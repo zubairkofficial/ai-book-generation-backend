@@ -9,4 +9,8 @@ export declare class BookGenerationController {
         message: string;
         data: import("./entities/book-generation.entity").BookGeneration;
     }>;
+    getAllBooks(request: RequestWithUser): Promise<{
+        message: string;
+        data: import("./entities/book-generation.entity").BookGeneration[];
+    }>;
 }

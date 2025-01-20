@@ -11,4 +11,9 @@ export declare class BookGenerationDto {
     targetAudience: string;
     language: string;
     additionalContent: string;
+    advancedOptions?: {
+        coverImagePrompt?: string;
+        colorScheme?: string;
+        fontStyle?: string;
+    };
 }
