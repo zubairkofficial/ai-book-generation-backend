@@ -71,14 +71,11 @@ let AuthService = class AuthService {
             throw new common_1.UnauthorizedException('User not found');
         }
         const oneDay = this.configService.get('ACCESS_TOKEN_EXPIRES_IN');
-        const payload = { email: user.email, sub: user.id, name: user.name };
+        const payload = { email: user.email, id: user.id, name: user.name };
         const accessToken = this.jwtService.sign(payload, {
             expiresIn: oneDay,
         });
-        const refreshToken = this.jwtService.sign(payload, {
-            expiresIn: this.configService.get('REFRESH_TOKEN_EXPIRES_IN'),
-        });
-        return { user, accessToken, refreshToken };
+        return { user, accessToken };
     }
     async login(loginDto) {
         const { email, password } = loginDto;
@@ -93,14 +90,11 @@ let AuthService = class AuthService {
         if (!isPasswordValid) {
             throw new common_1.UnauthorizedException('Invalid credentials');
         }
-        const payload = { email: user.email, sub: user.id, name: user.name };
+        const payload = { email: user.email, id: user.id, name: user.name };
         const accessToken = this.jwtService.sign(payload, {
             expiresIn: this.configService.get('ACCESS_TOKEN_EXPIRES_IN'),
         });
-        const refreshToken = this.jwtService.sign(payload, {
-            expiresIn: this.configService.get('REFRESH_TOKEN_EXPIRES_IN'),
-        });
-        return { user, accessToken, refreshToken };
+        return { user, accessToken };
     }
     async forgotPassword(email, redirectUrl) {
         try {
@@ -220,11 +214,11 @@ let AuthService = class AuthService {
     async refreshToken(refreshToken) {
         try {
             const payload = this.jwtService.verify(refreshToken);
-            const user = await this.usersService.findById(payload.sub);
+            const user = await this.usersService.findById(payload.id);
             if (!user) {
                 throw new common_1.UnauthorizedException('Invalid refresh token');
             }
-            return this.generateTokens({ email: user.email, sub: user.id, name: user.name });
+            return this.generateTokens({ email: user.email, id: user.id, name: user.name });
         }
         catch (error) {
             throw new common_1.UnauthorizedException('Invalid or expired refresh token');

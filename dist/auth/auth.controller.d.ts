@@ -16,12 +16,10 @@ export declare class AuthController {
     }): Promise<{
         user: import("../users/entities/user.entity").User;
         accessToken: string;
-        refreshToken: string;
     }>;
     login(dto: SignInDto): Promise<{
         user: import("../users/entities/user.entity").User;
         accessToken: string;
-        refreshToken: string;
     }>;
     resetPassword(dto: any): Promise<{
         message: string;

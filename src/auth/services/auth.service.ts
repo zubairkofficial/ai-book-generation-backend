@@ -95,15 +95,13 @@ export class AuthService {
     }
 const oneDay=this.configService.get<string>('ACCESS_TOKEN_EXPIRES_IN')
     // Generate tokens
-    const payload = { email: user.email, sub: user.id, name: user.name };
+    const payload = { email: user.email, id: user.id, name: user.name };
     const accessToken = this.jwtService.sign(payload, {
       expiresIn: oneDay,
     });
-    const refreshToken = this.jwtService.sign(payload, {
-      expiresIn: this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN'),
-    });
+   
 
-    return { user, accessToken, refreshToken };
+    return { user, accessToken };
   }
 
   // Standard Login without OTP
@@ -128,15 +126,13 @@ const oneDay=this.configService.get<string>('ACCESS_TOKEN_EXPIRES_IN')
     }
 
     // Generate JWT tokens
-    const payload = { email: user.email, sub: user.id, name: user.name };
+    const payload = { email: user.email, id: user.id, name: user.name };
     const accessToken = this.jwtService.sign(payload, {
       expiresIn: this.configService.get<string>('ACCESS_TOKEN_EXPIRES_IN'),
     });
-    const refreshToken = this.jwtService.sign(payload, {
-      expiresIn: this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN'),
-    });
+   
 
-    return { user, accessToken, refreshToken };
+    return { user, accessToken };
   }
 
  
@@ -321,11 +317,11 @@ const oneDay=this.configService.get<string>('ACCESS_TOKEN_EXPIRES_IN')
   async refreshToken(refreshToken: string) {
     try {
       const payload = this.jwtService.verify(refreshToken);
-      const user = await this.usersService.findById(payload.sub);
+      const user = await this.usersService.findById(payload.id);
       if (!user) {
         throw new UnauthorizedException('Invalid refresh token');
       }
-      return this.generateTokens({ email: user.email, sub: user.id, name: user.name }); // Include user info
+      return this.generateTokens({ email: user.email, id: user.id, name: user.name }); // Include user info
     } catch (error) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }

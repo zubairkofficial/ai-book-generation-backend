@@ -14,9 +14,7 @@ export class SignUpDto {
   @ApiProperty({ example: 'StrongP@ssw0rd' })
   @IsString()
   @MinLength(6, { message: 'Password must be at least 6 characters long' }) // Minimum length reduced to 6
-  @Matches(/(?=.*[A-Z])/, { message: 'Password must contain at least one uppercase letter' }) // At least one uppercase
-  @Matches(/(?=.*[0-9])/, { message: 'Password must contain at least one number' }) // At least one number
-  password: string;
+ password: string;
 
   @ApiProperty({ example: '+1234567890' })
   @IsString()

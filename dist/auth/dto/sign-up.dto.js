@@ -30,8 +30,6 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: 'StrongP@ssw0rd' }),
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.MinLength)(6, { message: 'Password must be at least 6 characters long' }),
-    (0, class_validator_1.Matches)(/(?=.*[A-Z])/, { message: 'Password must contain at least one uppercase letter' }),
-    (0, class_validator_1.Matches)(/(?=.*[0-9])/, { message: 'Password must contain at least one number' }),
     __metadata("design:type", String)
 ], SignUpDto.prototype, "password", void 0);
 __decorate([

@@ -22,12 +22,10 @@ export declare class AuthService {
     verifyOtpAndLogin(email: string, otpCode: string): Promise<{
         user: import("../../users/entities/user.entity").User;
         accessToken: string;
-        refreshToken: string;
     }>;
     login(loginDto: SignInDto): Promise<{
         user: import("../../users/entities/user.entity").User;
         accessToken: string;
-        refreshToken: string;
     }>;
     forgotPassword(email: string, redirectUrl?: string): Promise<{
         message: string;
