@@ -118,37 +118,38 @@ let BookGenerationService = BookGenerationService_1 = class BookGenerationServic
         try {
             const outlinePromptTemplate = new prompts_1.PromptTemplate({
                 template: `
-          Create a detailed outline for a book titled "{bookTitle}" based on the following details:
-          - Genre: {genre}
-          - Theme: {theme}
-          - Main Characters: {characters}
-          - Setting: {setting}
-          - Tone: {tone}
-          - Plot Twists: {plotTwists}
-          - Number of Pages: {numberOfPages}
-          - Number of Chapters: {numberOfChapters}
-          - Target Audience: {targetAudience}
-          - Language: {language}
-          - Additional Content: {additionalContent}
-  
-          The outline should include:
-          - A preface and introduction (if requested)
-          - Chapter titles and brief summaries for each chapter
-          - A conclusion
+          As a professional book editor, create a detailed outline for "{bookTitle}". Consider these specifications:
+          
+          BOOK SPECIFICATIONS:
+          Genre: {genre}
+          Theme: {theme}
+          Target Audience: {targetAudience}
+          Language: {language}
+          Desired Length: {numberOfPages} pages, {numberOfChapters} chapters
+          
+          STORY ELEMENTS:
+          Main Characters: {characters}
+          Setting: {setting}
+          Tone: {tone}
+          Plot Twists: {plotTwists}
+          Additional Elements: {additionalContent}
+          
+          Please provide:
+          1. A compelling executive summary (2-3 paragraphs)
+          2. Detailed chapter-by-chapter outline including:
+             - Chapter titles
+             - Chapter summaries (200-300 words each)
+             - Key plot points and character development
+             - Thematic elements to be explored
+          3. Notes on story arc progression
+          4. Key emotional beats and tension points
+          
+          Format the outline professionally and ensure it maintains narrative cohesion.
         `,
                 inputVariables: [
-                    'bookTitle',
-                    'genre',
-                    'theme',
-                    'characters',
-                    'setting',
-                    'tone',
-                    'plotTwists',
-                    'numberOfPages',
-                    'numberOfChapters',
-                    'targetAudience',
-                    'language',
-                    'additionalContent',
+                    'bookTitle', 'genre', 'theme', 'characters', 'setting', 'tone',
+                    'plotTwists', 'numberOfPages', 'numberOfChapters', 'targetAudience',
+                    'language', 'additionalContent'
                 ],
             });
             const formattedOutlinePrompt = await outlinePromptTemplate.format({
@@ -168,147 +169,69 @@ let BookGenerationService = BookGenerationService_1 = class BookGenerationServic
             const bookOutline = await this.textModel.invoke(formattedOutlinePrompt);
             const chapterPromptTemplate = new prompts_1.PromptTemplate({
                 template: `
-          Write a full chapter for the book titled "{bookTitle}". The chapter should be based on the following details:
-          - Chapter Title: {chapterTitle}
-          - Chapter Summary: {chapterSummary}
-          - Genre: {genre}
-          - Theme: {theme}
-          - Main Characters: {characters}
-          - Setting: {setting}
-          - Tone: {tone}
-          - Plot Twists: {plotTwists}
-          - Target Audience: {targetAudience}
-          - Language: {language}
-  
-          Ensure the chapter:
-          - Is well-written and engaging
-          - Advances the plot and develops characters
-          - Matches the tone and style of the book
+          Write Chapter {chapterNumber} for "{bookTitle}" following these professional guidelines:
+
+          CHAPTER CONTEXT:
+          Title: {chapterTitle}
+          Summary: {chapterSummary}
+          
+          STORY PARAMETERS:
+          Genre: {genre}
+          Theme: {theme}
+          Characters: {characters}
+          Setting: {setting}
+          Tone: {tone}
+          
+          WRITING GUIDELINES:
+          1. Begin with a strong hook that draws readers in
+          2. Maintain consistent POV and tense throughout
+          3. Balance dialogue, action, and description
+          4. Include sensory details and vivid imagery
+          5. End with a compelling hook for the next chapter
+          6. Incorporate theme naturally without being heavy-handed
+          7. Ensure proper pacing and scene transitions
+          
+          Target Audience: {targetAudience}
+          Language Style: {language}
+          
+          Write this chapter maintaining professional literary standards and ensuring it advances both plot and character development.
         `,
                 inputVariables: [
-                    'bookTitle',
-                    'chapterTitle',
-                    'chapterSummary',
-                    'genre',
-                    'theme',
-                    'characters',
-                    'setting',
-                    'tone',
-                    'plotTwists',
-                    'targetAudience',
-                    'language',
+                    'chapterNumber', 'bookTitle', 'chapterTitle', 'chapterSummary',
+                    'genre', 'theme', 'characters', 'setting', 'tone', 'plotTwists',
+                    'targetAudience', 'language'
                 ],
             });
+            let fullBookContent = '';
+            fullBookContent += `${promptData.bookTitle}\n\n`;
+            const introductionPrompt = new prompts_1.PromptTemplate({
+                template: `
+          Write a compelling introduction for "{bookTitle}" that:
+          1. Hooks the reader immediately
+          2. Sets up the book's central premise
+          3. Establishes the book's tone and style
+          4. Provides necessary context without revealing too much
+          5. Creates anticipation for what's to come
+          
+          Genre: {genre}
+          Theme: {theme}
+          Target Audience: {targetAudience}
+        `,
+                inputVariables: ['bookTitle', 'genre', 'theme', 'targetAudience']
+            });
+            const formattedIntroductionPrompt = await introductionPrompt.format({
+                bookTitle: promptData.bookTitle,
+                genre: promptData.genre,
+                theme: promptData.theme,
+                targetAudience: promptData.targetAudience,
+            });
+            const introductionContent = await this.textModel.invoke(formattedIntroductionPrompt);
+            fullBookContent += `Introduction\n\n${introductionContent}\n\n`;
             const chapters = bookOutline.split('\n').filter(line => line.startsWith('Chapter'));
-            let fullBookContent = `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>${promptData.bookTitle}</title>
-          <style>
-            /* Modern and Professional Styling */
-            body {
-              font-family: 'Merriweather', serif;
-              line-height: 1.8;
-              margin: 0;
-              padding: 0;
-              background-color: #f8f9fa;
-              color: #333;
-            }
-            .book-container {
-              max-width: 800px;
-              margin: 0 auto;
-              padding: 40px 20px;
-              background-color: #fff;
-              box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-              border-radius: 12px;
-            }
-            h1 {
-              font-size: 2.8rem;
-              font-weight: 700;
-              text-align: center;
-              margin-bottom: 30px;
-              color: #2c3e50;
-              font-family: 'Playfair Display', serif;
-            }
-            h2 {
-              font-size: 2.2rem;
-              font-weight: 700; /* Bold heading */
-              margin-top: 50px;
-              margin-bottom: 20px;
-              color: #34495e;
-              font-family: 'Playfair Display', serif;
-            }
-            h3 {
-              font-size: 1.8rem;
-              font-weight: 700; /* Bold heading */
-              margin-top: 40px;
-              margin-bottom: 15px;
-              color: #34495e;
-              font-family: 'Playfair Display', serif;
-            }
-            p {
-              font-size: 1.1rem;
-              margin-bottom: 25px;
-              text-align: justify;
-              color: #555;
-            }
-            .cover-image {
-              width: 100%;
-              max-width: 500px;
-              display: block;
-              margin: 0 auto 30px;
-              border-radius: 12px;
-              box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-            }
-            .chapter {
-              margin-bottom: 50px;
-            }
-            .chapter p {
-              text-indent: 2em;
-            }
-            .outline {
-              background-color: #f5f5f5;
-              padding: 20px;
-              border-radius: 8px;
-              margin-bottom: 40px;
-            }
-            .outline p {
-              margin-bottom: 15px;
-            }
-            /* Responsive Design */
-            @media (max-width: 768px) {
-              h1 {
-                font-size: 2.2rem;
-              }
-              h2 {
-                font-size: 1.8rem;
-              }
-              h3 {
-                font-size: 1.5rem;
-              }
-              .book-container {
-                padding: 20px 10px;
-              }
-            }
-          </style>
-          <!-- Google Fonts for Professional Typography -->
-          <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
-        </head>
-        <body>
-          <div class="book-container">
-            <h1>${promptData.bookTitle}</h1>
-            ${promptData.advancedOptions?.coverImagePrompt ? `<img src="${await this.generateBookCover(promptData.advancedOptions.coverImagePrompt)}" alt="Book Cover" class="cover-image">` : ''}
-            <div class="outline">
-              <h2>Outline</h2>
-              <p>${bookOutline.replace(/\n/g, '<br>')}</p>
-            </div>
-      `;
-            for (const chapter of chapters) {
+            for (const [index, chapter] of chapters.entries()) {
                 const [chapterTitle, chapterSummary] = chapter.split(':').map(s => s.trim());
                 const formattedChapterPrompt = await chapterPromptTemplate.format({
+                    chapterNumber: index + 1,
                     bookTitle: promptData.bookTitle,
                     chapterTitle,
                     chapterSummary,
@@ -322,35 +245,31 @@ let BookGenerationService = BookGenerationService_1 = class BookGenerationServic
                     language: promptData.language,
                 });
                 const chapterContent = await this.textModel.invoke(formattedChapterPrompt);
-                fullBookContent += `
-          <div class="chapter">
-            <h2>${chapterTitle}</h2>
-            <p>${chapterContent.replace(/\n/g, '<br>')}</p>
-          </div>
-        `;
+                fullBookContent += `\n\nChapter ${index + 1}: ${chapterTitle}\n\n${chapterContent}`;
             }
-            const conclusionPromptTemplate = new prompts_1.PromptTemplate({
+            const conclusionPrompt = new prompts_1.PromptTemplate({
                 template: `
-          Write a conclusion for the book titled "{bookTitle}". The conclusion should:
-          - Wrap up the story
-          - Resolve any remaining plot points
-          - Provide a satisfying ending for the readers
+          Write a satisfying conclusion for "{bookTitle}" that:
+          1. Resolves main conflicts and character arcs
+          2. Ties together major themes
+          3. Provides emotional closure
+          4. Leaves readers fulfilled while maintaining intrigue
+          5. Matches the tone and style of the book
+          
+          Genre: {genre}
+          Theme: {theme}
+          Target Audience: {targetAudience}
         `,
-                inputVariables: ['bookTitle'],
+                inputVariables: ['bookTitle', 'genre', 'theme', 'targetAudience']
             });
-            const formattedConclusionPrompt = await conclusionPromptTemplate.format({
+            const formattedConclusionPrompt = await conclusionPrompt.format({
                 bookTitle: promptData.bookTitle,
+                genre: promptData.genre,
+                theme: promptData.theme,
+                targetAudience: promptData.targetAudience,
             });
             const conclusionContent = await this.textModel.invoke(formattedConclusionPrompt);
-            fullBookContent += `
-              <div class="chapter">
-                <h2>Conclusion</h2>
-                <p>${conclusionContent.replace(/\n/g, '<br>')}</p>
-              </div>
-            </div>
-          </body>
-          </html>
-        `;
+            fullBookContent += `\n\nConclusion\n\n${conclusionContent}`;
             return fullBookContent;
         }
         catch (error) {
