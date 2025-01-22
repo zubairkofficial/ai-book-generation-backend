@@ -1,1 +1,22 @@
-node_modules
+# Ignore node_modules
+node_modules/
+
+# Ignore build output
+dist/
+
+# Ignore environment variables
+.env
+
+# Ignore IDE-specific files
+.vscode/
+.idea/
+
+# Ignore logs
+logs/
+*.log
+
+# Ignore coverage reports
+coverage/
+
+# Ignore uploaded files
+uploads/

@@ -3,6 +3,62 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 
 export class BookGenerationDto {
+  @ApiProperty({ 
+    description: 'Advanced options for book generation and styling', 
+    required: false 
+  })
+  @IsOptional()
+  advancedOptions?: {
+    // Cover image options
+    coverImagePrompt?: string;
+    colorScheme?: string;
+    fontStyle?: string;
+
+    // Styling options
+    styling?: {
+      fontSize?: {
+        title?: string;
+        chapterTitle?: string;
+        headers?: string;
+        body?: string;
+      };
+      fontFamily?: {
+        title?: string;
+        chapterTitle?: string;
+        headers?: string;
+        body?: string;
+      };
+      lineHeight?: {
+        title?: string;
+        chapterTitle?: string;
+        headers?: string;
+        body?: string;
+      };
+      textAlignment?: {
+        title?: string;
+        chapterTitle?: string;
+        headers?: string;
+        body?: string;
+      };
+      margins?: {
+        top?: string;
+        bottom?: string;
+        left?: string;
+        right?: string;
+      };
+      spacing?: {
+        paragraphSpacing?: string;
+        chapterSpacing?: string;
+        sectionSpacing?: string;
+      };
+      pageLayout?: {
+        pageSize?: string;
+        orientation?: string;
+        columns?: number;
+      };
+    };
+  };
+
   @ApiProperty({ description: 'The title of the book' })
   @IsString()
   @IsNotEmpty()
@@ -63,13 +119,5 @@ export class BookGenerationDto {
   @ApiProperty({ description: 'Additional content or notes for the book', required: false })
   @IsString()
   @IsOptional()
-  additionalContent: string; // Optional field
-
-  @ApiProperty({ description: 'Advanced options for generating a book cover image', required: false })
-  @IsOptional()
-  advancedOptions?: {
-    coverImagePrompt?: string; // Prompt for generating the book cover image
-    colorScheme?: string; // Preferred color scheme for the book cover
-    fontStyle?: string; // Preferred font style for the book cover
-  };
+  additionalContent: string;
 }
