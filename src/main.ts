@@ -15,7 +15,7 @@ async function bootstrap() {
 
   // Serve static files from the "uploads" folder
   app.useStaticAssets(path.join(__dirname, '..', 'uploads'), {
-    prefix: '/uploads/', // URL prefix for accessing the files
+    prefix: '/api/v1/uploads/', // URL prefix for accessing the files
   });
 
   // Enable validation pipes globally
