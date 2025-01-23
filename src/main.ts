@@ -4,15 +4,17 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
-import { NestExpressApplication } from '@nestjs/platform-express'; // Add this import
+import { NestExpressApplication } from '@nestjs/platform-express';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule); // Use NestExpressApplication
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   dotenv.config();
   app.setGlobalPrefix('api/v1'); // All routes will be prefixed with /api/v1
-
+  app.enableCors({
+    origin: '*',
+  });
   // Serve static files from the "uploads" folder
   app.useStaticAssets(path.join(__dirname, '..', 'uploads'), {
     prefix: '/api/v1/uploads/', // URL prefix for accessing the files
@@ -37,8 +39,8 @@ async function bootstrap() {
   }));
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  // Enable CORS
-  app.enableCors();
+  // Enable CORS with specific configuration
+ 
 
   // Setup Swagger documentation
   const config = new DocumentBuilder()
