@@ -1,22 +1,45 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
+import { UpdateUserDto } from './dto/users.dto';
+import { compare } from 'bcryptjs';
+import { hash } from 'crypto';
+import { CryptoService } from 'src/utils/crypto.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+       private readonly cryptoService: CryptoService, // Inject CryptoService
+      
   ) {}
 
-  async findById(id: number): Promise<User> {
+  async getProfile(id: number): Promise<User> {
     const user = await this.userRepository.findOne({ where: { id } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
     return user;
   }
+  // users.service.ts
+async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<User> {
+  const user = await this.getProfile(id);
+
+  // Check if oldPassword is provided and matches the current password
+  if (updateUserDto.oldPassword && updateUserDto.newPassword) {
+    const isPasswordValid = await compare(updateUserDto.oldPassword, user.password);
+    if (!isPasswordValid) {
+      throw new BadRequestException('Old password is incorrect');
+    }
+    user.password= await this.cryptoService.encrypt(updateUserDto.newPassword);
+  }
+
+  // Update other fields
+  Object.assign(user, updateUserDto);
+  return this.userRepository.save(user);
+}
 
   async findByEmail(email: string): Promise<User> {
     console.log('Email to find:', email); 

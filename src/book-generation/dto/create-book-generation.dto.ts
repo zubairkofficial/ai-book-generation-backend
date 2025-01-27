@@ -5,7 +5,38 @@ import { Transform } from 'class-transformer';
 export class BookGenerationDto {
   @ApiProperty({ 
     description: 'Advanced options for book generation and styling', 
-    required: false 
+    required: false,
+    example: {
+      coverImagePrompt: 'Create a mysterious fantasy book cover with a dragon',
+      colorScheme: '#2196f3',
+      fontStyle: 'modern',
+      styling: {
+        fontSize: {
+          title: '32px',
+          chapterTitle: '24px',
+          headers: '20px',
+          body: '16px'
+        },
+        fontFamily: {
+          title: 'Georgia, serif',
+          chapterTitle: 'Georgia, serif',
+          headers: 'Georgia, serif',
+          body: 'Georgia, serif'
+        },
+        lineHeight: {
+          title: '1.5',
+          chapterTitle: '1.4',
+          headers: '1.3',
+          body: '1.6'
+        },
+        textAlignment: {
+          title: 'center',
+          chapterTitle: 'left',
+          headers: 'left',
+          body: 'justify'
+        }
+      }
+    }
   })
   @IsOptional()
   advancedOptions?: {
@@ -63,6 +94,21 @@ export class BookGenerationDto {
   @IsString()
   @IsNotEmpty()
   bookTitle: string;
+
+  @ApiProperty({ description: 'Optional subtitle for the book', required: false })
+  @IsString()
+  @IsOptional()
+  subtitle?: string;
+
+  @ApiProperty({ description: 'Author name', required: false })
+  @IsString()
+  @IsOptional()
+  authorName?: string;
+
+  @ApiProperty({ description: 'A short bio of the author', required: false })
+  @IsString()
+  @IsOptional()
+  authorBio: string;
 
   @ApiProperty({ description: 'The genre of the book' })
   @IsString()

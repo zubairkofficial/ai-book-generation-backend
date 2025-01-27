@@ -269,7 +269,7 @@ const oneDay=this.configService.get<string>('ACCESS_TOKEN_EXPIRES_IN')
   
   async enableTwoFactor(userId: number) {
     try {
-      const user = await this.usersService.findById(userId);
+      const user = await this.usersService.getProfile(userId);
       if (!user) {
         throw new BadRequestException('User not found');
       }
@@ -292,7 +292,7 @@ const oneDay=this.configService.get<string>('ACCESS_TOKEN_EXPIRES_IN')
 
   async verifyTwoFactor(userId: string, token: string) {
     try {
-      const user = await this.usersService.findById(+userId);
+      const user = await this.usersService.getProfile(+userId);
       if (!user || !user.twoFactorSecret) {
         throw new BadRequestException('2FA not enabled');
       }
@@ -317,7 +317,7 @@ const oneDay=this.configService.get<string>('ACCESS_TOKEN_EXPIRES_IN')
   async refreshToken(refreshToken: string) {
     try {
       const payload = this.jwtService.verify(refreshToken);
-      const user = await this.usersService.findById(payload.id);
+      const user = await this.usersService.getProfile(payload.id);
       if (!user) {
         throw new UnauthorizedException('Invalid refresh token');
       }
