@@ -119,6 +119,42 @@ export class BookGenerationService {
       throw new Error('Failed to generate book cover');
     }
   }
+  private async generateBookBackgroundCover(promptData: BookGenerationDto): Promise<string> {
+    try {
+      const allowedSizes = ['256x256', '512x512', '1024x1024', '1792x1024', '1024x1792'] as const;
+      type AllowedSize = typeof allowedSizes[number];
+
+      const imageSize = this.configService.get<string>('IMAGE_SIZE') as AllowedSize;
+
+      if (!allowedSizes.includes(imageSize)) {
+        throw new Error(`Invalid image size: ${imageSize}. Allowed sizes are: ${allowedSizes.join(', ')}`);
+      }
+
+      const coverImagePrompt = promptData.advancedOptions?.coverImagePrompt || 
+        `Create a professional book back cover for "${promptData.bookTitle}", a ${promptData.genre} book.`;
+
+      const response = await this.openai.images.generate({
+        prompt: coverImagePrompt,
+        n: 1,
+        size: imageSize,
+        response_format: 'b64_json'
+      });
+
+      if (!response.data[0]?.b64_json) {
+        throw new Error('No image data received from OpenAI');
+      }
+
+      const imagePath = await this.saveImage(
+        `data:image/png;base64,${response.data[0].b64_json}`,
+        promptData.bookTitle
+      );
+
+      return imagePath;
+    } catch (error) {
+      this.logger.error(`Error generating book cover: ${error.message}`);
+      throw new Error('Failed to generate book cover');
+    }
+  }
 
   private getDefaultStyling() {
     return {
@@ -165,126 +201,215 @@ export class BookGenerationService {
     };
   }
 
-  private async createBookContent(promptData: BookGenerationDto): Promise<string> {
+
+  private async introductionContent(promptData: BookGenerationDto): Promise<string> {
     try {
-      const sections = [];
-
-      // Generate Graphics for Atlantis
-      const graphicPrompt = `
-        Create a high-quality image depicting Atlantis with professional design aesthetics.
-      `;
-      const graphicResponse = await this.openai.images.generate({
-        prompt: graphicPrompt,
-        n: 1,
-        size: '1024x1024',
-        response_format: 'b64_json',
-      });
-
-      let graphicPath = '';
-      if (graphicResponse.data[0]?.b64_json) {
-        graphicPath = await this.saveImage(
-          `data:image/png;base64,${graphicResponse.data[0].b64_json}`,
-          'cyberify_logo'
-        );
-      }
-      sections.push(`<graphic>${graphicPath}</graphic>`);
-
-      // Additional Design Elements
-      const additionalElementsPrompt = `
-        Include placeholders for:
-        - [Insert Cyberify logo and name prominently on the cover]
-        - [Add design elements or symbols representing the theme and genre of the book].
-      `;
-      const additionalElements = await this.textModel.invoke(additionalElementsPrompt);
-      sections.push(`<additional-elements>${additionalElements}</additional-elements>`);
-
+      const sections: string[] = [];
+  
       // Cover Page
       const coverPagePrompt = `
-        Create a professional Cover Page with the following details:
-        - Title: "${promptData.bookTitle}"
-        - Author: "${promptData.authorName || 'Anonymous'}"
-        - Publisher: Cyberify
-        - Include Cyberify logo prominently.
-        - Include space for relevant images or graphics (e.g., related to the book's theme).
-        - Make it visually appealing with professional design elements.
-      `;
-      const coverPage = await this.textModel.invoke(coverPagePrompt);
-      sections.push(`<cover-page>${coverPage}</cover-page>`);
+  Create a professional Cover Page with the following details:
+  - Title: "${promptData.bookTitle}"
+  - Author: "${promptData.authorName || 'Anonymous'}"
+  - Publisher: Cyberify
+  - Include the Cyberify logo prominently on the cover. The logo is located at "${this.uploadsDir}/temp/logo.jfif". Ensure the logo is a central branding element.
+  - Design the cover to reflect the theme "${promptData.theme}" and genre "${promptData.genre}" of the book.
+`;
+const coverPage = await this.textModel.invoke(coverPagePrompt); // Replace with actual API call or logic
+sections.push(` Cover Page\n${coverPage}\n`);
 
       // Dedication Page
       const dedicationPrompt = `
         Write a dedication for the book titled "${promptData.bookTitle}".
       `;
-      const dedication = await this.textModel.invoke(dedicationPrompt);
-      sections.push(`<dedication>${dedication}</dedication>`);
-
+      const dedication = await this.textModel.invoke(dedicationPrompt); // Replace with actual API call or logic
+      sections.push(`Dedication\n${dedication}\n`);
+  
       // Preface/Introduction
       const prefacePrompt = `
-        Write a compelling preface for the book titled "${promptData.bookTitle}".
-        Explain the purpose and inspiration behind the book.
-      `;
-      const preface = await this.textModel.invoke(prefacePrompt);
-      sections.push(`<preface>${preface}</preface>`);
-
+      Write a compelling preface for the book titled "${promptData.bookTitle}".
+      Include the following sections in the preface:
+      - Coverage: Provide an overview of the topics covered in the book, emphasizing how they relate to the theme and genre.
+      - Use in the Curriculum: Explain how the book can be utilized in educational settings or by specific audiences (e.g., students, professionals, or enthusiasts).
+      - Prerequisites: Mention any prior knowledge, background, or interests the readers should have to fully appreciate the book.
+      - Goals: State the primary goals of the book, such as what the readers will learn, experience, or take away by the end.
+      - Acknowledgements: Express gratitude to individuals, teams, or entities that contributed to the creation of the book.
+      Ensure each section is detailed, written in an engaging and professional tone, and separated clearly for readability.
+    `;
+    const preface = await this.textModel.invoke(prefacePrompt); // Replace with actual API call or logic
+    sections.push(` Preface\n${preface}\n`);
+    
+  
       // Table of Contents
       const tableOfContentsPrompt = `
-        Create a Table of Contents for a book with ${promptData.numberOfChapters} chapters. Include chapter titles.
-      `;
-      const tableOfContents = await this.textModel.invoke(tableOfContentsPrompt);
-      sections.push(`<table-of-contents>${tableOfContents}</table-of-contents>`);
-
-      // Chapters
+      Create a well-structured Table of Contents for a book with ${promptData.numberOfChapters} chapters in the following format:
+      - Start with the word "Contents" at the top.
+      - Use roman numerals for introductory sections like Preface or Foreword.
+      - For each chapter, include the chapter number, title, and page number (example page numbers can be used).
+      - Subsections should be indented and include subtitles with their respective page numbers.
+      - Example Format:
+        
+        Contents
+        Preface . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . v
+        Chapter 1: The Awakening . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 1
+          1.1 Discovery of the Prophecy . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+          1.2 The Dragon's Warning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
+        Chapter 2: Shadows of the Past . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
+          2.1 The Ruins of the Old City . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
+          2.2 Unearthing the Truth . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25
+        Chapter 3: The Final Revelation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
+    
+      Continue for all chapters, making sure the format is consistent.
+    `;
+    const tableOfContents = await this.textModel.invoke(tableOfContentsPrompt); // Replace with actual API call or logic
+    sections.push(` Table of Contents\n${tableOfContents}\n`);
+    
+  
+      // Introduction
+      const {
+        bookTitle,
+        subtitle,
+        authorName,
+        authorBio,
+        genre,
+        theme,
+        characters,
+        setting,
+        tone,
+        targetAudience,
+        language,
+        additionalContent,
+        numberOfChapters,
+        numberOfPages,
+        plotTwists,
+      } = promptData;
+  
+      let introduction = ` Introduction\n\n`;
+      introduction += ` ${bookTitle}\n\n`;
+      if (subtitle) {
+        introduction += ` ${subtitle}\n\n`;
+      }
+      if (authorName) {
+        introduction += `By ${authorName}\n\n`;
+      }
+      if (authorBio) {
+        introduction += `${authorBio}\n\n`;
+      }
+  
+      introduction += `Welcome to the world of *${bookTitle}*, a ${genre} novel that explores the theme of ${theme}. `;
+      introduction += `Set in ${setting}, this story follows ${characters} as they navigate a world filled with ${tone} and unexpected ${plotTwists}.\n\n`;
+  
+      introduction += `This book is crafted for ${targetAudience}, offering a captivating journey through ${language} that will keep you hooked from the first page to the last. `;
+      introduction += `With ${numberOfChapters} chapters spanning ${numberOfPages} pages, *${bookTitle}* promises a rich and immersive experience.\n\n`;
+  
+      if (additionalContent) {
+        introduction += `${additionalContent}\n\n`;
+      }
+  
+      introduction += `Prepare yourself for a tale that blends ${theme} with ${tone}, set against the backdrop of ${setting}. `;
+      introduction += `Whether you're a fan of ${genre} or new to the genre, this book is sure to leave a lasting impression.\n\n`;
+  
+      sections.push(introduction);
+  
+      // Combine all sections into a single string
+      const frontMatterContent = sections.join('\n');
+      return frontMatterContent;
+    } catch (error) {
+      console.error('Error generating introduction content:', error);
+      throw new Error('Failed to generate introduction content');
+    }
+  }
+  private async ChapterContent(promptData: BookGenerationDto): Promise<string[]> {
+    try {
       const chapters: string[] = [];
+  
+      // Loop through each chapter and generate content
       for (let i = 1; i <= promptData.numberOfChapters; i++) {
         const chapterPrompt = `
           Write Chapter ${i} of the book titled "${promptData.bookTitle}".
-          Include engaging content with the genre "${promptData.genre}" and theme "${promptData.theme}".
+          The genre of the book is "${promptData.genre}", and the central theme is "${promptData.theme}".
+          The story follows ${promptData.characters} in the setting of ${promptData.setting}.
+          The tone of the book is ${promptData.tone}, and it includes elements like ${promptData.plotTwists}.
+          Ensure the chapter is engaging and aligns with the overall narrative of the book.
         `;
-        const chapterContent = await this.textModel.invoke(chapterPrompt);
+  
+        // Simulate invoking a text model to generate chapter content
+        const chapterContent = await this.textModel.invoke(chapterPrompt); // Replace with actual API call or logic
         chapters.push(chapterContent);
       }
-      chapters.forEach((chapter, index) => {
-        sections.push(`<chapter number="${index + 1}">${chapter}</chapter>`);
-      });
-
+  
+      return chapters;
+    } catch (error) {
+      console.error('Error generating chapter content:', error);
+      throw new Error('Failed to generate chapter content');
+    }
+  }
+  private async endOfBookContent(promptData: BookGenerationDto): Promise<string> {
+    try {
+      const sections: string[] = [];
+  
       // Glossary
       const glossaryPrompt = `
         Create a glossary for the book titled "${promptData.bookTitle}". Include definitions of key terms used in the book.
       `;
-      const glossary = await this.textModel.invoke(glossaryPrompt);
-      sections.push(`<glossary>${glossary}</glossary>`);
-
+      const glossary = await this.textModel.invoke(glossaryPrompt); // Replace with actual API call or logic
+      sections.push(` Glossary\n${glossary}\n`);
+  
       // Index
       const indexPrompt = `
         Create an index for the book titled "${promptData.bookTitle}". Include key topics with page numbers.
       `;
-      const index = await this.textModel.invoke(indexPrompt);
-      sections.push(`<index>${index}</index>`);
-
+      const index = await this.textModel.invoke(indexPrompt); // Replace with actual API call or logic
+      sections.push(` Index\n${index}\n`);
+  
       // References/Bibliography
       const referencesPrompt = `
         Write a bibliography for the book titled "${promptData.bookTitle}". Include any references or inspirations.
       `;
-      const references = await this.textModel.invoke(referencesPrompt);
-      sections.push(`<references>${references}</references>`);
-
+      const references = await this.textModel.invoke(referencesPrompt); // Replace with actual API call or logic
+      sections.push(` References\n${references}\n`);
+  
       // Back Cover
       const backCoverPrompt = `
         Write a back cover summary for the book titled "${promptData.bookTitle}".
-        Include a summary and author profile.
+        Include a summary of the book and a brief author profile.
       `;
-      const backCover = await this.textModel.invoke(backCoverPrompt);
-      sections.push(`<back-cover>${backCover}</back-cover>`);
-
-      // Combine all sections into one string
+      const backCover = await this.textModel.invoke(backCoverPrompt); // Replace with actual API call or logic
+      sections.push(` Back Cover\n${backCover}\n`);
+  
+      // Combine all sections into a single string
+      const endOfBookContent = sections.join('\n');
+      return endOfBookContent;
+    } catch (error) {
+      console.error('Error generating end-of-book content:', error);
+      throw new Error('Failed to generate end-of-book content');
+    }
+  }
+ 
+  private async createBookContent(promptData: BookGenerationDto): Promise<string> {
+    try {
+      const sections: string[] = [];
+  
+      // Generate Introduction Content
+      const introduction = await this.introductionContent(promptData);
+      sections.push(introduction);
+  
+      // Generate Chapter Content
+      const chapters = await this.ChapterContent(promptData);
+      sections.push(...chapters);
+  
+      // Generate End-of-Book Content
+      const endOfBook = await this.endOfBookContent(promptData);
+      sections.push(endOfBook);
+  
+      // Combine all sections into a single string
       const fullBookContent = sections.join('\n\n');
       return fullBookContent;
     } catch (error) {
-      this.logger.error(`Error generating book content: ${error.message}`);
-      throw new Error('Failed to generate book content');
+      this.logger.error(`Error creating book content: ${error.message}`);
+      throw new Error('Failed to create book content');
     }
   }
-
   async getAllBooksByUser(userId: number): Promise<BookGeneration[]> {
     return await this.bookGenerationRepository.find({
       where: { userId },
@@ -296,6 +421,7 @@ export class BookGenerationService {
     try {
       const bookContent = await this.createBookContent(promptData);
       const coverImagePath = await this.generateBookCover(promptData);
+      const backgroundImagePath = await this.generateBookBackgroundCover(promptData);
 
       const book = new BookGeneration();
       book.userId = userId;
@@ -314,7 +440,8 @@ export class BookGenerationService {
       book.additionalData = {
         coverImageUrl: coverImagePath,
         styling: this.getDefaultStyling(),
-        fullContent: bookContent
+        fullContent: bookContent,
+        backCoverImageUrl: backgroundImagePath
       };
 
       const savedBook = await this.bookGenerationRepository.save(book);
