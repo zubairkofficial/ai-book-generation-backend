@@ -321,29 +321,79 @@ sections.push(` Cover Page\n${coverPage}\n`);
   }
   private async ChapterContent(promptData: BookGenerationDto): Promise<string[]> {
     try {
-      const chapters: string[] = [];
-  
-      // Loop through each chapter and generate content
-      for (let i = 1; i <= promptData.numberOfChapters; i++) {
-        const chapterPrompt = `
-          Write Chapter ${i} of the book titled "${promptData.bookTitle}".
-          The genre of the book is "${promptData.genre}", and the central theme is "${promptData.theme}".
-          The story follows ${promptData.characters} in the setting of ${promptData.setting}.
-          The tone of the book is ${promptData.tone}, and it includes elements like ${promptData.plotTwists}.
-          Ensure the chapter is engaging and aligns with the overall narrative of the book.
-        `;
-  
-        // Simulate invoking a text model to generate chapter content
-        const chapterContent = await this.textModel.invoke(chapterPrompt); // Replace with actual API call or logic
-        chapters.push(chapterContent);
-      }
-  
-      return chapters;
+        const chapters: string[] = [];
+
+        for (let i = 1; i <= promptData.numberOfChapters; i++) {
+            const chapterTitle = `Chapter ${i}`;
+
+            // Generate the chapter text
+            const chapterPrompt = `
+                Write Chapter ${i} of the book titled "${promptData.bookTitle}".
+                The genre of the book is "${promptData.genre}", and the central theme is "${promptData.theme}".
+                The story follows ${promptData.characters} in the setting of ${promptData.setting}.
+                The tone of the book is ${promptData.tone}, and it includes elements like ${promptData.plotTwists}.
+                Ensure the chapter is engaging and aligns with the overall narrative of the book.
+            `;
+            const chapterText = await this.textModel.invoke(chapterPrompt);
+
+            // Randomly decide the number of images (between 4 and 10)
+            const imageCount = Math.floor(Math.random() * 7) + 4; // Generates a number between 4 and 10
+            const chapterImages: { title: string; url: string }[] = [];
+
+            for (let j = 1; j <= imageCount; j++) {
+                const imageTitlePrompt = `Provide a short but descriptive title for an illustration in Chapter ${i} of the book "${promptData.bookTitle}". 
+                    The genre is ${promptData.genre}, theme is ${promptData.theme}, and setting is ${promptData.setting}.`;
+
+                const imageTitle = await this.textModel.invoke(imageTitlePrompt);
+
+                const imagePrompt = `Create an illustration titled "${imageTitle}" for Chapter ${i} in "${promptData.bookTitle}". 
+                    The genre is ${promptData.genre}, theme is ${promptData.theme}, and setting is ${promptData.setting}. 
+                    Ensure the image reflects the tone: ${promptData.tone}.`;
+
+                const response = await this.openai.images.generate({
+                    prompt: imagePrompt,
+                    n: 1,
+                    size: '1024x1024',
+                    response_format: 'b64_json',
+                });
+
+                if (response.data[0]?.b64_json) {
+                    const imagePath = await this.saveImage(
+                        `data:image/png;base64,${response.data[0].b64_json}`,
+                        `${promptData.bookTitle}_chapter_${i}_image_${j}`
+                    );
+                    chapterImages.push({ title: imageTitle, url: imagePath });
+                }
+            }
+
+            const imagePath = this.configService.get<string>('BASE_URL');
+
+            // Split the chapter text into sections based on the number of images
+            const textChunks = chapterText.match(new RegExp(`.{1,${Math.ceil(chapterText.length / (imageCount + 1))}}`, 'g')) || [];
+
+            let formattedChapter = `\n\n ${chapterTitle}\n\n`;
+
+            for (let j = 0; j < chapterImages.length; j++) {
+                formattedChapter += `${textChunks[j] || ''}\n\n`;
+
+                formattedChapter += ` ${chapterImages[j].title}\n\n`;
+                formattedChapter += `![${chapterImages[j].title}](${imagePath}/uploads/${chapterImages[j].url})\n\n`;
+            }
+
+            // Append any remaining text after the last image
+            formattedChapter += textChunks[chapterImages.length] || '';
+
+            chapters.push(formattedChapter);
+        }
+
+        return chapters;
     } catch (error) {
-      console.error('Error generating chapter content:', error);
-      throw new Error('Failed to generate chapter content');
+        console.error('Error generating chapter content with images:', error);
+        throw new Error('Failed to generate chapter content with images');
     }
-  }
+}
+
+
   private async endOfBookContent(promptData: BookGenerationDto): Promise<string> {
     try {
       const sections: string[] = [];
