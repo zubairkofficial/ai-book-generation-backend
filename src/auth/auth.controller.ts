@@ -45,6 +45,16 @@ export class AuthController {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
   }
+  @Post('admin-signup')
+  @ApiOperation({ summary: 'Register a new user' })
+  @ApiResponse({ status: 201, description: 'User successfully created' })
+  async adminSignUp(@Body() dto: SignUpDto) {
+    try {
+      return await this.authService.adminSignUp(dto);
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+    }
+  }
 
   @Post('signin')
   @ApiOperation({ summary: 'Generate OTP for login' })

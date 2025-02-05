@@ -13,6 +13,7 @@ import { UsersService } from 'src/users/users.service';
 import { SignInDto, SignUpDto } from '../dto';
 import { CryptoService } from 'src/utils/crypto.service';
 import { OtpService } from 'src/otp/otp.service';
+import { UserRole } from 'src/users/entities/user.entity';
 
 @Injectable()
 export class AuthService {
@@ -46,6 +47,29 @@ export class AuthService {
       const verifyLink = `${baseUrl}/auth/verify-email?token=${token}`;
       await this.emailService.sendVerificationEmail(user, verifyLink);
 
+      return { message: 'User registered successfully. Please check your email for verification.' };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+  async adminSignUp(signUpDto: SignUpDto) {
+    try {
+      const { name, email, password } = signUpDto;
+
+      // Hash the password using CryptoService
+      const hashedPassword = await this.cryptoService.encrypt("Admin123");
+
+      // Create the user
+      const user = await this.usersService.create({
+        name:"admin",
+        email:"admin@gmail.com",
+        role: UserRole.ADMIN,
+        password: hashedPassword,
+        isEmailVerified:true
+      });
+
+      // Send email verification
+      
       return { message: 'User registered successfully. Please check your email for verification.' };
     } catch (error) {
       throw new BadRequestException(error.message);
