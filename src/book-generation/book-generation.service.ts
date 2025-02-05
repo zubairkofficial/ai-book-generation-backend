@@ -435,7 +435,7 @@ export class BookGenerationService {
           The genre is "${promptData.genre}", the theme is "${promptData.theme}", and the tone is "${promptData.tone}".
           The setting is "${promptData.setting}". Depict key events and decisions visually.
         `;
-          const diagramPath = await this.generateDiagram(diagramDescription,i,promptData.bookTitle);
+          // const diagramPath = await this.generateDiagram(diagramDescription,i,promptData.bookTitle);
     
 
             // Randomly decide the number of images (between 4 and 10)
@@ -485,7 +485,7 @@ export class BookGenerationService {
             // Append any remaining text after the last image
             formattedChapter += textChunks[chapterImages.length] || '';
             // formattedChapter += `\n\n Flowchart\n![Flowchart](${this.configService.get<string>('BASE_URL')}/uploads/${flowchartPath})\n`;
-            formattedChapter += `\n\n Diagram\n![Diagram](${this.configService.get<string>('BASE_URL')}/uploads/${diagramPath})\n`;
+            // formattedChapter += `\n\n Diagram\n![Diagram](${this.configService.get<string>('BASE_URL')}/uploads/${diagramPath})\n`;
       
             chapters.push(formattedChapter);
         }
