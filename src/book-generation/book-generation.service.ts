@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { OpenAI as LangchainOpenAI } from "@langchain/openai"; // For text generation
+import { ChatOpenAI, OpenAI as LangchainOpenAI } from "@langchain/openai"; // For text generation
 import { PromptTemplate } from "@langchain/core/prompts";
 import { ConfigService } from '@nestjs/config';
 import { BookGenerationDto } from './dto/create-book-generation.dto';
@@ -9,10 +9,14 @@ import { BookGeneration } from './entities/book-generation.entity';
 import OpenAI from 'openai'; // For DALL·E image generation
 import * as fs from 'fs';
 import * as path from 'path';
+import { ApiKey } from 'src/api-keys/entities/api-key.entity';
+import { exec } from 'child_process';
+import mermaid from 'mermaid';
 
 @Injectable()
 export class BookGenerationService {
-  private textModel: LangchainOpenAI;
+  private textModel;
+  
   private openai: OpenAI;
   private readonly logger = new Logger(BookGenerationService.name);
   private readonly uploadsDir: string;
@@ -20,21 +24,35 @@ export class BookGenerationService {
   constructor(
     private configService: ConfigService,
     @InjectRepository(BookGeneration)
-    private bookGenerationRepository: Repository<BookGeneration>
-  ) {
-    this.textModel = new LangchainOpenAI({
-      openAIApiKey: this.configService.get<string>('OPENAI_API_KEY'),
-      temperature: 0.4,
-      modelName: 'gpt-3.5-turbo',
-    });
-
-    this.openai = new OpenAI({
-      apiKey: this.configService.get<string>('DALLE_API_KEY'),
-    });
-
-    this.uploadsDir = this.setupUploadsDirectory();
+    private bookGenerationRepository: Repository<BookGeneration>,
+    @InjectRepository(ApiKey)
+    private apiKeyRepository: Repository<ApiKey>
+    ) {
+      this.uploadsDir = this.setupUploadsDirectory();
   }
+  private async initializeAIModels() {
+    try {
+      const apiKeyRecord:any = await this.apiKeyRepository.find();
+      if (!apiKeyRecord) {
+        throw new Error('No API keys found in the database.');
+      }
 
+      this.textModel = new ChatOpenAI({
+        openAIApiKey: apiKeyRecord[0].openai_key,
+        temperature: 0.4,
+        modelName: apiKeyRecord[0].model,
+      });
+
+      this.openai = new OpenAI({
+        apiKey: apiKeyRecord[0].dalle_key,
+      });
+
+      this.logger.log(`AI Models initialized successfully with model: ${apiKeyRecord[0].model}`);
+    } catch (error) {
+      this.logger.error(`Failed to initialize AI models: ${error.message}`);
+      throw new Error('Failed to initialize AI models.');
+    }
+  }
   private setupUploadsDirectory(): string {
     const rootDir = process.cwd();
     const uploadsPath = path.join(rootDir, 'uploads');
@@ -44,7 +62,7 @@ export class BookGenerationService {
         fs.mkdirSync(uploadsPath, { recursive: true });
       }
 
-      const directories = ['covers', 'chapters', 'temp'];
+      const directories = ['covers', 'chapters', 'temp','graphs'];
       directories.forEach(dir => {
         const dirPath = path.join(uploadsPath, dir);
         if (!fs.existsSync(dirPath)) {
@@ -82,6 +100,74 @@ export class BookGenerationService {
       throw new Error('Failed to save image');
     }
   }
+
+  private async saveFlowchartImage(mermaidCode: string, fileName: string): Promise<string> {
+    try {
+      const dirPath = path.join(this.uploadsDir, 'flowcharts');
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+      }
+  
+      const timestamp = new Date().getTime();
+      const sanitizedFileName = fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const mermaidFilePath = path.join(dirPath, `${sanitizedFileName}_${timestamp}.mmd`);
+      const svgFilePath = path.join(dirPath, `${sanitizedFileName}_${timestamp}.svg`);
+  
+      // Write Mermaid.js syntax to a file
+      fs.writeFileSync(mermaidFilePath, mermaidCode, 'utf-8');
+  
+      // Use mermaid-cli (mmdc) to generate SVG
+      await new Promise((resolve, reject) => {
+        exec(`npx mmdc -i "${mermaidFilePath}" -o "${svgFilePath}"`, (error, stdout, stderr) => {
+          if (error) {
+            reject(`Error executing Mermaid CLI: ${stderr}`);
+          } else {
+            resolve(stdout);
+          }
+        });
+      });
+  
+      this.logger.log(`Flowchart saved: ${svgFilePath}`);
+      return path.join('flowcharts', `${sanitizedFileName}_${timestamp}.svg`);
+    } catch (error) {
+      this.logger.error(`Error saving flowchart: ${error.message}`);
+      throw new Error('Failed to save flowchart');
+    }
+  }
+  private async saveDiagramImage(mermaidCode: string, fileName: string): Promise<string> {
+    try {
+      const dirPath = path.join(this.uploadsDir, 'graphs');
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+      }
+  
+      const timestamp = new Date().getTime();
+      const sanitizedFileName = fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const mermaidFilePath = path.join(dirPath, `${sanitizedFileName}_${timestamp}.mmd`);
+      const svgFilePath = path.join(dirPath, `${sanitizedFileName}_${timestamp}.svg`);
+  
+      // Write Mermaid.js syntax to a file
+      fs.writeFileSync(mermaidFilePath, mermaidCode, 'utf-8');
+  
+      // Use mermaid-cli (mmdc) to generate SVG
+      await new Promise((resolve, reject) => {
+        exec(`npx mmdc -i "${mermaidFilePath}" -o "${svgFilePath}"`, (error, stdout, stderr) => {
+          if (error) {
+            reject(`Error executing Mermaid CLI: ${stderr}`);
+          } else {
+            resolve(stdout);
+          }
+        });
+      });
+  
+      this.logger.log(`Flowchart saved: ${svgFilePath}`);
+      return path.join('graphs', `${sanitizedFileName}_${timestamp}.svg`);
+    } catch (error) {
+      this.logger.error(`Error saving flowchart: ${error.message}`);
+      throw new Error('Failed to save flowchart');
+    }
+  }
+  
 
   private async generateBookCover(promptData: BookGenerationDto): Promise<string> {
     try {
@@ -205,41 +291,45 @@ export class BookGenerationService {
   private async introductionContent(promptData: BookGenerationDto): Promise<string> {
     try {
       const sections: string[] = [];
-  
-      // Cover Page
       const coverPagePrompt = `
-  Create a professional Cover Page with the following details:
-  - Title: "${promptData.bookTitle}"
-  - Author: "${promptData.authorName || 'Anonymous'}"
-  - Publisher: Cyberify
-  - Include the Cyberify logo prominently on the cover. The logo is located at "${this.uploadsDir}/temp/logo.jfif". Ensure the logo is a central branding element.
-  - Design the cover to reflect the theme "${promptData.theme}" and genre "${promptData.genre}" of the book.
-`;
-const coverPage = await this.textModel.invoke(coverPagePrompt); // Replace with actual API call or logic
-sections.push(` Cover Page\n${coverPage}\n`);
+        Create a professional Cover Page with the following details:
+        - Title: "${promptData.bookTitle}"
+        - Author: "${promptData.authorName || 'Anonymous'}"
+        - Publisher: Cyberify
+        - Include the Cyberify logo prominently on the cover. The logo is located at "${this.uploadsDir}/temp/logo.jfif". Ensure the logo is a central branding element.
+        - Design the cover to reflect the theme "${promptData.theme}" and genre "${promptData.genre}" of the book.
+      `;
+      const coverPageResponse = await this.textModel.invoke(coverPagePrompt);
+
+      const coverPage = typeof coverPageResponse === 'string' 
+        ? coverPageResponse 
+        : coverPageResponse?.text || JSON.stringify(coverPageResponse);
+
+      sections.push(` Cover Page\n${coverPage}\n`);
 
       // Dedication Page
       const dedicationPrompt = `
         Write a dedication for the book titled "${promptData.bookTitle}".
       `;
-      const dedication = await this.textModel.invoke(dedicationPrompt); // Replace with actual API call or logic
+      const dedicationResponse = await this.textModel.invoke(dedicationPrompt); 
+      const dedication = typeof dedicationResponse === 'string' 
+      ? dedicationResponse 
+      : dedicationResponse?.text || JSON.stringify(dedicationResponse);
+
       sections.push(`Dedication\n${dedication}\n`);
-  
+
       // Preface/Introduction
       const prefacePrompt = `
-      Write a compelling preface for the book titled "${promptData.bookTitle}".
-      Include the following sections in the preface:
-      - Coverage: Provide an overview of the topics covered in the book, emphasizing how they relate to the theme and genre.
-      - Use in the Curriculum: Explain how the book can be utilized in educational settings or by specific audiences (e.g., students, professionals, or enthusiasts).
-      - Prerequisites: Mention any prior knowledge, background, or interests the readers should have to fully appreciate the book.
-      - Goals: State the primary goals of the book, such as what the readers will learn, experience, or take away by the end.
-      - Acknowledgements: Express gratitude to individuals, teams, or entities that contributed to the creation of the book.
-      Ensure each section is detailed, written in an engaging and professional tone, and separated clearly for readability.
-    `;
-    const preface = await this.textModel.invoke(prefacePrompt); // Replace with actual API call or logic
-    sections.push(` Preface\n${preface}\n`);
-    
-  
+        Write a compelling preface for the book titled "${promptData.bookTitle}".
+        Include sections like Overview, Use in Curriculum, Goals, and Acknowledgments.
+      `;
+      const prefaceResponse = await this.textModel.invoke(prefacePrompt); 
+      const preface = typeof prefaceResponse === 'string' 
+      ? prefaceResponse 
+      : prefaceResponse?.text || JSON.stringify(prefaceResponse);
+
+      sections.push(` Preface\n${preface}\n`);
+
       // Table of Contents
       const tableOfContentsPrompt = `
       Create a well-structured Table of Contents for a book with ${promptData.numberOfChapters} chapters in the following format:
@@ -261,64 +351,54 @@ sections.push(` Cover Page\n${coverPage}\n`);
     
       Continue for all chapters, making sure the format is consistent.
     `;
-    const tableOfContents = await this.textModel.invoke(tableOfContentsPrompt); // Replace with actual API call or logic
-    sections.push(` Table of Contents\n${tableOfContents}\n`);
+      const tableOfContentsResponse = await this.textModel.invoke(tableOfContentsPrompt);
+      const tableOfContents = typeof tableOfContentsResponse === 'string' 
+      ? tableOfContentsResponse 
+      : tableOfContentsResponse?.text || JSON.stringify(tableOfContentsResponse);
+
+      sections.push(` Table of Contents\n${tableOfContents}\n`);
     
-  
-      // Introduction
-      const {
-        bookTitle,
-        subtitle,
-        authorName,
-        authorBio,
-        genre,
-        theme,
-        characters,
-        setting,
-        tone,
-        targetAudience,
-        language,
-        additionalContent,
-        numberOfChapters,
-        numberOfPages,
-        plotTwists,
-      } = promptData;
-  
-      let introduction = ` Introduction\n\n`;
-      introduction += ` ${bookTitle}\n\n`;
-      if (subtitle) {
-        introduction += ` ${subtitle}\n\n`;
-      }
-      if (authorName) {
-        introduction += `By ${authorName}\n\n`;
-      }
-      if (authorBio) {
-        introduction += `${authorBio}\n\n`;
-      }
-  
-      introduction += `Welcome to the world of *${bookTitle}*, a ${genre} novel that explores the theme of ${theme}. `;
-      introduction += `Set in ${setting}, this story follows ${characters} as they navigate a world filled with ${tone} and unexpected ${plotTwists}.\n\n`;
-  
-      introduction += `This book is crafted for ${targetAudience}, offering a captivating journey through ${language} that will keep you hooked from the first page to the last. `;
-      introduction += `With ${numberOfChapters} chapters spanning ${numberOfPages} pages, *${bookTitle}* promises a rich and immersive experience.\n\n`;
-  
-      if (additionalContent) {
-        introduction += `${additionalContent}\n\n`;
-      }
-  
-      introduction += `Prepare yourself for a tale that blends ${theme} with ${tone}, set against the backdrop of ${setting}. `;
-      introduction += `Whether you're a fan of ${genre} or new to the genre, this book is sure to leave a lasting impression.\n\n`;
-  
-      sections.push(introduction);
-  
-      // Combine all sections into a single string
-      const frontMatterContent = sections.join('\n');
-      return frontMatterContent;
+      return sections.join('\n');
     } catch (error) {
-      console.error('Error generating introduction content:', error);
+      this.logger.error(`Error generating introduction content: ${error.message}`);
       throw new Error('Failed to generate introduction content');
     }
   }
+  private async generateDiagram(promptText: string, chapterNumber: number, bookTitle: string): Promise<string> {
+    try {
+      // Generate a Mermaid.js-compatible diagram from AI with professional instructions
+      const diagramPrompt = `
+        Generate a valid Mermaid.js diagram using this description:
+        "${promptText}"
+        Ensure the diagram starts with "graph TD" or "graph LR" for top-down or left-right orientation.
+        Use clear, readable shapes and avoid excessive lines. Each event or decision should be distinct.
+        The diagram should be visually aligned with the theme of "${bookTitle}" and reflect the genre, tone, and setting.
+        Include nodes for key events and decisions in Chapter ${chapterNumber} and ensure there is clarity in the flow.
+        Do not include extra text, explanations, or markdown code blocks.
+      `;
+    
+      const response = await this.textModel.invoke(diagramPrompt);
+    
+      // Extract only the raw Mermaid code
+      let diagramCode = typeof response === 'string' ? response : response?.content || '';
+    
+      // Remove Markdown Code Blocks if present
+      diagramCode = diagramCode.replace(/```mermaid/g, '').replace(/```/g, '').trim();
+    
+      if (!diagramCode.includes('graph')) {
+        throw new Error('Invalid Mermaid.js output from AI.');
+      }
+    
+      // Save the diagram as an image (SVG)
+      const filePath = await this.saveDiagramImage(diagramCode, `chapter_${chapterNumber}_diagram`);
+      return filePath;
+    } catch (error) {
+      this.logger.error(`Error generating diagram: ${error.message}`);
+      throw new Error('Failed to generate diagram');
+    }
+  }
+  
+  
   private async ChapterContent(promptData: BookGenerationDto): Promise<string[]> {
     try {
         const chapters: string[] = [];
@@ -334,7 +414,29 @@ sections.push(` Cover Page\n${coverPage}\n`);
                 The tone of the book is ${promptData.tone}, and it includes elements like ${promptData.plotTwists}.
                 Ensure the chapter is engaging and aligns with the overall narrative of the book.
             `;
-            const chapterText = await this.textModel.invoke(chapterPrompt);
+
+            // Ensure chapterText is a string
+            const chapterTextRaw = await this.textModel.invoke(chapterPrompt);
+            const chapterText = chapterTextRaw.content;
+
+            if (!chapterText) {
+                throw new Error(`Chapter ${i} content is empty or undefined`);
+            }
+            const flowchartDescription = `
+        A flowchart describing the main events and key decision points in Chapter ${i} of "${promptData.bookTitle}".
+        The genre is "${promptData.genre}", the theme is "${promptData.theme}", and the tone is "${promptData.tone}".
+        The setting is "${promptData.setting}". Focus on key decision moments and actions that drive the story forward.
+      `;
+          // const flowchartPath = await this.generateFlowchart(flowchartDescription);
+    
+          // Generate a diagram (Mermaid) for the chapter, incorporating similar elements
+          const diagramDescription = `
+          A diagram illustrating the key actions in Chapter ${i} of "${promptData.bookTitle}".
+          The genre is "${promptData.genre}", the theme is "${promptData.theme}", and the tone is "${promptData.tone}".
+          The setting is "${promptData.setting}". Depict key events and decisions visually.
+        `;
+          const diagramPath = await this.generateDiagram(diagramDescription,i,promptData.bookTitle);
+    
 
             // Randomly decide the number of images (between 4 and 10)
             const imageCount = Math.floor(Math.random() * 7) + 4; // Generates a number between 4 and 10
@@ -346,7 +448,7 @@ sections.push(` Cover Page\n${coverPage}\n`);
 
                 const imageTitle = await this.textModel.invoke(imageTitlePrompt);
 
-                const imagePrompt = `Create an illustration titled "${imageTitle}" for Chapter ${i} in "${promptData.bookTitle}". 
+                const imagePrompt = `Create an illustration titled "${imageTitle.content}" for Chapter ${i} in "${promptData.bookTitle}". 
                     The genre is ${promptData.genre}, theme is ${promptData.theme}, and setting is ${promptData.setting}. 
                     Ensure the image reflects the tone: ${promptData.tone}.`;
 
@@ -360,29 +462,31 @@ sections.push(` Cover Page\n${coverPage}\n`);
                 if (response.data[0]?.b64_json) {
                     const imagePath = await this.saveImage(
                         `data:image/png;base64,${response.data[0].b64_json}`,
-                        `${promptData.bookTitle}_chapter_${i}_image_${j}`
+                        `${promptData.bookTitle}_chapter_${i}_image_${j}`,
+                        "chapters"
                     );
-                    chapterImages.push({ title: imageTitle, url: imagePath });
+                    chapterImages.push({ title: imageTitle.content, url: imagePath });
                 }
             }
 
             const imagePath = this.configService.get<string>('BASE_URL');
 
             // Split the chapter text into sections based on the number of images
-            const textChunks = chapterText.match(new RegExp(`.{1,${Math.ceil(chapterText.length / (imageCount + 1))}}`, 'g')) || [];
+            const textChunks = (chapterText.match(new RegExp(`.{1,${Math.ceil(chapterText.length / (imageCount + 1))}}`, 'g'))) || ["No content generated."];
 
             let formattedChapter = `\n\n ${chapterTitle}\n\n`;
 
             for (let j = 0; j < chapterImages.length; j++) {
                 formattedChapter += `${textChunks[j] || ''}\n\n`;
-
                 formattedChapter += ` ${chapterImages[j].title}\n\n`;
                 formattedChapter += `![${chapterImages[j].title}](${imagePath}/uploads/${chapterImages[j].url})\n\n`;
             }
 
             // Append any remaining text after the last image
             formattedChapter += textChunks[chapterImages.length] || '';
-
+            // formattedChapter += `\n\n Flowchart\n![Flowchart](${this.configService.get<string>('BASE_URL')}/uploads/${flowchartPath})\n`;
+            formattedChapter += `\n\n Diagram\n![Diagram](${this.configService.get<string>('BASE_URL')}/uploads/${diagramPath})\n`;
+      
             chapters.push(formattedChapter);
         }
 
@@ -394,6 +498,7 @@ sections.push(` Cover Page\n${coverPage}\n`);
 }
 
 
+
   private async endOfBookContent(promptData: BookGenerationDto): Promise<string> {
     try {
       const sections: string[] = [];
@@ -402,31 +507,46 @@ sections.push(` Cover Page\n${coverPage}\n`);
       const glossaryPrompt = `
         Create a glossary for the book titled "${promptData.bookTitle}". Include definitions of key terms used in the book.
       `;
-      const glossary = await this.textModel.invoke(glossaryPrompt); // Replace with actual API call or logic
+      const glossaryResponse = await this.textModel.invoke(glossaryPrompt); // Replace with actual API call or logic
+      const glossary = typeof glossaryResponse === 'string' 
+      ? glossaryResponse 
+      : glossaryResponse?.text || JSON.stringify(glossaryResponse);
+
       sections.push(` Glossary\n${glossary}\n`);
   
       // Index
       const indexPrompt = `
         Create an index for the book titled "${promptData.bookTitle}". Include key topics with page numbers.
       `;
-      const index = await this.textModel.invoke(indexPrompt); // Replace with actual API call or logic
+      const indexResponse = await this.textModel.invoke(indexPrompt); // Replace with actual API call or logic
+     const prefacePrompt = `
+        Write a compelling preface for the book titled "${promptData.bookTitle}".
+        Include sections like Overview, Use in Curriculum, Goals, and Acknowledgments.
+      `;
+      const prefaceResponse = await this.textModel.invoke(prefacePrompt); 
+      const preface = typeof prefaceResponse === 'string' 
+      ? prefaceResponse 
+      : prefaceResponse?.text || JSON.stringify(prefaceResponse);
+
+      sections.push(` Preface\n${preface}\n`);
+      const index = typeof indexResponse === 'string' 
+      ? indexResponse 
+      : indexResponse?.text || JSON.stringify(indexResponse);
+
       sections.push(` Index\n${index}\n`);
   
       // References/Bibliography
       const referencesPrompt = `
         Write a bibliography for the book titled "${promptData.bookTitle}". Include any references or inspirations.
       `;
-      const references = await this.textModel.invoke(referencesPrompt); // Replace with actual API call or logic
+      const referencesResponse = await this.textModel.invoke(referencesPrompt); // Replace with actual API call or logic
+      const references = typeof referencesResponse === 'string' 
+      ? referencesResponse 
+      : referencesResponse?.text || JSON.stringify(referencesResponse);
+
       sections.push(` References\n${references}\n`);
   
-      // Back Cover
-      const backCoverPrompt = `
-        Write a back cover summary for the book titled "${promptData.bookTitle}".
-        Include a summary of the book and a brief author profile.
-      `;
-      const backCover = await this.textModel.invoke(backCoverPrompt); // Replace with actual API call or logic
-      sections.push(` Back Cover\n${backCover}\n`);
-  
+   
       // Combine all sections into a single string
       const endOfBookContent = sections.join('\n');
       return endOfBookContent;
@@ -435,7 +555,37 @@ sections.push(` Cover Page\n${coverPage}\n`);
       throw new Error('Failed to generate end-of-book content');
     }
   }
- 
+
+  private async generateFlowchart(promptText: string): Promise<string> {
+    try {
+      const flowchartPrompt = `
+        Generate a valid Mermaid.js flowchart using this description:
+        "${promptText}"
+        Ensure the response starts with "graph TD" or "graph LR".
+        Do not include any extra text, explanations, or markdown code blocks (e.g., do not wrap in \`\`\`mermaid ... \`\`\`).
+      `;
+      
+      const response = await this.textModel.invoke(flowchartPrompt);
+  
+      let flowchartCode = typeof response === 'string' ? response : response?.content || '';
+  
+      flowchartCode = flowchartCode.replace(/```mermaid/g, '').replace(/```/g, '').trim();
+  
+      if (!flowchartCode.includes('graph')) {
+        throw new Error('Invalid Mermaid.js output from AI.');
+      }
+  
+      const filePath = await this.saveFlowchartImage(flowchartCode, 'flowchart');
+      return filePath;
+    } catch (error) {
+      this.logger.error(`Error generating flowchart: ${error.message}`);
+      throw new Error('Failed to generate flowchart');
+    }
+  }
+  
+  
+  
+  
   private async createBookContent(promptData: BookGenerationDto): Promise<string> {
     try {
       const sections: string[] = [];
@@ -443,7 +593,8 @@ sections.push(` Cover Page\n${coverPage}\n`);
       // Generate Introduction Content
       const introduction = await this.introductionContent(promptData);
       sections.push(introduction);
-  
+
+    
       // Generate Chapter Content
       const chapters = await this.ChapterContent(promptData);
       sections.push(...chapters);
@@ -469,6 +620,8 @@ sections.push(` Cover Page\n${coverPage}\n`);
 
   async generateAndSaveBook(userId: number, promptData: BookGenerationDto): Promise<BookGeneration> {
     try {
+      await this.initializeAIModels(); // Ensure API keys are loaded before generating content
+
       const bookContent = await this.createBookContent(promptData);
       const coverImagePath = await this.generateBookCover(promptData);
       const backgroundImagePath = await this.generateBookBackgroundCover(promptData);
@@ -489,7 +642,7 @@ sections.push(` Cover Page\n${coverPage}\n`);
       book.additionalContent = promptData.additionalContent;
       book.additionalData = {
         coverImageUrl: coverImagePath,
-        styling: this.getDefaultStyling(),
+        styling: promptData.advancedOptions.styling?? this.getDefaultStyling(),
         fullContent: bookContent,
         backCoverImageUrl: backgroundImagePath
       };

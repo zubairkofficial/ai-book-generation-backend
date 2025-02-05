@@ -4,7 +4,6 @@ import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { UpdateUserDto } from './dto/users.dto';
 import { compare } from 'bcryptjs';
-import { hash } from 'crypto';
 import { CryptoService } from 'src/utils/crypto.service';
 
 @Injectable()
@@ -18,6 +17,7 @@ export class UsersService {
 
   async getProfile(id: number): Promise<User> {
     const user = await this.userRepository.findOne({ where: { id } });
+   
     if (!user) {
       throw new NotFoundException('User not found');
     }

@@ -6,6 +6,7 @@ import { UsersModule } from './users/users.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { OtpModule } from './otp/otp.module';
 import { BookGenerationModule } from './book-generation/book-generation.module';
+import { ApiKeysModule } from './api-keys/api-keys.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { BookGenerationModule } from './book-generation/book-generation.module';
     UsersModule,
     OtpModule,
     BookGenerationModule,
+    ApiKeysModule,
   ],
 })
 export class AppModule {}

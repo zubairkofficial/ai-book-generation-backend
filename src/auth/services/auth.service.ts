@@ -3,7 +3,6 @@ import {
   UnauthorizedException,
   BadRequestException,
   ForbiddenException,
-  InternalServerErrorException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config'; // Import ConfigService
@@ -95,7 +94,7 @@ export class AuthService {
     }
 const oneDay=this.configService.get<string>('ACCESS_TOKEN_EXPIRES_IN')
     // Generate tokens
-    const payload = { email: user.email, id: user.id, name: user.name };
+    const payload = { email: user.email, id: user.id, role: user.role };
     const accessToken = this.jwtService.sign(payload, {
       expiresIn: oneDay,
     });
@@ -126,7 +125,7 @@ const oneDay=this.configService.get<string>('ACCESS_TOKEN_EXPIRES_IN')
     }
 
     // Generate JWT tokens
-    const payload = { email: user.email, id: user.id, name: user.name };
+    const payload = { email: user.email, id: user.id,role:user.role };
     const accessToken = this.jwtService.sign(payload, {
       expiresIn: this.configService.get<string>('ACCESS_TOKEN_EXPIRES_IN'),
     });

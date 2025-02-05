@@ -4,6 +4,7 @@ export interface RequestWithUser extends Request {
   user: {
     id: number; // or number, depending on your user ID type
     email: string;
+    role:string
     // Add other user properties as needed
   };
 }
