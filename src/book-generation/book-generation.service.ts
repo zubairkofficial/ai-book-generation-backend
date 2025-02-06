@@ -439,8 +439,8 @@ export class BookGenerationService {
     
 
             // Randomly decide the number of images (between 4 and 10)
-            const imageCount = Math.floor(Math.random() * 7) + 4; // Generates a number between 4 and 10
-            const chapterImages: { title: string; url: string }[] = [];
+          const imageCount = Math.floor(Math.random() * 2) + 2; // Generates a number between 2 and 3
+   const chapterImages: { title: string; url: string }[] = [];
 
             for (let j = 1; j <= imageCount; j++) {
                 const imageTitlePrompt = `Provide a short but descriptive title for an illustration in Chapter ${i} of the book "${promptData.bookTitle}". 
