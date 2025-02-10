@@ -18,6 +18,5 @@ export class SignUpDto {
 
   @ApiProperty({ example: '+1234567890' })
   @IsString()
-  @IsPhoneNumber(null, { message: 'Invalid phone number format' }) // Validate phone number format
   phoneNumber: string;
 }

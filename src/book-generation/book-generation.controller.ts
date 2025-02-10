@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { BookGenerationService } from './book-generation.service';
-import { BookGenerationDto } from './dto/create-book-generation.dto';
+import { BookGenerationDto, SearchDto } from './dto/book-generation.dto';
 import { RequestWithUser } from '../auth/types/request-with-user.interface';
 import { ApiOperation, ApiResponse, ApiBody, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 
@@ -81,6 +81,27 @@ export class BookGenerationController {
 
     try {
       const books = await this.bookGenerationService.getAllBooksByUser(userId);
+      return {
+        message: 'Books successfully retrieved.',
+        data: books,
+      };
+    } catch (error) {
+      this.logger.error(`Error retrieving books for user ID: ${userId}`, error.stack);
+      throw new InternalServerErrorException('An error occurred while fetching books.');
+    }}
+  @UseGuards(JwtAuthGuard)
+  @Get('search-by-id')
+  async searchBookQuery(@Body() input:SearchDto,@Req() request: RequestWithUser) {
+    const userId = request.user?.id;
+    this.logger.log(`Fetching all books for user ID: ${userId}`);
+
+    if (!userId) {
+      this.logger.error('Unauthorized: User ID not found in the request.');
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+
+    try {
+      const books = await this.bookGenerationService.searchBookQuery(userId,input);
       return {
         message: 'Books successfully retrieved.',
         data: books,

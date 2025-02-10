@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNumber, IsNotEmpty, IsOptional, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 
@@ -166,4 +166,55 @@ export class BookGenerationDto {
   @IsString()
   @IsOptional()
   additionalContent: string;
+
+  @ApiProperty({ description: 'FlowChart make or not', required: false })
+  @IsBoolean()
+  isFlowChart: boolean;
+
+  @ApiProperty({ description: 'Diagram make or not', required: false })
+  @IsBoolean()
+  isDiagram: boolean;
+}
+export class SearchDto {
+
+
+  @ApiProperty({ description: 'Search by book title', required: false })
+  @IsString()
+  @IsOptional()
+  bookTitle?: string;
+
+  @ApiProperty({ description: 'Search by genre', required: false })
+  @IsString()
+  @IsOptional()
+  genre?: string;
+
+  @ApiProperty({ description: 'Search by theme', required: false })
+  @IsString()
+  @IsOptional()
+  theme?: string;
+
+  @ApiProperty({ description: 'Search by target audience', required: false })
+  @IsString()
+  @IsOptional()
+  targetAudience?: string;
+
+  @ApiProperty({ description: 'Search by language', required: false })
+  @IsString()
+  @IsOptional()
+  language?: string;
+
+  @ApiProperty({ description: 'Search by number of pages', required: false })
+  @IsNumber()
+  @IsOptional()
+  numberOfPages?: number;
+
+  @ApiProperty({ description: 'Search by flowchart availability', required: false })
+  @IsBoolean()
+  @IsOptional()
+  isFlowChart?: boolean;
+
+  @ApiProperty({ description: 'Search by diagram availability', required: false })
+  @IsBoolean()
+  @IsOptional()
+  isDiagram?: boolean;
 }

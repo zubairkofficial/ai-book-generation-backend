@@ -1,15 +1,17 @@
+import { BaseEntity } from 'src/common/entities/base.entity';
 import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity()
-export class BookGeneration {
-  @PrimaryGeneratedColumn()
-  id: number;
+export class BookGeneration extends BaseEntity {
 
   @Column()
   userId: number;
 
   @Column()
   bookTitle: string;
+
+  @Column({ nullable: true })
+  subtitle?: string;
 
   @Column()
   genre: string;
@@ -18,16 +20,22 @@ export class BookGeneration {
   theme: string;
 
   @Column({ nullable: true })
-  characters: string;
+  characters?: string;
 
   @Column({ nullable: true })
-  setting: string;
+  setting?: string;
+
+  @Column({nullable: true })
+  authorName?: string;
+
+  @Column({ nullable: true })
+  authorBio?: string;
 
   @Column()
   tone: string;
 
   @Column({ nullable: true })
-  plotTwists: string;
+  plotTwists?: string;
 
   @Column('int')
   numberOfPages: number;
@@ -41,15 +49,23 @@ export class BookGeneration {
   @Column()
   language: string;
 
+  @Column({type: 'boolean', default:false})
+  isFlowChart: boolean;
+
+  @Column({type: 'boolean', default:false})
+  isDiagram: boolean;
+
   @Column({ type: 'text', nullable: true })
-  additionalContent: string;
+  additionalContent?: string;
 
+  // Add the `additionalData` column as JSONB
   @Column('jsonb', { nullable: true })
-  additionalData: object;
+  additionalData?: {
+    coverImageUrl?: string;
+    styling?: object;
+    fullContent?: string;
+    backCoverImageUrl?: string;
+  };
 
-  @CreateDateColumn()
-  createdAt: Date;
-
-  @UpdateDateColumn()
-  updatedAt: Date;
+ 
 }

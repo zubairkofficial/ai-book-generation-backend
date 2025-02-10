@@ -4,7 +4,6 @@ import { Repository } from 'typeorm';
 import { ChatOpenAI, OpenAI as LangchainOpenAI } from "@langchain/openai"; // For text generation
 import { PromptTemplate } from "@langchain/core/prompts";
 import { ConfigService } from '@nestjs/config';
-import { BookGenerationDto } from './dto/create-book-generation.dto';
 import { BookGeneration } from './entities/book-generation.entity';
 import OpenAI from 'openai'; // For DALL·E image generation
 import * as fs from 'fs';
@@ -12,6 +11,7 @@ import * as path from 'path';
 import { ApiKey } from 'src/api-keys/entities/api-key.entity';
 import { exec } from 'child_process';
 import mermaid from 'mermaid';
+import { BookGenerationDto, SearchDto } from './dto/book-generation.dto';
 
 @Injectable()
 export class BookGenerationService {
@@ -101,6 +101,8 @@ export class BookGenerationService {
     }
   }
 
+
+  
   private async saveFlowchartImage(mermaidCode: string, fileName: string): Promise<string> {
     try {
       const dirPath = path.join(this.uploadsDir, 'flowcharts');
@@ -242,50 +244,24 @@ export class BookGenerationService {
     }
   }
 
-  private getDefaultStyling() {
-    return {
-      fontSize: {
-        title: '32px',
-        chapterTitle: '24px',
-        headers: '20px',
-        body: '16px'
-      },
-      fontFamily: {
-        title: 'Georgia, serif',
-        chapterTitle: 'Georgia, serif',
-        headers: 'Georgia, serif',
-        body: 'Georgia, serif'
-      },
-      lineHeight: {
-        title: '1.5',
-        chapterTitle: '1.4',
-        headers: '1.3',
-        body: '1.6'
-      },
-      textAlignment: {
-        title: 'center',
-        chapterTitle: 'left',
-        headers: 'left',
-        body: 'justify'
-      },
-      margins: {
-        top: '2.5cm',
-        bottom: '2.5cm',
-        left: '3cm',
-        right: '3cm'
-      },
-      spacing: {
-        paragraphSpacing: '1.5em',
-        chapterSpacing: '3em',
-        sectionSpacing: '2em'
-      },
-      pageLayout: {
-        pageSize: 'A5',
-        orientation: 'portrait',
-        columns: 1
+ private getDefaultStyling() {
+  return {
+    diagramConfig: {
+      theme: 'base',
+      themeVariables: {
+        primaryColor: '#F6F6F6',
+        edgeLabelBackground: '#FFFFFF',
+        fontSize: '16px',
+        fontFamily: 'Arial'
       }
-    };
-  }
+    },
+    diagramStyles: {
+      decisionNodes: { shape: 'diamond', color: '#FFA500' },
+      actionNodes: { shape: 'rect', color: '#87CEEB' },
+      outcomeNodes: { shape: 'roundRect', color: '#90EE90' }
+    }
+  };
+}
 
 
   private async introductionContent(promptData: BookGenerationDto): Promise<string> {
@@ -364,37 +340,37 @@ export class BookGenerationService {
       throw new Error('Failed to generate introduction content');
     }
   }
-  private async generateDiagram(promptText: string, chapterNumber: number, bookTitle: string): Promise<string> {
+  private async generateDiagram(chapterContent: string, chapterNumber: number, bookTitle: string): Promise<string> {
     try {
-      // Generate a Mermaid.js-compatible diagram from AI with professional instructions
       const diagramPrompt = `
-        Generate a valid Mermaid.js diagram using this description:
-        "${promptText}"
-        Ensure the diagram starts with "graph TD" or "graph LR" for top-down or left-right orientation.
-        Use clear, readable shapes and avoid excessive lines. Each event or decision should be distinct.
-        The diagram should be visually aligned with the theme of "${bookTitle}" and reflect the genre, tone, and setting.
-        Include nodes for key events and decisions in Chapter ${chapterNumber} and ensure there is clarity in the flow.
-        Do not include extra text, explanations, or markdown code blocks.
+        Analyze this chapter content and generate a Mermaid.js diagram:
+        "${chapterContent}"
+        
+        Requirements:
+        - Use either graph TD (top-down) or graph LR (left-right)
+        - Focus on character interactions and plot progression
+        - Include key decision points and consequences
+        - Use emojis in node labels where appropriate
+        - Maximum 15 nodes
+        - Style Requirement: ${this.getDefaultStyling().diagramStyles}
+  
+        Format:
+        graph TD
+          A[Start] --> B{Decision}
+          B -->|Yes| C[Action 1]
+          B -->|No| D[Action 2]
       `;
-    
+  
       const response = await this.textModel.invoke(diagramPrompt);
-    
-      // Extract only the raw Mermaid code
-      let diagramCode = typeof response === 'string' ? response : response?.content || '';
-    
-      // Remove Markdown Code Blocks if present
-      diagramCode = diagramCode.replace(/```mermaid/g, '').replace(/```/g, '').trim();
-    
-      if (!diagramCode.includes('graph')) {
-        throw new Error('Invalid Mermaid.js output from AI.');
-      }
-    
-      // Save the diagram as an image (SVG)
-      const filePath = await this.saveDiagramImage(diagramCode, `chapter_${chapterNumber}_diagram`);
-      return filePath;
+      let diagramCode = response.content.replace(/```mermaid/g, '').replace(/```/g, '').trim();
+  
+      // Add styling configuration
+      diagramCode = `%%{init: ${JSON.stringify(this.getDefaultStyling().diagramConfig)} }%%\n${diagramCode}`;
+  
+      return this.saveDiagramImage(diagramCode, `chapter_${chapterNumber}_diagram`);
     } catch (error) {
-      this.logger.error(`Error generating diagram: ${error.message}`);
-      throw new Error('Failed to generate diagram');
+      this.logger.error(`Diagram generation failed: ${error.message}`);
+      return ''; // Fail gracefully
     }
   }
   
@@ -402,6 +378,7 @@ export class BookGenerationService {
   private async ChapterContent(promptData: BookGenerationDto): Promise<string[]> {
     try {
         const chapters: string[] = [];
+        let flowchartPath,diagramPath
 
         for (let i = 1; i <= promptData.numberOfChapters; i++) {
             const chapterTitle = `Chapter ${i}`;
@@ -422,22 +399,25 @@ export class BookGenerationService {
             if (!chapterText) {
                 throw new Error(`Chapter ${i} content is empty or undefined`);
             }
+            if(promptData.isFlowChart){
             const flowchartDescription = `
         A flowchart describing the main events and key decision points in Chapter ${i} of "${promptData.bookTitle}".
         The genre is "${promptData.genre}", the theme is "${promptData.theme}", and the tone is "${promptData.tone}".
         The setting is "${promptData.setting}". Focus on key decision moments and actions that drive the story forward.
       `;
-          // const flowchartPath = await this.generateFlowchart(flowchartDescription);
+       flowchartPath = await this.generateFlowchart(flowchartDescription);
+    }
     
           // Generate a diagram (Mermaid) for the chapter, incorporating similar elements
-          const diagramDescription = `
+          if(promptData.isDiagram){
+         const diagramDescription = `
           A diagram illustrating the key actions in Chapter ${i} of "${promptData.bookTitle}".
           The genre is "${promptData.genre}", the theme is "${promptData.theme}", and the tone is "${promptData.tone}".
           The setting is "${promptData.setting}". Depict key events and decisions visually.
         `;
-          // const diagramPath = await this.generateDiagram(diagramDescription,i,promptData.bookTitle);
+          //  diagramPath = await this.generateDiagram(diagramDescription,i,promptData.bookTitle);
     
-
+}
             // Randomly decide the number of images (between 4 and 10)
           const imageCount = Math.floor(Math.random() * 2) + 2; // Generates a number between 2 and 3
    const chapterImages: { title: string; url: string }[] = [];
@@ -484,8 +464,8 @@ export class BookGenerationService {
 
             // Append any remaining text after the last image
             formattedChapter += textChunks[chapterImages.length] || '';
-            // formattedChapter += `\n\n Flowchart\n![Flowchart](${this.configService.get<string>('BASE_URL')}/uploads/${flowchartPath})\n`;
-            // formattedChapter += `\n\n Diagram\n![Diagram](${this.configService.get<string>('BASE_URL')}/uploads/${diagramPath})\n`;
+         if(promptData.isFlowChart)   formattedChapter += `\n\n Flowchart\n![Flowchart](${this.configService.get<string>('BASE_URL')}/uploads/${flowchartPath})\n`;
+          //  if(promptData.isDiagram)  formattedChapter += `\n\n Diagram\n![Diagram](${this.configService.get<string>('BASE_URL')}/uploads/${diagramPath})\n`;
       
             chapters.push(formattedChapter);
         }
@@ -574,6 +554,11 @@ export class BookGenerationService {
       if (!flowchartCode.includes('graph')) {
         throw new Error('Invalid Mermaid.js output from AI.');
       }
+      if (flowchartCode.startsWith('graph TD') && !flowchartCode.startsWith('graph TD\n')) {
+        flowchartCode = flowchartCode.replace('graph TD', 'graph TD\n');
+      }
+      // Similarly for graph LR if needed.
+      
   
       const filePath = await this.saveFlowchartImage(flowchartCode, 'flowchart');
       return filePath;
@@ -629,6 +614,9 @@ export class BookGenerationService {
       const book = new BookGeneration();
       book.userId = userId;
       book.bookTitle = promptData.bookTitle;
+      book.authorName = promptData.authorName;
+      book.authorBio = promptData.authorBio;
+      book.subtitle = promptData.subtitle;
       book.genre = promptData.genre;
       book.theme = promptData.theme;
       book.characters = promptData.characters;
@@ -656,6 +644,52 @@ export class BookGenerationService {
       throw new Error('Failed to generate and save book');
     }
   }
+  async searchBookQuery(userId: number, search: SearchDto) {
+    try {
+      // Prepare the query filter based on the provided search parameters
+      const query:any = {userId};
+  
+      if (search.bookTitle) {
+        query['bookTitle'] = { $regex: new RegExp(search.bookTitle, 'i') }; // case-insensitive search
+      }
+      if (search.genre) {
+        query['genre'] = search.genre;
+      }
+      if (search.theme) {
+        query['theme'] = search.theme;
+      }
+      if (search.language) {
+        query['language'] = search.language;
+      }
+      if (search.targetAudience) {
+        query['targetAudience'] = search.targetAudience;
+      }
+      if (search.numberOfPages) {
+        query['numberOfPages'] = search.numberOfPages;
+      }
+  
+      // Optional: If 'isFlowChart' or 'isDiagram' is provided, filter by them
+      if (search.isFlowChart !== undefined) {
+        query['isFlowChart'] = search.isFlowChart;
+      }
+      if (search.isDiagram !== undefined) {
+        query['isDiagram'] = search.isDiagram;
+      }
+  
+      // Execute the search query to find matching books
+      const books = await this.bookGenerationRepository.find(query);
+  
+      if (!books || books.length === 0) {
+        throw new Error('No books found based on the search criteria.');
+      }
+  
+      return books;
+    } catch (error) {
+      this.logger.error(`Error during book search: ${error.message}`);
+      throw new Error('Failed to search books.');
+    }
+  }
+  
 }
 
 
