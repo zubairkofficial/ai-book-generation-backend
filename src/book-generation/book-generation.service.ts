@@ -11,7 +11,10 @@ import * as path from 'path';
 import { ApiKey } from 'src/api-keys/entities/api-key.entity';
 import { exec } from 'child_process';
 import mermaid from 'mermaid';
-import { BookGenerationDto, SearchDto } from './dto/book-generation.dto';
+import { BookChapterGenerationDto, BookGenerationDto, SearchDto } from './dto/book-generation.dto';
+import { allowedSizes } from 'src/common';
+import { BookMetadata } from 'src/book-metadata/entities/book-metadatum.entity';
+import { Observable } from 'rxjs';
 
 @Injectable()
 export class BookGenerationService {
@@ -25,6 +28,8 @@ export class BookGenerationService {
     private configService: ConfigService,
     @InjectRepository(BookGeneration)
     private bookGenerationRepository: Repository<BookGeneration>,
+    @InjectRepository(BookMetadata)  // Dependency at index [2]
+    private bookMetadataRepository: Repository<BookMetadata>,
     @InjectRepository(ApiKey)
     private apiKeyRepository: Repository<ApiKey>
     ) {
@@ -173,7 +178,6 @@ export class BookGenerationService {
 
   private async generateBookCover(promptData: BookGenerationDto): Promise<string> {
     try {
-      const allowedSizes = ['256x256', '512x512', '1024x1024', '1792x1024', '1024x1792'] as const;
       type AllowedSize = typeof allowedSizes[number];
 
       const imageSize = this.configService.get<string>('IMAGE_SIZE') as AllowedSize;
@@ -182,7 +186,7 @@ export class BookGenerationService {
         throw new Error(`Invalid image size: ${imageSize}. Allowed sizes are: ${allowedSizes.join(', ')}`);
       }
 
-      const coverImagePrompt = promptData.advancedOptions?.coverImagePrompt || 
+      const coverImagePrompt = promptData.ideaCore || 
         `Create a professional book cover for "${promptData.bookTitle}", a ${promptData.genre} book.`;
 
       const response = await this.openai.images.generate({
@@ -218,7 +222,7 @@ export class BookGenerationService {
         throw new Error(`Invalid image size: ${imageSize}. Allowed sizes are: ${allowedSizes.join(', ')}`);
       }
 
-      const coverImagePrompt = promptData.advancedOptions?.coverImagePrompt || 
+      const coverImagePrompt = promptData.ideaCore || 
         `Create a professional book back cover for "${promptData.bookTitle}", a ${promptData.genre} book.`;
 
       const response = await this.openai.images.generate({
@@ -271,9 +275,8 @@ export class BookGenerationService {
         Create a professional Cover Page with the following details:
         - Title: "${promptData.bookTitle}"
         - Author: "${promptData.authorName || 'Anonymous'}"
-        - Publisher: Cyberify
-        - Include the Cyberify logo prominently on the cover. The logo is located at "${this.uploadsDir}/temp/logo.jfif". Ensure the logo is a central branding element.
-        - Design the cover to reflect the theme "${promptData.theme}" and genre "${promptData.genre}" of the book.
+        - Publisher: ${promptData.authorName || 'AiBookPublisher'}
+        - AuthorBio: ${promptData.authorBio || 'Writter'}
       `;
       const coverPageResponse = await this.textModel.invoke(coverPagePrompt);
 
@@ -307,32 +310,32 @@ export class BookGenerationService {
       sections.push(` Preface\n${preface}\n`);
 
       // Table of Contents
-      const tableOfContentsPrompt = `
-      Create a well-structured Table of Contents for a book with ${promptData.numberOfChapters} chapters in the following format:
-      - Start with the word "Contents" at the top.
-      - Use roman numerals for introductory sections like Preface or Foreword.
-      - For each chapter, include the chapter number, title, and page number (example page numbers can be used).
-      - Subsections should be indented and include subtitles with their respective page numbers.
-      - Example Format:
+    //   const tableOfContentsPrompt = `
+    //   Create a well-structured Table of Contents for a book with ${promptData.numberOfChapters} chapters in the following format:
+    //   - Start with the word "Contents" at the top.
+    //   - Use roman numerals for introductory sections like Preface or Foreword.
+    //   - For each chapter, include the chapter number, title, and page number (example page numbers can be used).
+    //   - Subsections should be indented and include subtitles with their respective page numbers.
+    //   - Example Format:
         
-        Contents
-        Preface . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . v
-        Chapter 1: The Awakening . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 1
-          1.1 Discovery of the Prophecy . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4
-          1.2 The Dragon's Warning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
-        Chapter 2: Shadows of the Past . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
-          2.1 The Ruins of the Old City . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
-          2.2 Unearthing the Truth . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25
-        Chapter 3: The Final Revelation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
+    //     Contents
+    //     Preface . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . v
+    //     Chapter 1: The Awakening . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 1
+    //       1.1 Discovery of the Prophecy . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+    //       1.2 The Dragon's Warning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
+    //     Chapter 2: Shadows of the Past . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
+    //       2.1 The Ruins of the Old City . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
+    //       2.2 Unearthing the Truth . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25
+    //     Chapter 3: The Final Revelation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
     
-      Continue for all chapters, making sure the format is consistent.
-    `;
-      const tableOfContentsResponse = await this.textModel.invoke(tableOfContentsPrompt);
-      const tableOfContents = typeof tableOfContentsResponse === 'string' 
-      ? tableOfContentsResponse 
-      : tableOfContentsResponse?.text || JSON.stringify(tableOfContentsResponse);
+    //   Continue for all chapters, making sure the format is consistent.
+    // `;
+    //   const tableOfContentsResponse = await this.textModel.invoke(tableOfContentsPrompt);
+    //   const tableOfContents = typeof tableOfContentsResponse === 'string' 
+    //   ? tableOfContentsResponse 
+    //   : tableOfContentsResponse?.text || JSON.stringify(tableOfContentsResponse);
 
-      sections.push(` Table of Contents\n${tableOfContents}\n`);
+      // sections.push(` Table of Contents\n${tableOfContents}\n`);
     
       return sections.join('\n');
     } catch (error) {
@@ -374,108 +377,182 @@ export class BookGenerationService {
     }
   }
   
-  
-  private async ChapterContent(promptData: BookGenerationDto): Promise<string[]> {
-    try {
-        const chapters: string[] = [];
-        let flowchartPath,diagramPath
-
-        for (let i = 1; i <= promptData.numberOfChapters; i++) {
-            const chapterTitle = `Chapter ${i}`;
-
-            // Generate the chapter text
-            const chapterPrompt = `
-                Write Chapter ${i} of the book titled "${promptData.bookTitle}".
-                The genre of the book is "${promptData.genre}", and the central theme is "${promptData.theme}".
-                The story follows ${promptData.characters} in the setting of ${promptData.setting}.
-                The tone of the book is ${promptData.tone}, and it includes elements like ${promptData.plotTwists}.
-                Ensure the chapter is engaging and aligns with the overall narrative of the book.
-            `;
-
-            // Ensure chapterText is a string
-            const chapterTextRaw = await this.textModel.invoke(chapterPrompt);
-            const chapterText = chapterTextRaw.content;
-
-            if (!chapterText) {
-                throw new Error(`Chapter ${i} content is empty or undefined`);
-            }
-            if(promptData.isFlowChart){
-            const flowchartDescription = `
-        A flowchart describing the main events and key decision points in Chapter ${i} of "${promptData.bookTitle}".
-        The genre is "${promptData.genre}", the theme is "${promptData.theme}", and the tone is "${promptData.tone}".
-        The setting is "${promptData.setting}". Focus on key decision moments and actions that drive the story forward.
-      `;
-       flowchartPath = await this.generateFlowchart(flowchartDescription);
+  private async* generateChapterStream(prompt: string): AsyncGenerator<string> {
+    const response = await this.textModel.invoke(prompt);
+    const content = response.content;
+    if (!content) {
+      throw new Error('No content returned from text model');
     }
-    
-          // Generate a diagram (Mermaid) for the chapter, incorporating similar elements
-          if(promptData.isDiagram){
-         const diagramDescription = `
-          A diagram illustrating the key actions in Chapter ${i} of "${promptData.bookTitle}".
-          The genre is "${promptData.genre}", the theme is "${promptData.theme}", and the tone is "${promptData.tone}".
-          The setting is "${promptData.setting}". Depict key events and decisions visually.
-        `;
-          //  diagramPath = await this.generateDiagram(diagramDescription,i,promptData.bookTitle);
-    
-}
-            // Randomly decide the number of images (between 4 and 10)
-          const imageCount = Math.floor(Math.random() * 2) + 2; // Generates a number between 2 and 3
-   const chapterImages: { title: string; url: string }[] = [];
+    // Simulate streaming by splitting into words
+    const words = content.split(' ');
+    for (const word of words) {
+      yield word + ' ';
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
 
-            for (let j = 1; j <= imageCount; j++) {
-                const imageTitlePrompt = `Provide a short but descriptive title for an illustration in Chapter ${i} of the book "${promptData.bookTitle}". 
-                    The genre is ${promptData.genre}, theme is ${promptData.theme}, and setting is ${promptData.setting}.`;
+  /**
+   * Returns an Observable that streams chapter content.
+   * After text generation completes, it also emits a JSON string containing the generated images.
+   */
+  async streamChapterContent(
+    input,
+    bookInfo: BookGeneration
+  ): Promise<Observable<string>> {
+    // Use the same prompt as in your ChapterContent method
+    const chapterPrompt = `
+      You are a master storyteller and novelist. Please write Chapter ${input.chapterNo} of the book titled "${bookInfo.bookTitle}" in an immersive, vivid, and engaging narrative style.
+      The book belongs to the "${bookInfo.genre}" genre. Your chapter should:
+      - Develop rich, dynamic characters.
+      - Include detailed descriptions and atmospheric dialogue.
+      - Progress the overarching narrative, revealing twists and building suspense.
+      Begin your chapter now:
+    `;
 
-                const imageTitle = await this.textModel.invoke(imageTitlePrompt);
-
-                const imagePrompt = `Create an illustration titled "${imageTitle.content}" for Chapter ${i} in "${promptData.bookTitle}". 
-                    The genre is ${promptData.genre}, theme is ${promptData.theme}, and setting is ${promptData.setting}. 
-                    Ensure the image reflects the tone: ${promptData.tone}.`;
-
-                const response = await this.openai.images.generate({
-                    prompt: imagePrompt,
-                    n: 1,
-                    size: '1024x1024',
-                    response_format: 'b64_json',
-                });
-
-                if (response.data[0]?.b64_json) {
-                    const imagePath = await this.saveImage(
-                        `data:image/png;base64,${response.data[0].b64_json}`,
-                        `${promptData.bookTitle}_chapter_${i}_image_${j}`,
-                        "chapters"
-                    );
-                    chapterImages.push({ title: imageTitle.content, url: imagePath });
-                }
-            }
-
-            const imagePath = this.configService.get<string>('BASE_URL');
-
-            // Split the chapter text into sections based on the number of images
-            const textChunks = (chapterText.match(new RegExp(`.{1,${Math.ceil(chapterText.length / (imageCount + 1))}}`, 'g'))) || ["No content generated."];
-
-            let formattedChapter = `\n\n ${chapterTitle}\n\n`;
-
-            for (let j = 0; j < chapterImages.length; j++) {
-                formattedChapter += `${textChunks[j] || ''}\n\n`;
-                formattedChapter += ` ${chapterImages[j].title}\n\n`;
-                formattedChapter += `![${chapterImages[j].title}](${imagePath}/uploads/${chapterImages[j].url})\n\n`;
-            }
-
-            // Append any remaining text after the last image
-            formattedChapter += textChunks[chapterImages.length] || '';
-         if(promptData.isFlowChart)   formattedChapter += `\n\n Flowchart\n![Flowchart](${this.configService.get<string>('BASE_URL')}/uploads/${flowchartPath})\n`;
-          //  if(promptData.isDiagram)  formattedChapter += `\n\n Diagram\n![Diagram](${this.configService.get<string>('BASE_URL')}/uploads/${diagramPath})\n`;
-      
-            chapters.push(formattedChapter);
+    return new Observable<string>(subscriber => {
+      (async () => {
+        try {
+          const stream = this.generateChapterStream(chapterPrompt);
+          for await (const chunk of stream) {
+            subscriber.next(chunk);
+          }
+          // After text is streamed, generate images
+          const images = await this.generateChapterImages(input, bookInfo);
+          // Emit the image data as JSON (or modify as needed)
+          subscriber.next(JSON.stringify({ images }));
+          subscriber.complete();
+        } catch (error) {
+          subscriber.error(error);
         }
+      })();
+    });
+  }
 
-        return chapters;
-    } catch (error) {
-        console.error('Error generating chapter content with images:', error);
-        throw new Error('Failed to generate chapter content with images');
+
+  private async generateChapterImages(
+    input: BookChapterGenerationDto,
+    bookInfo: BookGeneration
+  ): Promise<{ title: string; url: string }[]> {
+    // Randomly decide between 2 or 3 images.
+    const imageCount = Math.floor(Math.random() * 2) + 2;
+    const chapterImages: { title: string; url: string }[] = [];
+
+    for (let imageIndex = 1; imageIndex <= imageCount; imageIndex++) {
+      const imageTitlePrompt = `
+        Provide a short but descriptive title for an illustration in Chapter ${input.chapterNo} of the book "${bookInfo.bookTitle}".
+        The genre is "${bookInfo.genre}".
+      `;
+      const imageTitleResponse = await this.textModel.invoke(imageTitlePrompt);
+      const imageTitle = imageTitleResponse.content?.trim() || `Image ${imageIndex}`;
+      const imagePrompt = `
+        Create an illustration titled "${imageTitle}" for Chapter ${input.chapterNo} in "${bookInfo.bookTitle}".
+        The genre is "${bookInfo.genre}".
+      `;
+      const imageResponse = await this.openai.images.generate({
+        prompt: imagePrompt,
+        n: 1,
+        size: '1024x1024',
+        response_format: 'b64_json',
+      });
+      if (imageResponse.data?.[0]?.b64_json) {
+        const savedImagePath = await this.saveImage(
+          `data:image/png;base64,${imageResponse.data[0].b64_json}`,
+          `${bookInfo.bookTitle}_chapter_${input.chapterNo}_image_${imageIndex}`,
+          'chapters'
+        );
+        chapterImages.push({ title: imageTitle, url: savedImagePath });
+      } else {
+        this.logger.warn(`Image ${imageIndex} for Chapter ${input.chapterNo} was not generated.`);
+      }
     }
-}
+    return chapterImages;
+  }
+  
+  private async invokeWithSimulatedStreaming(prompt: string, onToken: (token: string) => void): Promise<string> {
+    const response = await this.textModel.invoke(prompt);
+    const content = response.content;
+    if (!content) {
+      throw new Error('No content returned');
+    }
+    const lines = content.split('\n');
+    for (const line of lines) {
+      onToken(line + '\n');
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    return content;
+  }
+  private async ChapterContent(
+    promptData: BookChapterGenerationDto,
+    bookInfo: BookGeneration
+  ): Promise<string> {
+    try {
+      const chapterTitle = `Chapter ${promptData.chapterNo}`;
+      const chapterPrompt = `
+        You are a master storyteller and novelist. Please write Chapter ${promptData.chapterNo} of the book titled "${bookInfo.bookTitle}" in an immersive, vivid, and engaging narrative style.
+        The book belongs to the "${bookInfo.genre}" genre. Your chapter should:
+        - Develop rich, dynamic characters.
+        - Include detailed descriptions and atmospheric dialogue.
+        - Progress the overarching narrative, revealing twists and building suspense.
+        As you write, output each sentence immediately as it is completed to simulate a real-time creative process.
+        Begin your chapter now:
+      `;
+      let chapterText = '';
+      chapterText = await this.invokeWithSimulatedStreaming.call(this, chapterPrompt, (token: string) => {
+        process.stdout.write(token);
+        chapterText += token;
+      });
+      if (!chapterText || chapterText.trim() === '') {
+        throw new Error(`Chapter ${promptData.chapterNo} content is empty or undefined`);
+      }
+      const imageCount = Math.floor(Math.random() * 2) + 2;
+      const chapterImages: { title: string; url: string }[] = [];
+      for (let imageIndex = 1; imageIndex <= imageCount; imageIndex++) {
+        const imageTitlePrompt = `
+          Provide a short but descriptive title for an illustration in Chapter ${promptData.chapterNo} of the book "${bookInfo.bookTitle}".
+          The genre is "${bookInfo.genre}".
+        `;
+        const imageTitleResponse = await this.textModel.invoke(imageTitlePrompt);
+        const imageTitle = imageTitleResponse.content?.trim() || `Image ${imageIndex}`;
+        const imagePrompt = `
+          Create an illustration titled "${imageTitle}" for Chapter ${promptData.chapterNo} in "${bookInfo.bookTitle}".
+          The genre is "${bookInfo.genre}".
+        `;
+        const imageResponse = await this.openai.images.generate({
+          prompt: imagePrompt,
+          n: 1,
+          size: '1024x1024',
+          response_format: 'b64_json',
+        });
+        if (imageResponse.data?.[0]?.b64_json) {
+          const savedImagePath = await this.saveImage(
+            `data:image/png;base64,${imageResponse.data[0].b64_json}`,
+            `${bookInfo.bookTitle}_chapter_${promptData.chapterNo}_image_${imageIndex}`,
+            'chapters'
+          );
+          chapterImages.push({ title: imageTitle, url: savedImagePath });
+        } else {
+          this.logger.warn(`Image ${imageIndex} for Chapter ${promptData.chapterNo} was not generated.`);
+        }
+      }
+      const baseUrl = this.configService.get<string>('BASE_URL');
+      const chunkSize = Math.ceil(chapterText.length / (chapterImages.length + 1));
+      const textChunks =
+        chapterText.match(new RegExp(`.{1,${chunkSize}}`, 'g')) || ['No content generated.'];
+      let formattedChapter = `\n\n${chapterTitle}\n\n`;
+      for (let i = 0; i < chapterImages.length; i++) {
+        formattedChapter += `${textChunks[i] || ''}\n\n`;
+        formattedChapter += `${chapterImages[i].title}\n\n`;
+        formattedChapter += `![${chapterImages[i].title}](${baseUrl}/uploads/${chapterImages[i].url})\n\n`;
+      }
+      formattedChapter += textChunks[chapterImages.length] || '';
+      return formattedChapter;
+    } catch (error) {
+      console.error('Error generating chapter content with images:', error);
+      throw new Error('Failed to generate chapter content with images');
+    }
+  }
+  
+  
 
 
 
@@ -578,11 +655,6 @@ export class BookGenerationService {
       // Generate Introduction Content
       const introduction = await this.introductionContent(promptData);
       sections.push(introduction);
-
-    
-      // Generate Chapter Content
-      const chapters = await this.ChapterContent(promptData);
-      sections.push(...chapters);
   
       // Generate End-of-Book Content
       const endOfBook = await this.endOfBookContent(promptData);
@@ -602,6 +674,24 @@ export class BookGenerationService {
       order: { createdAt: 'DESC' },
     });
   }
+  async generateChapterOfBook(userId: number, input: BookChapterGenerationDto) {
+    await this.initializeAIModels();
+    const bookInfo = await this.bookGenerationRepository.findOne({ where: { id: input.bookGenerationId } });
+    const bookMetadataInfo = await this.bookMetadataRepository.findOne({ where: { chapterNo: input.chapterNo } });
+    const chapters = await this.ChapterContent(input, bookInfo);
+    const bookMetadata = new BookMetadata();
+    bookMetadata.bookGeneration = bookInfo;
+    bookMetadata.maxCharacters = input.maxCharacters;
+    bookMetadata.minCharacters = input.minCharacters;
+    bookMetadata.chapterNo = input.chapterNo;
+    bookMetadata.chapterInfo = { fullContent: chapters };
+    const savedMetadataBook = await this.bookMetadataRepository.save(bookMetadata);
+    return savedMetadataBook;
+  }
+  async getBook(id:number) {
+    return await this.bookGenerationRepository.findOne( {where:{id}} );
+
+  }
 
   async generateAndSaveBook(userId: number, promptData: BookGenerationDto): Promise<BookGeneration> {
     try {
@@ -616,21 +706,14 @@ export class BookGenerationService {
       book.bookTitle = promptData.bookTitle;
       book.authorName = promptData.authorName;
       book.authorBio = promptData.authorBio;
-      book.subtitle = promptData.subtitle;
       book.genre = promptData.genre;
-      book.theme = promptData.theme;
       book.characters = promptData.characters;
-      book.setting = promptData.setting;
-      book.tone = promptData.tone;
-      book.plotTwists = promptData.plotTwists;
-      book.numberOfPages = promptData.numberOfPages;
       book.numberOfChapters = promptData.numberOfChapters;
       book.targetAudience = promptData.targetAudience;
       book.language = promptData.language;
       book.additionalContent = promptData.additionalContent;
       book.additionalData = {
         coverImageUrl: coverImagePath,
-        styling: promptData.advancedOptions.styling?? this.getDefaultStyling(),
         fullContent: bookContent,
         backCoverImageUrl: backgroundImagePath
       };

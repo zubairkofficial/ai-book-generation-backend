@@ -3,102 +3,14 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 
 export class BookGenerationDto {
-  @ApiProperty({ 
-    description: 'Advanced options for book generation and styling', 
-    required: false,
-    example: {
-      coverImagePrompt: 'Create a mysterious fantasy book cover with a dragon',
-      colorScheme: '#2196f3',
-      fontStyle: 'modern',
-      styling: {
-        fontSize: {
-          title: '32px',
-          chapterTitle: '24px',
-          headers: '20px',
-          body: '16px'
-        },
-        fontFamily: {
-          title: 'Georgia, serif',
-          chapterTitle: 'Georgia, serif',
-          headers: 'Georgia, serif',
-          body: 'Georgia, serif'
-        },
-        lineHeight: {
-          title: '1.5',
-          chapterTitle: '1.4',
-          headers: '1.3',
-          body: '1.6'
-        },
-        textAlignment: {
-          title: 'center',
-          chapterTitle: 'left',
-          headers: 'left',
-          body: 'justify'
-        }
-      }
-    }
-  })
-  @IsOptional()
-  advancedOptions?: {
-    // Cover image options
-    coverImagePrompt?: string;
-    colorScheme?: string;
-    fontStyle?: string;
-
-    // Styling options
-    styling?: {
-      fontSize?: {
-        title?: string;
-        chapterTitle?: string;
-        headers?: string;
-        body?: string;
-      };
-      fontFamily?: {
-        title?: string;
-        chapterTitle?: string;
-        headers?: string;
-        body?: string;
-      };
-      lineHeight?: {
-        title?: string;
-        chapterTitle?: string;
-        headers?: string;
-        body?: string;
-      };
-      textAlignment?: {
-        title?: string;
-        chapterTitle?: string;
-        headers?: string;
-        body?: string;
-      };
-      margins?: {
-        top?: string;
-        bottom?: string;
-        left?: string;
-        right?: string;
-      };
-      spacing?: {
-        paragraphSpacing?: string;
-        chapterSpacing?: string;
-        sectionSpacing?: string;
-      };
-      pageLayout?: {
-        pageSize?: string;
-        orientation?: string;
-        columns?: number;
-      };
-    };
-  };
+ 
+ 
 
   @ApiProperty({ description: 'The title of the book' })
   @IsString()
   @IsNotEmpty()
   bookTitle: string;
 
-  @ApiProperty({ description: 'Optional subtitle for the book', required: false })
-  @IsString()
-  @IsOptional()
-  subtitle?: string;
 
   @ApiProperty({ description: 'Author name', required: false })
   @IsString()
@@ -115,36 +27,22 @@ export class BookGenerationDto {
   @IsNotEmpty()
   genre: string;
 
-  @ApiProperty({ description: 'The theme of the book' })
-  @IsString()
-  @IsNotEmpty()
-  theme: string;
 
   @ApiProperty({ description: 'The main characters in the book' })
   @IsString()
   @IsNotEmpty()
   characters: string;
 
-  @ApiProperty({ description: 'The setting of the book' })
+  @ApiProperty({ description: 'The core idea in the book' })
   @IsString()
   @IsNotEmpty()
-  setting: string;
+  ideaCore: string;
 
-  @ApiProperty({ description: 'The tone of the book' })
-  @IsString()
-  @IsNotEmpty()
-  tone: string;
-
-  @ApiProperty({ description: 'Plot twists in the book' })
-  @IsString()
-  @IsNotEmpty()
-  plotTwists: string;
-
-  @ApiProperty({ description: 'The number of pages in the book' })
-  @Transform(({ value }) => parseInt(value, 10))
-  @IsNumber()
-  @IsNotEmpty()
-  numberOfPages: number;
+  // @ApiProperty({ description: 'The number of pages in the book' })
+  // @Transform(({ value }) => parseInt(value, 10))
+  // @IsNumber()
+  // @IsNotEmpty()
+  // numberOfPages: number;
 
   @ApiProperty({ description: 'The number of chapters in the book' })
   @Transform(({ value }) => parseInt(value, 10))
@@ -167,13 +65,41 @@ export class BookGenerationDto {
   @IsOptional()
   additionalContent: string;
 
-  @ApiProperty({ description: 'FlowChart make or not', required: false })
-  @IsBoolean()
-  isFlowChart: boolean;
+  // @ApiProperty({ description: 'FlowChart make or not', required: false })
+  // @IsBoolean()
+  // isFlowChart: boolean;
 
-  @ApiProperty({ description: 'Diagram make or not', required: false })
-  @IsBoolean()
-  isDiagram: boolean;
+  // @ApiProperty({ description: 'Diagram make or not', required: false })
+  // @IsBoolean()
+  // isDiagram: boolean;
+}
+export class BookChapterGenerationDto {
+
+  @ApiProperty({ description: 'The number of minimum characters in the Chapter' })
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsNumber()
+  @IsNotEmpty()
+  minCharacters: number;
+
+  @ApiProperty({ description: 'The number of maximum characters in the Chapter' })
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsNumber()
+  @IsNotEmpty()
+  maxCharacters: number;
+
+  @ApiProperty({ description: 'Book Chapter No' })
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsNumber()
+  @IsNotEmpty()
+  chapterNo: number;
+
+  @ApiProperty({ description: 'book Generation Id' })
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsNumber()
+  @IsNotEmpty()
+  bookGenerationId: number;
+
+  
 }
 export class SearchDto {
 
