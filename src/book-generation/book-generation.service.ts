@@ -406,6 +406,7 @@ export class BookGenerationService {
       - Develop rich, dynamic characters.
       - Include detailed descriptions and atmospheric dialogue.
       - Progress the overarching narrative, revealing twists and building suspense.
+      - Ensure the chapter contains at least ${input.minCharacters??100} characters and no more than ${input.maxCharacters??1000} characters.
       Begin your chapter now:
     `;
 
@@ -493,6 +494,7 @@ export class BookGenerationService {
         - Develop rich, dynamic characters.
         - Include detailed descriptions and atmospheric dialogue.
         - Progress the overarching narrative, revealing twists and building suspense.
+        - Ensure the chapter contains at least ${promptData.minCharacters} characters and no more than ${promptData.maxCharacters} characters.       
         As you write, output each sentence immediately as it is completed to simulate a real-time creative process.
         Begin your chapter now:
       `;
@@ -671,6 +673,7 @@ export class BookGenerationService {
   async getAllBooksByUser(userId: number): Promise<BookGeneration[]> {
     return await this.bookGenerationRepository.find({
       where: { userId },
+      relations: ['metadata'],
       order: { createdAt: 'DESC' },
     });
   }
