@@ -261,7 +261,7 @@ constructor(
             ## Additional Guidance:
             ${promptData.additionalInfo || "Follow the style and tone established in previous chapters."}
           
-            **DO NOT END THE CHAPTER UNTIL YOU HAVE WRITTEN AT LEAST ${promptData.minCharacters || 500} CHARACTERS.**
+            **DO NOT END THE WORDS UNTIL YOU HAVE WRITTEN AT LEAST ${promptData.minCharacters || 500} WORDS.**
             If you are unsure how to continue, **describe the scene in greater detail, introduce more character thoughts, or deepen the world-building**.
           
             **Begin your chapter now:**
