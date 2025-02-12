@@ -182,7 +182,7 @@ export class BookGenerationService {
         throw new Error(`Invalid image size: ${imageSize}. Allowed sizes are: ${allowedSizes.join(', ')}`);
       }
 
-      const coverImagePrompt = promptData.ideaCore || 
+      const coverImagePrompt = promptData.bookInformation || 
         `Create a professional book cover for "${promptData.bookTitle}", a ${promptData.genre} book.`;
 
       const response = await this.openai.images.generate({
@@ -218,7 +218,7 @@ export class BookGenerationService {
         throw new Error(`Invalid image size: ${imageSize}. Allowed sizes are: ${allowedSizes.join(', ')}`);
       }
 
-      const coverImagePrompt = promptData.ideaCore || 
+      const coverImagePrompt = promptData.bookInformation || 
         `Create a professional book back cover for "${promptData.bookTitle}", a ${promptData.genre} book.`;
 
       const response = await this.openai.images.generate({

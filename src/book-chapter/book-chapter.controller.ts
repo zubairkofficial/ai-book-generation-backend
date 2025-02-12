@@ -40,6 +40,7 @@ private chapterTextUpdate=new Subject<string>()
       // Trigger SSE streaming for real-time updates
       // await this.bookChapterService.streamChapterContent(bookGenerationDto, savedChapter.bookGeneration);
       return {
+        statusCode:200,
         message: 'Chapter successfully generated and saved.',
         data: savedChapter,
       };

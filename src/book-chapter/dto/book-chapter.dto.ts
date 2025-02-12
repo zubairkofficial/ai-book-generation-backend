@@ -1,6 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
-import { IsNumber, IsNotEmpty } from "class-validator";
+import { IsNumber, IsNotEmpty, IsString, IsOptional } from "class-validator";
 
 export class BookChapterGenerationDto {
 
@@ -29,4 +29,8 @@ export class BookChapterGenerationDto {
   bookGenerationId: number;
 
   
+  @IsString()
+  @IsOptional()
+  additionalInfo: string;
+
 }

@@ -33,10 +33,10 @@ export class BookGenerationDto {
   @IsNotEmpty()
   characters: string;
 
-  @ApiProperty({ description: 'The core idea in the book' })
+  @ApiProperty({ description: 'The book information idea in the book' })
   @IsString()
   @IsNotEmpty()
-  ideaCore: string;
+  bookInformation: string;
 
   // @ApiProperty({ description: 'The number of pages in the book' })
   // @Transform(({ value }) => parseInt(value, 10))

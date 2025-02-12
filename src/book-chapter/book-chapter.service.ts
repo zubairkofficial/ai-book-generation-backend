@@ -242,13 +242,32 @@ constructor(
             const chapterTitle = `Chapter ${promptData.chapterNo}: ${bookInfo.bookTitle}`;
             const chapterPrompt = `
             You are a master storyteller and novelist. Please write Chapter ${promptData.chapterNo} of the book titled "${bookInfo.bookTitle}" in an immersive, vivid, and engaging narrative style.
-            The book belongs to the "${bookInfo.genre}" genre. Your chapter should:
-            - Develop rich, dynamic characters.
-            - Include detailed descriptions and atmospheric dialogue.
+          
+            The book belongs to the "${bookInfo.genre}" genre. The author of the book is ${bookInfo.authorName || "an esteemed writer"}.
+          
+            - Core Idea: ${bookInfo.ideaCore || "A captivating tale filled with mystery and adventure."}
+            - Author Bio: ${bookInfo.authorBio || "A well-renowned storyteller with a knack for deep narratives."}
+            - Target Audience: ${bookInfo.targetAudience || "Readers who enjoy immersive storytelling and suspenseful plots."}
+            - Language: The book is written in ${bookInfo.language || "English"}.
+          
+            ## Instructions:
+            - Develop **${bookInfo.characters || "dynamic"}** characters with depth and personality.
+            - Include **rich descriptions**, atmospheric dialogue, and character development.
             - Progress the overarching narrative, revealing twists and building suspense.
-            - Ensure the chapter contains at least ${promptData.minCharacters ?? 100} characters and no more than ${promptData.maxCharacters ?? 1000} characters.
-            Begin your chapter now:
+            - **You must write at least ${promptData.minCharacters || 500} characters before concluding the chapter. Do not stop before reaching this count.**
+            - If necessary, **expand descriptions, add internal monologues, enrich dialogues, and enhance scene setting** to meet the minimum character count.
+            - If you reach the word limit too soon, **continue writing naturally and extend the narrative accordingly.**
+          
+            ## Additional Guidance:
+            ${promptData.additionalInfo || "Follow the style and tone established in previous chapters."}
+          
+            **DO NOT END THE CHAPTER UNTIL YOU HAVE WRITTEN AT LEAST ${promptData.minCharacters || 500} CHARACTERS.**
+            If you are unsure how to continue, **describe the scene in greater detail, introduce more character thoughts, or deepen the world-building**.
+          
+            **Begin your chapter now:**
           `;
+          
+          
             let chapterText = '';
             chapterText = await this.invokeWithSimulatedStreaming.call(this, chapterPrompt, (token: string) => {
               process.stdout.write(token);
