@@ -7,7 +7,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { OtpModule } from './otp/otp.module';
 import { BookGenerationModule } from './book-generation/book-generation.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
-import { BookMetadataModule } from './book-metadata/book-metadata.module';
+import { BookChapterModule } from './book-chapter/book-chapter.module';
 
 @Module({
   imports: [
@@ -45,7 +45,7 @@ import { BookMetadataModule } from './book-metadata/book-metadata.module';
     OtpModule,
     BookGenerationModule,
     ApiKeysModule,
-    BookMetadataModule,
+    BookChapterModule,
   ],
 })
 export class AppModule {}

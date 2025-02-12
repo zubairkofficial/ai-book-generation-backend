@@ -1,13 +1,11 @@
 import { BookGeneration } from 'src/book-generation/entities/book-generation.entity';
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { BaseEntity } from 'src/common/entities/base.entity';
+import { Entity, Column,  ManyToOne, JoinColumn } from 'typeorm';
 
 @Entity()
-export class BookMetadata {
+export class BookChapter extends BaseEntity {
 
-  @PrimaryGeneratedColumn()
-  id: number;
-
-  @ManyToOne(() => BookGeneration, (bookGeneration) => bookGeneration.metadata)
+  @ManyToOne(() => BookGeneration, (bookGeneration) => bookGeneration.bookChapter)
   @JoinColumn({ name: 'bookGenerationId' })
   bookGeneration: BookGeneration;
 
@@ -21,7 +19,6 @@ export class BookMetadata {
   chapterNo?: number;
 
   @Column('jsonb', { nullable: true })
-  chapterInfo?: {  
-    fullContent?: string;
-  };
+  chapterInfo?:  string;
+  
 }

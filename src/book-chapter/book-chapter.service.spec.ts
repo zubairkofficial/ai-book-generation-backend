@@ -1,15 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BookMetadataService } from './book-metadata.service';
+import { BookChapterService } from './book-chapter.service';
 
-describe('BookMetadataService', () => {
-  let service: BookMetadataService;
+describe('BookChapterService', () => {
+  let service: BookChapterService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [BookMetadataService],
+      providers: [BookChapterService],
     }).compile();
 
-    service = module.get<BookMetadataService>(BookMetadataService);
+    service = module.get<BookChapterService>(BookChapterService);
   });
 
   it('should be defined', () => {

@@ -11,10 +11,8 @@ import * as path from 'path';
 import { ApiKey } from 'src/api-keys/entities/api-key.entity';
 import { exec } from 'child_process';
 import mermaid from 'mermaid';
-import { BookChapterGenerationDto, BookGenerationDto, SearchDto } from './dto/book-generation.dto';
+import {  BookGenerationDto, SearchDto } from './dto/book-generation.dto';
 import { allowedSizes } from 'src/common';
-import { BookMetadata } from 'src/book-metadata/entities/book-metadatum.entity';
-import { Observable } from 'rxjs';
 
 @Injectable()
 export class BookGenerationService {
@@ -28,8 +26,6 @@ export class BookGenerationService {
     private configService: ConfigService,
     @InjectRepository(BookGeneration)
     private bookGenerationRepository: Repository<BookGeneration>,
-    @InjectRepository(BookMetadata)  // Dependency at index [2]
-    private bookMetadataRepository: Repository<BookMetadata>,
     @InjectRepository(ApiKey)
     private apiKeyRepository: Repository<ApiKey>
     ) {
@@ -277,6 +273,7 @@ export class BookGenerationService {
         - Author: "${promptData.authorName || 'Anonymous'}"
         - Publisher: ${promptData.authorName || 'AiBookPublisher'}
         - AuthorBio: ${promptData.authorBio || 'Writter'}
+        - Language: ${promptData.language || 'English'}
       `;
       const coverPageResponse = await this.textModel.invoke(coverPagePrompt);
 
@@ -377,186 +374,6 @@ export class BookGenerationService {
     }
   }
   
-  private async* generateChapterStream(prompt: string): AsyncGenerator<string> {
-    const response = await this.textModel.invoke(prompt);
-    const content = response.content;
-    if (!content) {
-      throw new Error('No content returned from text model');
-    }
-    // Simulate streaming by splitting into words
-    const words = content.split(' ');
-    for (const word of words) {
-      yield word + ' ';
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-  }
-
-  /**
-   * Returns an Observable that streams chapter content.
-   * After text generation completes, it also emits a JSON string containing the generated images.
-   */
-  async streamChapterContent(
-    input,
-    bookInfo: BookGeneration
-  ): Promise<Observable<string>> {
-    // Use the same prompt as in your ChapterContent method
-    const chapterPrompt = `
-      You are a master storyteller and novelist. Please write Chapter ${input.chapterNo} of the book titled "${bookInfo.bookTitle}" in an immersive, vivid, and engaging narrative style.
-      The book belongs to the "${bookInfo.genre}" genre. Your chapter should:
-      - Develop rich, dynamic characters.
-      - Include detailed descriptions and atmospheric dialogue.
-      - Progress the overarching narrative, revealing twists and building suspense.
-      - Ensure the chapter contains at least ${input.minCharacters??100} characters and no more than ${input.maxCharacters??1000} characters.
-      Begin your chapter now:
-    `;
-
-    return new Observable<string>(subscriber => {
-      (async () => {
-        try {
-          const stream = this.generateChapterStream(chapterPrompt);
-          for await (const chunk of stream) {
-            subscriber.next(chunk);
-          }
-          // After text is streamed, generate images
-          const images = await this.generateChapterImages(input, bookInfo);
-          // Emit the image data as JSON (or modify as needed)
-          subscriber.next(JSON.stringify({ images }));
-          subscriber.complete();
-        } catch (error) {
-          subscriber.error(error);
-        }
-      })();
-    });
-  }
-
-
-  private async generateChapterImages(
-    input: BookChapterGenerationDto,
-    bookInfo: BookGeneration
-  ): Promise<{ title: string; url: string }[]> {
-    // Randomly decide between 2 or 3 images.
-    const imageCount = Math.floor(Math.random() * 2) + 2;
-    const chapterImages: { title: string; url: string }[] = [];
-
-    for (let imageIndex = 1; imageIndex <= imageCount; imageIndex++) {
-      const imageTitlePrompt = `
-        Provide a short but descriptive title for an illustration in Chapter ${input.chapterNo} of the book "${bookInfo.bookTitle}".
-        The genre is "${bookInfo.genre}".
-      `;
-      const imageTitleResponse = await this.textModel.invoke(imageTitlePrompt);
-      const imageTitle = imageTitleResponse.content?.trim() || `Image ${imageIndex}`;
-      const imagePrompt = `
-        Create an illustration titled "${imageTitle}" for Chapter ${input.chapterNo} in "${bookInfo.bookTitle}".
-        The genre is "${bookInfo.genre}".
-      `;
-      const imageResponse = await this.openai.images.generate({
-        prompt: imagePrompt,
-        n: 1,
-        size: '1024x1024',
-        response_format: 'b64_json',
-      });
-      if (imageResponse.data?.[0]?.b64_json) {
-        const savedImagePath = await this.saveImage(
-          `data:image/png;base64,${imageResponse.data[0].b64_json}`,
-          `${bookInfo.bookTitle}_chapter_${input.chapterNo}_image_${imageIndex}`,
-          'chapters'
-        );
-        chapterImages.push({ title: imageTitle, url: savedImagePath });
-      } else {
-        this.logger.warn(`Image ${imageIndex} for Chapter ${input.chapterNo} was not generated.`);
-      }
-    }
-    return chapterImages;
-  }
-  
-  private async invokeWithSimulatedStreaming(prompt: string, onToken: (token: string) => void): Promise<string> {
-    const response = await this.textModel.invoke(prompt);
-    const content = response.content;
-    if (!content) {
-      throw new Error('No content returned');
-    }
-    const lines = content.split('\n');
-    for (const line of lines) {
-      onToken(line + '\n');
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    return content;
-  }
-  private async ChapterContent(
-    promptData: BookChapterGenerationDto,
-    bookInfo: BookGeneration
-  ): Promise<string> {
-    try {
-      const chapterTitle = `Chapter ${promptData.chapterNo}`;
-      const chapterPrompt = `
-        You are a master storyteller and novelist. Please write Chapter ${promptData.chapterNo} of the book titled "${bookInfo.bookTitle}" in an immersive, vivid, and engaging narrative style.
-        The book belongs to the "${bookInfo.genre}" genre. Your chapter should:
-        - Develop rich, dynamic characters.
-        - Include detailed descriptions and atmospheric dialogue.
-        - Progress the overarching narrative, revealing twists and building suspense.
-        - Ensure the chapter contains at least ${promptData.minCharacters} characters and no more than ${promptData.maxCharacters} characters.       
-        As you write, output each sentence immediately as it is completed to simulate a real-time creative process.
-        Begin your chapter now:
-      `;
-      let chapterText = '';
-      chapterText = await this.invokeWithSimulatedStreaming.call(this, chapterPrompt, (token: string) => {
-        process.stdout.write(token);
-        chapterText += token;
-      });
-      if (!chapterText || chapterText.trim() === '') {
-        throw new Error(`Chapter ${promptData.chapterNo} content is empty or undefined`);
-      }
-      const imageCount = Math.floor(Math.random() * 2) + 2;
-      const chapterImages: { title: string; url: string }[] = [];
-      for (let imageIndex = 1; imageIndex <= imageCount; imageIndex++) {
-        const imageTitlePrompt = `
-          Provide a short but descriptive title for an illustration in Chapter ${promptData.chapterNo} of the book "${bookInfo.bookTitle}".
-          The genre is "${bookInfo.genre}".
-        `;
-        const imageTitleResponse = await this.textModel.invoke(imageTitlePrompt);
-        const imageTitle = imageTitleResponse.content?.trim() || `Image ${imageIndex}`;
-        const imagePrompt = `
-          Create an illustration titled "${imageTitle}" for Chapter ${promptData.chapterNo} in "${bookInfo.bookTitle}".
-          The genre is "${bookInfo.genre}".
-        `;
-        const imageResponse = await this.openai.images.generate({
-          prompt: imagePrompt,
-          n: 1,
-          size: '1024x1024',
-          response_format: 'b64_json',
-        });
-        if (imageResponse.data?.[0]?.b64_json) {
-          const savedImagePath = await this.saveImage(
-            `data:image/png;base64,${imageResponse.data[0].b64_json}`,
-            `${bookInfo.bookTitle}_chapter_${promptData.chapterNo}_image_${imageIndex}`,
-            'chapters'
-          );
-          chapterImages.push({ title: imageTitle, url: savedImagePath });
-        } else {
-          this.logger.warn(`Image ${imageIndex} for Chapter ${promptData.chapterNo} was not generated.`);
-        }
-      }
-      const baseUrl = this.configService.get<string>('BASE_URL');
-      const chunkSize = Math.ceil(chapterText.length / (chapterImages.length + 1));
-      const textChunks =
-        chapterText.match(new RegExp(`.{1,${chunkSize}}`, 'g')) || ['No content generated.'];
-      let formattedChapter = `\n\n${chapterTitle}\n\n`;
-      for (let i = 0; i < chapterImages.length; i++) {
-        formattedChapter += `${textChunks[i] || ''}\n\n`;
-        formattedChapter += `${chapterImages[i].title}\n\n`;
-        formattedChapter += `![${chapterImages[i].title}](${baseUrl}/uploads/${chapterImages[i].url})\n\n`;
-      }
-      formattedChapter += textChunks[chapterImages.length] || '';
-      return formattedChapter;
-    } catch (error) {
-      console.error('Error generating chapter content with images:', error);
-      throw new Error('Failed to generate chapter content with images');
-    }
-  }
-  
-  
-
-
 
   private async endOfBookContent(promptData: BookGenerationDto): Promise<string> {
     try {
@@ -671,26 +488,16 @@ export class BookGenerationService {
     }
   }
   async getAllBooksByUser(userId: number): Promise<BookGeneration[]> {
-    return await this.bookGenerationRepository.find({
-      where: { userId },
-      relations: ['metadata'],
-      order: { createdAt: 'DESC' },
-    });
+    return await this.bookGenerationRepository
+      .createQueryBuilder('bookGeneration')
+      .leftJoinAndSelect('bookGeneration.bookChapter', 'bookChapter')  // Join bookChapter relation
+      .where('bookGeneration.userId = :userId', { userId })
+      .orderBy('bookGeneration.createdAt', 'DESC')  // Order bookGeneration by createdAt DESC
+      .addOrderBy('bookChapter.createdAt', 'ASC')  // Order bookChapter by createdAt DESC
+      .getMany();
   }
-  async generateChapterOfBook(userId: number, input: BookChapterGenerationDto) {
-    await this.initializeAIModels();
-    const bookInfo = await this.bookGenerationRepository.findOne({ where: { id: input.bookGenerationId } });
-    const bookMetadataInfo = await this.bookMetadataRepository.findOne({ where: { chapterNo: input.chapterNo } });
-    const chapters = await this.ChapterContent(input, bookInfo);
-    const bookMetadata = new BookMetadata();
-    bookMetadata.bookGeneration = bookInfo;
-    bookMetadata.maxCharacters = input.maxCharacters;
-    bookMetadata.minCharacters = input.minCharacters;
-    bookMetadata.chapterNo = input.chapterNo;
-    bookMetadata.chapterInfo = { fullContent: chapters };
-    const savedMetadataBook = await this.bookMetadataRepository.save(bookMetadata);
-    return savedMetadataBook;
-  }
+  
+
   async getBook(id:number) {
     return await this.bookGenerationRepository.findOne( {where:{id}} );
 

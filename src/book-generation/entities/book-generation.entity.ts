@@ -1,6 +1,6 @@
-import { BookMetadata } from 'src/book-metadata/entities/book-metadatum.entity';
+import { BookChapter } from 'src/book-chapter/entities/book-chapter.entity';
 import { BaseEntity } from 'src/common/entities/base.entity';
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
+import { Entity, Column,  OneToMany } from 'typeorm';
 
 @Entity()
 export class BookGeneration extends BaseEntity {
@@ -56,7 +56,7 @@ export class BookGeneration extends BaseEntity {
     backCoverImageUrl?: string;
   };
 
-  @OneToMany(() => BookMetadata, (metadata) => metadata.bookGeneration)
-  metadata: BookMetadata[];
+  @OneToMany(() => BookChapter, (bookChapter) => bookChapter.bookGeneration)
+  bookChapter: BookChapter[];
  
 }
