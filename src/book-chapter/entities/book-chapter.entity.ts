@@ -10,10 +10,10 @@ export class BookChapter extends BaseEntity {
   bookGeneration: BookGeneration;
 
   @Column({ nullable: true, type: 'int' })
-  minCharacters?: number;
+  minWords?: number;
 
   @Column({ nullable: true, type: 'int' })
-  maxCharacters?: number;
+  maxWords?: number;
 
   @Column({ nullable: true, type: 'int' })
   chapterNo?: number;

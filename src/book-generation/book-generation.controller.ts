@@ -7,19 +7,13 @@ import {
   UnauthorizedException,
   InternalServerErrorException,
   Logger,
-  Get,
-  Param,
-  Res,
-  Sse,
+  Get
 } from '@nestjs/common';
-import { Response } from 'express';
-import { map, catchError } from 'rxjs/operators';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { BookGenerationService } from './book-generation.service';
-import {  BookGenerationDto, SearchDto } from './dto/book-generation.dto';
+import {  BookGenerationDto } from './dto/book-generation.dto';
 import { RequestWithUser } from '../auth/types/request-with-user.interface';
 import { ApiOperation, ApiResponse, ApiBody, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { of } from 'rxjs';
 
 @ApiTags('books')
 @ApiBearerAuth('JWT-auth')
@@ -74,48 +68,48 @@ export class BookGenerationController {
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 500, description: 'Internal Server Error.' })
   async getAllBooks(@Req() request: RequestWithUser) {
-    const userId = request.user?.id;
-    this.logger.log(`Fetching all books for user ID: ${userId}`);
+    const user = request.user;
+    this.logger.log(`Fetching all books for user ID: ${user.id}`);
 
-    if (!userId) {
+    if (!user) {
       this.logger.error('Unauthorized: User ID not found in the request.');
       throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
     }
 
     try {
-      const books = await this.bookGenerationService.getAllBooksByUser(userId);
+      const books = await this.bookGenerationService.getAllBooksByUser(user);
       return {
         message: 'Books successfully retrieved.',
         data: books,
       };
     } catch (error) {
-      this.logger.error(`Error retrieving books for user ID: ${userId}`, error.stack);
+      this.logger.error(`Error retrieving books for user ID: ${user.id}`, error.stack);
       throw new InternalServerErrorException('An error occurred while fetching books.');
     }
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Get('search-by-id')
-  async searchBookQuery(@Body() input: SearchDto, @Req() request: RequestWithUser) {
-    const userId = request.user?.id;
-    this.logger.log(`Fetching books for user ID: ${userId}`);
+  // @UseGuards(JwtAuthGuard)
+  // @Get('search-by-id')
+  // async searchBookQuery(@Body() input: SearchDto, @Req() request: RequestWithUser) {
+  //   const userId = request.user?.id;
+  //   this.logger.log(`Fetching books for user ID: ${userId}`);
 
-    if (!userId) {
-      this.logger.error('Unauthorized: User ID not found in the request.');
-      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
-    }
+  //   if (!userId) {
+  //     this.logger.error('Unauthorized: User ID not found in the request.');
+  //     throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+  //   }
 
-    try {
-      const books = await this.bookGenerationService.searchBookQuery(userId, input);
-      return {
-        message: 'Books successfully retrieved.',
-        data: books,
-      };
-    } catch (error) {
-      this.logger.error(`Error retrieving books for user ID: ${userId}`, error.stack);
-      throw new InternalServerErrorException('An error occurred while fetching books.');
-    }
-  }
+  //   try {
+  //     const books = await this.bookGenerationService.searchBookQuery(userId, input);
+  //     return {
+  //       message: 'Books successfully retrieved.',
+  //       data: books,
+  //     };
+  //   } catch (error) {
+  //     this.logger.error(`Error retrieving books for user ID: ${userId}`, error.stack);
+  //     throw new InternalServerErrorException('An error occurred while fetching books.');
+  //   }
+  // }
 
 
 }

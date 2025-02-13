@@ -4,7 +4,6 @@ import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/types/request-with-user.interface';
 import { BookChapterGenerationDto } from './dto/book-chapter.dto';
 import { Observable, Subject } from 'rxjs';
-// import { Response } from 'express';
 
 @Controller('book-chapter')
 export class BookChapterController {
@@ -17,7 +16,6 @@ private chapterTextUpdate=new Subject<string>()
   async generateChapterOfBook(
     @Body() bookGenerationDto: BookChapterGenerationDto,
     @Req() request: RequestWithUser,
-    // @Res() response: any
   ) {
     const userId = request.user?.id;
     this.logger.log(`Generating chapter for user ID: ${userId}`);
@@ -29,17 +27,14 @@ private chapterTextUpdate=new Subject<string>()
 
     try {
       
-        // response.status(200).send("OK");
       
       // Generate chapter and stream it via SSE
-      const savedChapter = await this.bookChapterService.generateChapterOfBook(userId, bookGenerationDto,(text:string)=>{
+      const savedChapter = await this.bookChapterService.generateChapterOfBook( bookGenerationDto,(text:string)=>{
         this.chapterTextUpdate.next(text);
       });
       this.logger.log(`Chapter successfully generated and saved for user ID: ${userId}`);
       
-      // Trigger SSE streaming for real-time updates
-      // await this.bookChapterService.streamChapterContent(bookGenerationDto, savedChapter.bookGeneration);
-      return {
+       return {
         statusCode:200,
         message: 'Chapter successfully generated and saved.',
         data: savedChapter,
@@ -64,28 +59,5 @@ return ()=>subscribe.unsubscribe()
 })
   }
 
-  // @Sse('chapter-stream/:bookId/:chapterNo')
-  // async streamChapter(
-  //   @Param() params: { bookId: string; chapterNo: number },
-  //   @Res() res: Response,
-  // ) {
-  //   const book = await this.bookChapterService.getBook(+params.bookId);
-  //   const input = {
-  //     bookGenerationId: +params.bookId,
-  //     chapterNo: params.chapterNo,
-  //   };
-
-  //   // Retrieve and stream chapter content using SSE
-  //   const observable = await this.bookChapterService.streamChapterContent(input, book);
-
-  //   // Set necessary headers for SSE
-  //   res.setHeader('Content-Type', 'text/event-stream');
-  //   res.setHeader('Cache-Control', 'no-cache');
-  //   res.setHeader('Connection', 'keep-alive');
-
-  //   return observable.pipe(
-  //     map((data) => ({ data })),
-  //     catchError((error) => of({ error })) // Wrap the object with 'of'
-  //   );
-  // }
+  
 }

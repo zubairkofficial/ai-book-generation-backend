@@ -8,13 +8,13 @@ export class BookChapterGenerationDto {
   @Transform(({ value }) => parseInt(value, 10))
   @IsNumber()
   @IsNotEmpty()
-  minCharacters: number;
+  minWords: number;
 
   @ApiProperty({ description: 'The number of maximum characters in the Chapter' })
   @Transform(({ value }) => parseInt(value, 10))
   @IsNumber()
   @IsNotEmpty()
-  maxCharacters: number;
+  maxWords: number;
 
   @ApiProperty({ description: 'Book Chapter No' })
   @Transform(({ value }) => parseInt(value, 10))
@@ -32,5 +32,13 @@ export class BookChapterGenerationDto {
   @IsString()
   @IsOptional()
   additionalInfo: string;
+
+  @IsString()
+  @IsOptional()
+  imagePrompt: string;
+
+  @IsNumber()
+  @IsOptional()
+  noOfImages: number;
 
 }

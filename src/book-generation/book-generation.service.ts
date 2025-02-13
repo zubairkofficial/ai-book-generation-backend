@@ -13,6 +13,7 @@ import { exec } from 'child_process';
 import mermaid from 'mermaid';
 import {  BookGenerationDto, SearchDto } from './dto/book-generation.dto';
 import { allowedSizes } from 'src/common';
+import { UserDto } from 'src/auth/types/request-with-user.interface';
 
 @Injectable()
 export class BookGenerationService {
@@ -240,7 +241,7 @@ export class BookGenerationService {
       return imagePath;
     } catch (error) {
       this.logger.error(`Error generating book cover: ${error.message}`);
-      throw new Error('Failed to generate book cover');
+      throw new Error(`Failed to generate book cover ${error.message}`);
     }
   }
 
@@ -487,15 +488,20 @@ export class BookGenerationService {
       throw new Error('Failed to create book content');
     }
   }
-  async getAllBooksByUser(userId: number): Promise<BookGeneration[]> {
-    return await this.bookGenerationRepository
+  async getAllBooksByUser(user: UserDto): Promise<BookGeneration[]> {
+    const query = this.bookGenerationRepository
       .createQueryBuilder('bookGeneration')
-      .leftJoinAndSelect('bookGeneration.bookChapter', 'bookChapter')  // Join bookChapter relation
-      .where('bookGeneration.userId = :userId', { userId })
-      .orderBy('bookGeneration.createdAt', 'DESC')  // Order bookGeneration by createdAt DESC
-      .addOrderBy('bookChapter.createdAt', 'ASC')  // Order bookChapter by createdAt DESC
-      .getMany();
+      .leftJoinAndSelect('bookGeneration.bookChapter', 'bookChapter')
+      .orderBy('bookGeneration.createdAt', 'DESC')
+      .addOrderBy('bookChapter.createdAt', 'ASC');
+  
+    if (user.role !== 'admin') {
+      query.where('bookGeneration.userId = :userId', { userId: user.id });
+    }
+  
+    return await query.getMany();
   }
+  
   
 
   async getBook(id:number) {

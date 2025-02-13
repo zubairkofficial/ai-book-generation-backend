@@ -8,3 +8,11 @@ export interface RequestWithUser extends Request {
     // Add other user properties as needed
   };
 }
+export interface UserDto {
+
+    id: number; // or number, depending on your user ID type
+    email: string;
+    role:string
+    // Add other user properties as needed
+
+}
