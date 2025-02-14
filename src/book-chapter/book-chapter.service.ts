@@ -266,6 +266,7 @@ export class BookChapterService {
     input: BookChapterGenerationDto,
     onTextUpdate: (text: string) => void
   ) {
+    try{
     await this.initializeAIModels();
     const bookInfo = await this.bookGenerationRepository.findOne({
       where: { id: input.bookGenerationId },
@@ -280,6 +281,11 @@ export class BookChapterService {
     const savedMetadataBook =
       await this.bookChapterRepository.save(bookChapter);
     return savedMetadataBook;
+  }
+    catch (error) {
+      console.error('Error generating book chapter:', error);
+      throw new Error(error.message);
+    }
   }
   async getBook(id: number) {
     return await this.bookGenerationRepository.findOne({ where: { id } });
