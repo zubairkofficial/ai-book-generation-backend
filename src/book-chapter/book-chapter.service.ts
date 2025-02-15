@@ -276,7 +276,7 @@ export class BookChapterService {
       return formattedChapter;
     } catch (error) {
       console.error("Error generating chapter content with streaming and images:", error);
-      throw new Error("Failed to generate chapter content with images");
+      throw new Error(error.message);
     }
   }
   
