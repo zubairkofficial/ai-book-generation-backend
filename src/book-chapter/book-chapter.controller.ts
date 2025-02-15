@@ -41,7 +41,7 @@ private chapterTextUpdate=new Subject<string>()
       };
     } catch (error) {
       this.logger.error(`Error generating and saving chapter for user ID: ${userId}`, error.stack);
-      throw new InternalServerErrorException('An error occurred while generating and saving the chapter.');
+      throw new InternalServerErrorException(error.message);
     }
   }
   @Sse('chapter-stream')
