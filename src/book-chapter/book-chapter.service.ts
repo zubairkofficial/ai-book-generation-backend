@@ -10,7 +10,7 @@ import * as path from "path";
 import { BookChapterGenerationDto } from "./dto/book-chapter.dto";
 import { BookGeneration } from "src/book-generation/entities/book-generation.entity";
 import { BookChapter } from "./entities/book-chapter.entity";
-
+import { ConversationSummaryBufferMemory  } from "langchain/memory";
 @Injectable()
 export class BookChapterService {
   private textModel;
@@ -66,7 +66,8 @@ export class BookChapterService {
 
       this.textModel = new ChatOpenAI({
         openAIApiKey: apiKeyRecord[0].openai_key,
-        temperature: 0.4,
+        temperature: 0.7,
+        maxTokens: 16000,
         modelName: apiKeyRecord[0].model,
       });
 
@@ -135,102 +136,120 @@ export class BookChapterService {
   private async ChapterContent(
     promptData: BookChapterGenerationDto,
     bookInfo: BookGeneration,
-    onTextUpdate: { (text: string): void; (arg0: string): void; }
+    onTextUpdate: (text: string) => void
   ): Promise<string> {
     try {
+      // Initialize memory for conversation context
+      const memory = new ConversationSummaryBufferMemory({
+        llm: this.textModel, // Uses the model to generate summaries automatically
+        memoryKey: "chapter_summary", // Stores summarized chapter details
+        returnMessages: true, // Ensures memory retains past summaries
+      });
+  
+      // Construct the prompt
       const chapterPrompt = `
-            You are a master storyteller and novelist. Your task is to write **Chapter ${promptData.chapterNo}** of the book titled **"${bookInfo.bookTitle}".
-            
-            ## 📖 Book Information:
-            - **Genre**: ${bookInfo.genre}
-            - **Author**: ${bookInfo.authorName || "An esteemed writer"}
-            - **Core Idea**: ${bookInfo.ideaCore || "A captivating tale filled with mystery and adventure."}
-            - **Author Bio**: ${bookInfo.authorBio || "A well-renowned storyteller with a knack for deep narratives."}
-            - **Target Audience**: ${bookInfo.targetAudience || "Readers who enjoy immersive storytelling and suspenseful plots."}
-            - **Language**: The book is written in ${bookInfo.language || "English"}.
-            
-            ## 🖊️ Chapter Writing Instructions:
-            - Begin with a **chapter title** that encapsulates the essence of the chapter.
-            - Develop **${bookInfo.characters || "dynamic"}** characters with depth, unique personalities, and compelling motivations.
-            - Use **rich descriptions** to create immersive settings and build atmosphere.
-            - Your writing must contain at least **${promptData.minWords || 500} words** .
-            - The maximum word limit should not exceed **${promptData.maxWords || 2000} words**.
-            - If necessary, **expand descriptions, add internal monologues, deepen character interactions, or enhance world-building** to meet the required length.
-            - **Do not abruptly end the chapter**—continue writing naturally until a satisfying point is reached.
-            
-            ## 🔍 Additional Guidance:
-            ${promptData.additionalInfo || "Follow the established style, tone, and pacing from previous chapters."}
-            
-            ---
-            
-            **📝 Begin Chapter ${promptData.chapterNo}:**
-            `;
-
+        You are a master book writer. Your task is to write **Chapter ${promptData.chapterNo}** of the book titled **"${bookInfo.bookTitle}"**.
+  
+        ## 📖 Book Information:
+        - **Genre**: ${bookInfo.genre}
+        - **Author**: ${bookInfo.authorName || "A knowledgeable expert"}
+        - **Core Idea**: ${bookInfo.ideaCore || "A detailed and insightful book on the subject."}
+        - **Target Audience**: ${bookInfo.targetAudience || "Professionals, students, and knowledge seekers."}
+        - **Language**: The book is written in ${bookInfo.language || "English"}.
+  
+        ## 🎯 Writing Style:
+        Based on the genre **"${bookInfo.genre}"**, adopt an appropriate writing style.
+        - Use a **tone** and **structure** that aligns with the genre.
+        - Adapt the complexity and depth based on the **target audience**.
+  
+        ## 📝 Context Memory (Summarized Previous Chapters):
+        ${memory}
+  
+        ## 📖 Chapter Writing Instructions:
+        - Begin with a **strong introduction** that aligns with the book's theme.
+        - **Your writing must contain between ${promptData.minWords || 5000} and ${promptData.maxWords || 20000} words**.
+        - **DO NOT** generate content below the minimum word count.
+        - **DO NOT** exceed the maximum word count.
+  
+        ## 🔍 Additional Guidance:
+        ${promptData.additionalInfo || "Follow the established style, tone, and pacing from previous chapters."}
+  
+        ---
+        ## 📝 Previous Chapter Summary:
+        ${memory || "No previous summary available."}
+  
+        **📝 Begin Chapter ${promptData.chapterNo}:**
+      `;
+  
+      // Stream response using OpenAI API
+      const stream = await this.textModel.stream(chapterPrompt);
       let chapterText = "";
-      chapterText = await this.invokeWithSimulatedStreaming.call(
-        this,
-        chapterPrompt,
-        (token: string) => {
-          process.stdout.write(token);
-          chapterText += token;
-          onTextUpdate(token);
-        }
-      );
-
-      if (!chapterText || chapterText.trim() === "") {
-        throw new Error(
-          `Chapter ${promptData.chapterNo} content is empty or undefined`
-        );
+      const chunks = [];
+  
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+        chapterText += chunk.content;
+        onTextUpdate(chunk.content); // Send real-time updates
       }
+  
+      // Ensure chapter text is not empty
+      if (!chapterText || chapterText.trim() === "") {
+        throw new Error(`Chapter ${promptData.chapterNo} content is empty or undefined`);
+      }
+  
       const baseUrl = this.configService.get<string>("BASE_URL");
-
-      const imageCount = Math.floor(Math.random() * 2) + 2;
+  
+      // Generate images
+      const imageCount = Math.floor(Math.random() * 2) + 2; // Generate 2 or 3 images
       const totalImages = Math.min(+promptData.noOfImages, imageCount);
       const chapterImages: { title: string; url: string }[] = [];
+  
       for (let imageIndex = 1; imageIndex <= totalImages; imageIndex++) {
-        let formattedImage = ``; // Include chapter title at the beginning
-
+        let formattedImage = ``;
+  
         const imageTitlePrompt = `
-              Provide a short but descriptive title for an illustration in Chapter ${promptData.chapterNo} of the book "${bookInfo.bookTitle}".
-              Genre: "${bookInfo.genre}"
-             Target Audience: "${bookInfo.targetAudience}"
-              Language: "${bookInfo.language}"
-              Please ensure the title is unique and relevant to the chapter's content.
-           ## Illustration Guidance:
-  ${promptData.imagePrompt || "Illustrate a key scene from the chapter with vivid imagery, capturing the essence of the story."}
-              `;
-
-        const imageTitleResponse =
-          await this.textModel.invoke(imageTitlePrompt);
-        const imageTitle =
-          imageTitleResponse.content?.trim() || `Image ${imageIndex}`;
+          Provide a short but descriptive title for an illustration in Chapter ${promptData.chapterNo} of the book "${bookInfo.bookTitle}".
+          Genre: "${bookInfo.genre}"
+          Target Audience: "${bookInfo.targetAudience}"
+          Language: "${bookInfo.language}"
+          Please ensure the title is unique and relevant to the chapter's content.
+  
+          ## Illustration Guidance:
+          ${promptData.imagePrompt || "Illustrate a key thought or idea from the chapter with vivid imagery, capturing the essence of the chapter."}
+        `;
+  
+        const imageTitleResponse = await this.textModel.invoke(imageTitlePrompt);
+        const imageTitle = imageTitleResponse.content?.trim() || `Image ${imageIndex}`;
+  
         const imagePrompt = `
-  Create an illustration titled "${imageTitle}" for Chapter ${promptData.chapterNo} in "${bookInfo.bookTitle}".
-  Genre: "${bookInfo.genre}"
-  Target Audience: "${bookInfo.targetAudience}"
-
-  ## Illustration Guidance:
-  ${promptData.imagePrompt || "Illustrate a key scene from the chapter with vivid imagery, capturing the essence of the story."}
-`;
-
+          Create an image titled "${imageTitle}" for Chapter ${promptData.chapterNo} in "${bookInfo.bookTitle}".
+          Genre: "${bookInfo.genre}"
+          Target Audience: "${bookInfo.targetAudience}"
+  
+          ## Illustration Guidance:
+          ${promptData.imagePrompt || "Illustrate a key scene from the chapter with vivid imagery, capturing the essence of the story."}
+        `;
+  
         const imageResponse = await this.openai.images.generate({
+          model: "dall-e-3",
           prompt: imagePrompt,
           n: 1,
           size: "1024x1024",
           response_format: "b64_json",
         });
+  
         if (imageResponse.data?.[0]?.b64_json) {
           const savedImagePath = await this.saveImage(
             `data:image/png;base64,${imageResponse.data[0].b64_json}`,
             `${bookInfo.bookTitle}_chapter_${promptData.chapterNo}_image_${imageIndex}`,
             "chapters"
           );
+  
           chapterImages.push({ title: imageTitle, url: savedImagePath });
-
-          formattedImage += `${imageTitle}\n\n`;
-
+  
+          formattedImage += `### ${imageTitle}\n\n`;
           formattedImage += `![${imageTitle}](${baseUrl}/uploads/${savedImagePath})\n\n`;
-
+  
           onTextUpdate(formattedImage);
         } else {
           this.logger.warn(
@@ -238,55 +257,84 @@ export class BookChapterService {
           );
         }
       }
-
-      const chunkSize = Math.ceil(
-        chapterText.length / (chapterImages.length + 1)
-      );
-      const textChunks = chapterText.match(
-        new RegExp(`.{1,${chunkSize}}`, "g")
-      ) || ["No content generated."];
-
-      let formattedChapter = ``; // Include chapter title at the beginning
-
-      for (let i = 0; i < chapterImages.length; i++) {
-        formattedChapter += `${textChunks[i] || ""}\n\n`;
-        formattedChapter += `${chapterImages[i].title}\n\n`;
-        formattedChapter += `![${chapterImages[i].title}](${baseUrl}/uploads/${chapterImages[i].url})\n\n`;
+  
+      // Split text into chunks and insert images dynamically
+      const chunkSize = Math.ceil(chapterText.length / (chapterImages.length + 1));
+      const textChunks = chapterText.match(new RegExp(`.{1,${chunkSize}}`, "g")) || ["No content generated."];
+  
+      let formattedChapter = "";
+  
+      for (let i = 0; i < textChunks.length; i++) {
+        formattedChapter += textChunks[i] + "\n\n";
+  
+        if (chapterImages[i]) {
+          formattedChapter += `### ${chapterImages[i].title}\n\n`;
+          formattedChapter += `![${chapterImages[i].title}](${baseUrl}/uploads/${chapterImages[i].url})\n\n`;
+        }
       }
-      formattedChapter += textChunks[chapterImages.length] || ""; // Add the remaining text
-
+  
       return formattedChapter;
     } catch (error) {
-      console.error("Error generating chapter content with images:", error);
+      console.error("Error generating chapter content with streaming and images:", error);
       throw new Error("Failed to generate chapter content with images");
     }
   }
+  
+  
 
   async generateChapterOfBook(
     input: BookChapterGenerationDto,
     onTextUpdate: (text: string) => void
   ) {
-    try{
-    await this.initializeAIModels();
-    const bookInfo = await this.bookGenerationRepository.findOne({
-      where: { id: input.bookGenerationId },
-    });
-    const chapters = await this.ChapterContent(input, bookInfo, onTextUpdate);
-    const bookChapter = new BookChapter();
-    bookChapter.bookGeneration = bookInfo;
-    bookChapter.maxWords = input.maxWords;
-    bookChapter.minWords = input.minWords;
-    bookChapter.chapterNo = input.chapterNo;
-    bookChapter.chapterInfo = chapters;
-    const savedMetadataBook =
-      await this.bookChapterRepository.save(bookChapter);
-    return savedMetadataBook;
-  }
-    catch (error) {
-      console.error('Error generating book chapter:', error);
+    try {
+      await this.initializeAIModels();
+  
+      // Retrieve the book generation info
+      const bookInfo = await this.bookGenerationRepository.findOne({
+        where: { id: input.bookGenerationId },
+      });
+  
+      if (!bookInfo) {
+        throw new Error("Book generation record not found.");
+      }
+  
+      // Check if chapter already exists for the given bookGenerationId & chapterNo
+      let bookChapter = await this.bookChapterRepository.findOne({
+        where: {
+          bookGeneration: { id: input.bookGenerationId },
+          chapterNo: input.chapterNo,
+        },
+        relations: ["bookGeneration"], // Ensure related data is loaded
+      });
+      
+  
+      // Generate new chapter content
+      const formattedChapter = await this.ChapterContent(input, bookInfo, onTextUpdate);
+  
+      if (bookChapter) {
+        // If chapter exists, update it
+        bookChapter.chapterInfo = formattedChapter;
+        bookChapter.maxWords = input.maxWords;
+        bookChapter.minWords = input.minWords;
+      } else {
+        // If chapter does not exist, create a new record
+        bookChapter = new BookChapter();
+        bookChapter.bookGeneration = bookInfo;
+        bookChapter.chapterNo = input.chapterNo;
+        bookChapter.chapterInfo = formattedChapter;
+        bookChapter.maxWords = input.maxWords;
+        bookChapter.minWords = input.minWords;
+      }
+  
+      // Save (either insert or update)
+      const savedChapter = await this.bookChapterRepository.save(bookChapter);
+      return savedChapter;
+    } catch (error) {
+      console.error("Error generating book chapter:", error);
       throw new Error(error.message);
     }
   }
+  
   async getBook(id: number) {
     return await this.bookGenerationRepository.findOne({ where: { id } });
   }

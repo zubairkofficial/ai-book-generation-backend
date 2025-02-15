@@ -30,8 +30,8 @@ export class BookGenerationDto {
 
   @ApiProperty({ description: 'The main characters in the book' })
   @IsString()
-  @IsNotEmpty()
-  characters: string;
+  @IsOptional()
+  characters?: string;
 
   @ApiProperty({ description: 'The book information idea in the book' })
   @IsString()

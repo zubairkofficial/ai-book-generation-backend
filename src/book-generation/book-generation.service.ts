@@ -1,24 +1,24 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Injectable, Logger } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
 import { ChatOpenAI, OpenAI as LangchainOpenAI } from "@langchain/openai"; // For text generation
 import { PromptTemplate } from "@langchain/core/prompts";
-import { ConfigService } from '@nestjs/config';
-import { BookGeneration } from './entities/book-generation.entity';
-import OpenAI from 'openai'; // For DALL·E image generation
-import * as fs from 'fs';
-import * as path from 'path';
-import { ApiKey } from 'src/api-keys/entities/api-key.entity';
-import { exec } from 'child_process';
-import mermaid from 'mermaid';
-import {  BookGenerationDto, SearchDto } from './dto/book-generation.dto';
-import { allowedSizes } from 'src/common';
-import { UserDto } from 'src/auth/types/request-with-user.interface';
+import { ConfigService } from "@nestjs/config";
+import { BookGeneration } from "./entities/book-generation.entity";
+import OpenAI from "openai"; // For DALL·E image generation
+import * as fs from "fs";
+import * as path from "path";
+import { ApiKey } from "src/api-keys/entities/api-key.entity";
+import { exec } from "child_process";
+import mermaid from "mermaid";
+import { BookGenerationDto, SearchDto } from "./dto/book-generation.dto";
+import { allowedSizes } from "src/common";
+import { UserDto } from "src/auth/types/request-with-user.interface";
 
 @Injectable()
 export class BookGenerationService {
   private textModel;
-  
+
   private openai: OpenAI;
   private readonly logger = new Logger(BookGenerationService.name);
   private readonly uploadsDir: string;
@@ -29,14 +29,14 @@ export class BookGenerationService {
     private bookGenerationRepository: Repository<BookGeneration>,
     @InjectRepository(ApiKey)
     private apiKeyRepository: Repository<ApiKey>
-    ) {
-      this.uploadsDir = this.setupUploadsDirectory();
+  ) {
+    this.uploadsDir = this.setupUploadsDirectory();
   }
   private async initializeAIModels() {
     try {
-      const apiKeyRecord:any = await this.apiKeyRepository.find();
+      const apiKeyRecord: any = await this.apiKeyRepository.find();
       if (!apiKeyRecord) {
-        throw new Error('No API keys found in the database.');
+        throw new Error("No API keys found in the database.");
       }
 
       this.textModel = new ChatOpenAI({
@@ -49,23 +49,25 @@ export class BookGenerationService {
         apiKey: apiKeyRecord[0].dalle_key,
       });
 
-      this.logger.log(`AI Models initialized successfully with model: ${apiKeyRecord[0].model}`);
+      this.logger.log(
+        `AI Models initialized successfully with model: ${apiKeyRecord[0].model}`
+      );
     } catch (error) {
       this.logger.error(`Failed to initialize AI models: ${error.message}`);
-      throw new Error('Failed to initialize AI models.');
+      throw new Error("Failed to initialize AI models.");
     }
   }
   private setupUploadsDirectory(): string {
     const rootDir = process.cwd();
-    const uploadsPath = path.join(rootDir, 'uploads');
+    const uploadsPath = path.join(rootDir, "uploads");
 
     try {
       if (!fs.existsSync(uploadsPath)) {
         fs.mkdirSync(uploadsPath, { recursive: true });
       }
 
-      const directories = ['covers', 'chapters', 'temp','graphs'];
-      directories.forEach(dir => {
+      const directories = ["covers", "chapters", "temp", "graphs"];
+      directories.forEach((dir) => {
         const dirPath = path.join(uploadsPath, dir);
         if (!fs.existsSync(dirPath)) {
           fs.mkdirSync(dirPath, { recursive: true });
@@ -76,11 +78,15 @@ export class BookGenerationService {
       return uploadsPath;
     } catch (error) {
       this.logger.error(`Error setting up uploads directory: ${error.message}`);
-      throw new Error('Failed to setup uploads directory');
+      throw new Error("Failed to setup uploads directory");
     }
   }
 
-  private async saveImage(imageData: string, fileName: string, subDirectory: string = 'covers'): Promise<string> {
+  private async saveImage(
+    imageData: string,
+    fileName: string,
+    subDirectory: string = "covers"
+  ): Promise<string> {
     try {
       const dirPath = path.join(this.uploadsDir, subDirectory);
       if (!fs.existsSync(dirPath)) {
@@ -88,113 +94,147 @@ export class BookGenerationService {
       }
 
       const timestamp = new Date().getTime();
-      const sanitizedFileName = fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const sanitizedFileName = fileName
+        .replace(/[^a-z0-9]/gi, "_")
+        .toLowerCase();
       const fullFileName = `${sanitizedFileName}_${timestamp}.png`;
       const filePath = path.join(dirPath, fullFileName);
 
-      const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
-      fs.writeFileSync(filePath, base64Data, { encoding: 'base64' });
+      const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
+      fs.writeFileSync(filePath, base64Data, { encoding: "base64" });
 
       this.logger.log(`Image saved successfully: ${filePath}`);
       return path.join(subDirectory, fullFileName);
     } catch (error) {
       this.logger.error(`Error saving image: ${error.message}`);
-      throw new Error('Failed to save image');
+      throw new Error("Failed to save image");
     }
   }
 
-
-  
-  private async saveFlowchartImage(mermaidCode: string, fileName: string): Promise<string> {
+  private async saveFlowchartImage(
+    mermaidCode: string,
+    fileName: string
+  ): Promise<string> {
     try {
-      const dirPath = path.join(this.uploadsDir, 'flowcharts');
+      const dirPath = path.join(this.uploadsDir, "flowcharts");
       if (!fs.existsSync(dirPath)) {
         fs.mkdirSync(dirPath, { recursive: true });
       }
-  
+
       const timestamp = new Date().getTime();
-      const sanitizedFileName = fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      const mermaidFilePath = path.join(dirPath, `${sanitizedFileName}_${timestamp}.mmd`);
-      const svgFilePath = path.join(dirPath, `${sanitizedFileName}_${timestamp}.svg`);
-  
+      const sanitizedFileName = fileName
+        .replace(/[^a-z0-9]/gi, "_")
+        .toLowerCase();
+      const mermaidFilePath = path.join(
+        dirPath,
+        `${sanitizedFileName}_${timestamp}.mmd`
+      );
+      const svgFilePath = path.join(
+        dirPath,
+        `${sanitizedFileName}_${timestamp}.svg`
+      );
+
       // Write Mermaid.js syntax to a file
-      fs.writeFileSync(mermaidFilePath, mermaidCode, 'utf-8');
-  
+      fs.writeFileSync(mermaidFilePath, mermaidCode, "utf-8");
+
       // Use mermaid-cli (mmdc) to generate SVG
       await new Promise((resolve, reject) => {
-        exec(`npx mmdc -i "${mermaidFilePath}" -o "${svgFilePath}"`, (error, stdout, stderr) => {
-          if (error) {
-            reject(`Error executing Mermaid CLI: ${stderr}`);
-          } else {
-            resolve(stdout);
+        exec(
+          `npx mmdc -i "${mermaidFilePath}" -o "${svgFilePath}"`,
+          (error, stdout, stderr) => {
+            if (error) {
+              reject(`Error executing Mermaid CLI: ${stderr}`);
+            } else {
+              resolve(stdout);
+            }
           }
-        });
+        );
       });
-  
+
       this.logger.log(`Flowchart saved: ${svgFilePath}`);
-      return path.join('flowcharts', `${sanitizedFileName}_${timestamp}.svg`);
+      return path.join("flowcharts", `${sanitizedFileName}_${timestamp}.svg`);
     } catch (error) {
       this.logger.error(`Error saving flowchart: ${error.message}`);
-      throw new Error('Failed to save flowchart');
+      throw new Error("Failed to save flowchart");
     }
   }
-  private async saveDiagramImage(mermaidCode: string, fileName: string): Promise<string> {
+  private async saveDiagramImage(
+    mermaidCode: string,
+    fileName: string
+  ): Promise<string> {
     try {
-      const dirPath = path.join(this.uploadsDir, 'graphs');
+      const dirPath = path.join(this.uploadsDir, "graphs");
       if (!fs.existsSync(dirPath)) {
         fs.mkdirSync(dirPath, { recursive: true });
       }
-  
+
       const timestamp = new Date().getTime();
-      const sanitizedFileName = fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      const mermaidFilePath = path.join(dirPath, `${sanitizedFileName}_${timestamp}.mmd`);
-      const svgFilePath = path.join(dirPath, `${sanitizedFileName}_${timestamp}.svg`);
-  
+      const sanitizedFileName = fileName
+        .replace(/[^a-z0-9]/gi, "_")
+        .toLowerCase();
+      const mermaidFilePath = path.join(
+        dirPath,
+        `${sanitizedFileName}_${timestamp}.mmd`
+      );
+      const svgFilePath = path.join(
+        dirPath,
+        `${sanitizedFileName}_${timestamp}.svg`
+      );
+
       // Write Mermaid.js syntax to a file
-      fs.writeFileSync(mermaidFilePath, mermaidCode, 'utf-8');
-  
+      fs.writeFileSync(mermaidFilePath, mermaidCode, "utf-8");
+
       // Use mermaid-cli (mmdc) to generate SVG
       await new Promise((resolve, reject) => {
-        exec(`npx mmdc -i "${mermaidFilePath}" -o "${svgFilePath}"`, (error, stdout, stderr) => {
-          if (error) {
-            reject(`Error executing Mermaid CLI: ${stderr}`);
-          } else {
-            resolve(stdout);
+        exec(
+          `npx mmdc -i "${mermaidFilePath}" -o "${svgFilePath}"`,
+          (error, stdout, stderr) => {
+            if (error) {
+              reject(`Error executing Mermaid CLI: ${stderr}`);
+            } else {
+              resolve(stdout);
+            }
           }
-        });
+        );
       });
-  
+
       this.logger.log(`Flowchart saved: ${svgFilePath}`);
-      return path.join('graphs', `${sanitizedFileName}_${timestamp}.svg`);
+      return path.join("graphs", `${sanitizedFileName}_${timestamp}.svg`);
     } catch (error) {
       this.logger.error(`Error saving flowchart: ${error.message}`);
-      throw new Error('Failed to save flowchart');
+      throw new Error("Failed to save flowchart");
     }
   }
-  
 
-  private async generateBookCover(promptData: BookGenerationDto): Promise<string> {
+  private async generateBookCover(
+    promptData: BookGenerationDto
+  ): Promise<string> {
     try {
-      type AllowedSize = typeof allowedSizes[number];
+      type AllowedSize = (typeof allowedSizes)[number];
 
-      const imageSize = this.configService.get<string>('IMAGE_SIZE') as AllowedSize;
+      const imageSize = this.configService.get<string>(
+        "IMAGE_SIZE"
+      ) as AllowedSize;
 
       if (!allowedSizes.includes(imageSize)) {
-        throw new Error(`Invalid image size: ${imageSize}. Allowed sizes are: ${allowedSizes.join(', ')}`);
+        throw new Error(
+          `Invalid image size: ${imageSize}. Allowed sizes are: ${allowedSizes.join(", ")}`
+        );
       }
 
-      const coverImagePrompt = promptData.bookInformation || 
+      const coverImagePrompt =
+        promptData.bookInformation ||
         `Create a professional book cover for "${promptData.bookTitle}", a ${promptData.genre} book.`;
 
       const response = await this.openai.images.generate({
         prompt: coverImagePrompt,
         n: 1,
         size: imageSize,
-        response_format: 'b64_json'
+        response_format: "b64_json",
       });
 
       if (!response.data[0]?.b64_json) {
-        throw new Error('No image data received from OpenAI');
+        throw new Error("No image data received from OpenAI");
       }
 
       const imagePath = await this.saveImage(
@@ -205,32 +245,45 @@ export class BookGenerationService {
       return imagePath;
     } catch (error) {
       this.logger.error(`Error generating book cover: ${error.message}`);
-      throw new Error('Failed to generate book cover');
+      throw new Error(error.message);
     }
   }
-  private async generateBookBackgroundCover(promptData: BookGenerationDto): Promise<string> {
+  private async generateBookBackgroundCover(
+    promptData: BookGenerationDto
+  ): Promise<string> {
     try {
-      const allowedSizes = ['256x256', '512x512', '1024x1024', '1792x1024', '1024x1792'] as const;
-      type AllowedSize = typeof allowedSizes[number];
+      const allowedSizes = [
+        "256x256",
+        "512x512",
+        "1024x1024",
+        "1792x1024",
+        "1024x1792",
+      ] as const;
+      type AllowedSize = (typeof allowedSizes)[number];
 
-      const imageSize = this.configService.get<string>('IMAGE_SIZE') as AllowedSize;
+      const imageSize = this.configService.get<string>(
+        "IMAGE_SIZE"
+      ) as AllowedSize;
 
       if (!allowedSizes.includes(imageSize)) {
-        throw new Error(`Invalid image size: ${imageSize}. Allowed sizes are: ${allowedSizes.join(', ')}`);
+        throw new Error(
+          `Invalid image size: ${imageSize}. Allowed sizes are: ${allowedSizes.join(", ")}`
+        );
       }
 
-      const coverImagePrompt = promptData.bookInformation || 
+      const coverImagePrompt =
+        promptData.bookInformation ||
         `Create a professional book back cover for "${promptData.bookTitle}", a ${promptData.genre} book.`;
 
       const response = await this.openai.images.generate({
         prompt: coverImagePrompt,
         n: 1,
         size: imageSize,
-        response_format: 'b64_json'
+        response_format: "b64_json",
       });
 
       if (!response.data[0]?.b64_json) {
-        throw new Error('No image data received from OpenAI');
+        throw new Error("No image data received from OpenAI");
       }
 
       const imagePath = await this.saveImage(
@@ -245,42 +298,43 @@ export class BookGenerationService {
     }
   }
 
- private getDefaultStyling() {
-  return {
-    diagramConfig: {
-      theme: 'base',
-      themeVariables: {
-        primaryColor: '#F6F6F6',
-        edgeLabelBackground: '#FFFFFF',
-        fontSize: '16px',
-        fontFamily: 'Arial'
-      }
-    },
-    diagramStyles: {
-      decisionNodes: { shape: 'diamond', color: '#FFA500' },
-      actionNodes: { shape: 'rect', color: '#87CEEB' },
-      outcomeNodes: { shape: 'roundRect', color: '#90EE90' }
-    }
-  };
-}
+  private getDefaultStyling() {
+    return {
+      diagramConfig: {
+        theme: "base",
+        themeVariables: {
+          primaryColor: "#F6F6F6",
+          edgeLabelBackground: "#FFFFFF",
+          fontSize: "16px",
+          fontFamily: "Arial",
+        },
+      },
+      diagramStyles: {
+        decisionNodes: { shape: "diamond", color: "#FFA500" },
+        actionNodes: { shape: "rect", color: "#87CEEB" },
+        outcomeNodes: { shape: "roundRect", color: "#90EE90" },
+      },
+    };
+  }
 
-
-  private async introductionContent(promptData: BookGenerationDto): Promise<string> {
+  private async introductionContent(promptData: BookGenerationDto) {
     try {
       const sections: string[] = [];
       const coverPagePrompt = `
         Create a professional Cover Page with the following details:
         - Title: "${promptData.bookTitle}"
-        - Author: "${promptData.authorName || 'Anonymous'}"
-        - Publisher: ${promptData.authorName || 'AiBookPublisher'}
-        - AuthorBio: ${promptData.authorBio || 'Writter'}
-        - Language: ${promptData.language || 'English'}
+        - Author: "${promptData.authorName || "Anonymous"}"
+        - Publisher: ${promptData.authorName || "AiBookPublisher"}
+        - AuthorBio: ${promptData.authorBio || "Writter"}
+        - Language: ${promptData.language || "English"}
+        - CoreIdea: ${promptData.bookInformation}
       `;
       const coverPageResponse = await this.textModel.invoke(coverPagePrompt);
 
-      const coverPage = typeof coverPageResponse === 'string' 
-        ? coverPageResponse 
-        : coverPageResponse?.text || JSON.stringify(coverPageResponse);
+      const coverPage =
+        typeof coverPageResponse === "string"
+          ? coverPageResponse
+          : coverPageResponse?.text || JSON.stringify(coverPageResponse);
 
       sections.push(` Cover Page\n${coverPage}\n`);
 
@@ -288,10 +342,11 @@ export class BookGenerationService {
       const dedicationPrompt = `
         Write a dedication for the book titled "${promptData.bookTitle}".
       `;
-      const dedicationResponse = await this.textModel.invoke(dedicationPrompt); 
-      const dedication = typeof dedicationResponse === 'string' 
-      ? dedicationResponse 
-      : dedicationResponse?.text || JSON.stringify(dedicationResponse);
+      const dedicationResponse = await this.textModel.invoke(dedicationPrompt);
+      const dedication =
+        typeof dedicationResponse === "string"
+          ? dedicationResponse
+          : dedicationResponse?.text || JSON.stringify(dedicationResponse);
 
       sections.push(`Dedication\n${dedication}\n`);
 
@@ -300,48 +355,56 @@ export class BookGenerationService {
         Write a compelling preface for the book titled "${promptData.bookTitle}".
         Include sections like Overview, Use in Curriculum, Goals, and Acknowledgments.
       `;
-      const prefaceResponse = await this.textModel.invoke(prefacePrompt); 
-      const preface = typeof prefaceResponse === 'string' 
-      ? prefaceResponse 
-      : prefaceResponse?.text || JSON.stringify(prefaceResponse);
+      const prefaceResponse = await this.textModel.invoke(prefacePrompt);
+      const preface =
+        typeof prefaceResponse === "string"
+          ? prefaceResponse
+          : prefaceResponse?.text || JSON.stringify(prefaceResponse);
 
       sections.push(` Preface\n${preface}\n`);
 
       // Table of Contents
-    //   const tableOfContentsPrompt = `
-    //   Create a well-structured Table of Contents for a book with ${promptData.numberOfChapters} chapters in the following format:
-    //   - Start with the word "Contents" at the top.
-    //   - Use roman numerals for introductory sections like Preface or Foreword.
-    //   - For each chapter, include the chapter number, title, and page number (example page numbers can be used).
-    //   - Subsections should be indented and include subtitles with their respective page numbers.
-    //   - Example Format:
-        
-    //     Contents
-    //     Preface . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . v
-    //     Chapter 1: The Awakening . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 1
-    //       1.1 Discovery of the Prophecy . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4
-    //       1.2 The Dragon's Warning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
-    //     Chapter 2: Shadows of the Past . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
-    //       2.1 The Ruins of the Old City . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
-    //       2.2 Unearthing the Truth . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25
-    //     Chapter 3: The Final Revelation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
-    
-    //   Continue for all chapters, making sure the format is consistent.
-    // `;
-    //   const tableOfContentsResponse = await this.textModel.invoke(tableOfContentsPrompt);
-    //   const tableOfContents = typeof tableOfContentsResponse === 'string' 
-    //   ? tableOfContentsResponse 
-    //   : tableOfContentsResponse?.text || JSON.stringify(tableOfContentsResponse);
+      const tableOfContentsPrompt = `
+  Create a list of unique, engaging chapter titles for a book with ${promptData.numberOfChapters} chapters. Each title should reflect the theme of the book and evoke curiosity. The titles should be concise, descriptive, and hint at the main events or ideas in each chapter.
+
+    - Title: "${promptData.bookTitle}"
+    - Language: ${promptData.language || "English"}
+    - CoreIdea: ${promptData.bookInformation}
+    - Number of Chapters: ${promptData.numberOfChapters}
+   ## Output Format (STRICTLY FOLLOW THIS FORMAT):
+  Chapter 1: [Title]
+  Chapter 2: [Title]
+  Chapter 3: [Title]
+  ...
+  Chapter ${promptData.numberOfChapters}: [Title]
+
+  Continue for all chapters, ensuring each title is creative and fitting for the respective chapter's content.
+`;
+
+      const tableOfContentsResponse = await this.textModel.invoke(
+        tableOfContentsPrompt
+      );
+      const tableOfContents =
+        typeof tableOfContentsResponse === "string"
+          ? tableOfContentsResponse
+          : tableOfContentsResponse?.text ||
+            JSON.stringify(tableOfContentsResponse);
 
       // sections.push(` Table of Contents\n${tableOfContents}\n`);
-    
-      return sections.join('\n');
+
+      return { section: sections.join("\n"), tableOfContents };
     } catch (error) {
-      this.logger.error(`Error generating introduction content: ${error.message}`);
-      throw new Error('Failed to generate introduction content');
+      this.logger.error(
+        `Error generating introduction content: ${error.message}`
+      );
+      throw new Error(error.message);
     }
   }
-  private async generateDiagram(chapterContent: string, chapterNumber: number, bookTitle: string): Promise<string> {
+  private async generateDiagram(
+    chapterContent: string,
+    chapterNumber: number,
+    bookTitle: string
+  ): Promise<string> {
     try {
       const diagramPrompt = `
         Analyze this chapter content and generate a Mermaid.js diagram:
@@ -361,75 +424,85 @@ export class BookGenerationService {
           B -->|Yes| C[Action 1]
           B -->|No| D[Action 2]
       `;
-  
+
       const response = await this.textModel.invoke(diagramPrompt);
-      let diagramCode = response.content.replace(/```mermaid/g, '').replace(/```/g, '').trim();
-  
+      let diagramCode = response.content
+        .replace(/```mermaid/g, "")
+        .replace(/```/g, "")
+        .trim();
+
       // Add styling configuration
       diagramCode = `%%{init: ${JSON.stringify(this.getDefaultStyling().diagramConfig)} }%%\n${diagramCode}`;
-  
-      return this.saveDiagramImage(diagramCode, `chapter_${chapterNumber}_diagram`);
+
+      return this.saveDiagramImage(
+        diagramCode,
+        `chapter_${chapterNumber}_diagram`
+      );
     } catch (error) {
       this.logger.error(`Diagram generation failed: ${error.message}`);
-      return ''; // Fail gracefully
+      return ""; // Fail gracefully
     }
   }
-  
 
-  private async endOfBookContent(promptData: BookGenerationDto): Promise<string> {
+  private async endOfBookContent(
+    promptData: BookGenerationDto
+  ): Promise<string> {
     try {
       const sections: string[] = [];
-  
+
       // Glossary
       const glossaryPrompt = `
         Create a glossary for the book titled "${promptData.bookTitle}". Include definitions of key terms used in the book.
       `;
       const glossaryResponse = await this.textModel.invoke(glossaryPrompt); // Replace with actual API call or logic
-      const glossary = typeof glossaryResponse === 'string' 
-      ? glossaryResponse 
-      : glossaryResponse?.text || JSON.stringify(glossaryResponse);
+      const glossary =
+        typeof glossaryResponse === "string"
+          ? glossaryResponse
+          : glossaryResponse?.text || JSON.stringify(glossaryResponse);
 
       sections.push(` Glossary\n${glossary}\n`);
-  
+
       // Index
       const indexPrompt = `
         Create an index for the book titled "${promptData.bookTitle}". Include key topics with page numbers.
       `;
       const indexResponse = await this.textModel.invoke(indexPrompt); // Replace with actual API call or logic
-     const prefacePrompt = `
+      const prefacePrompt = `
         Write a compelling preface for the book titled "${promptData.bookTitle}".
         Include sections like Overview, Use in Curriculum, Goals, and Acknowledgments.
       `;
-      const prefaceResponse = await this.textModel.invoke(prefacePrompt); 
-      const preface = typeof prefaceResponse === 'string' 
-      ? prefaceResponse 
-      : prefaceResponse?.text || JSON.stringify(prefaceResponse);
+      const prefaceResponse = await this.textModel.invoke(prefacePrompt);
+      const preface =
+        typeof prefaceResponse === "string"
+          ? prefaceResponse
+          : prefaceResponse?.text || JSON.stringify(prefaceResponse);
 
       sections.push(` Preface\n${preface}\n`);
-      const index = typeof indexResponse === 'string' 
-      ? indexResponse 
-      : indexResponse?.text || JSON.stringify(indexResponse);
+      const index =
+        typeof indexResponse === "string"
+          ? indexResponse
+          : indexResponse?.text || JSON.stringify(indexResponse);
 
       sections.push(` Index\n${index}\n`);
-  
+
       // References/Bibliography
       const referencesPrompt = `
         Write a bibliography for the book titled "${promptData.bookTitle}". Include any references or inspirations.
       `;
       const referencesResponse = await this.textModel.invoke(referencesPrompt); // Replace with actual API call or logic
-      const references = typeof referencesResponse === 'string' 
-      ? referencesResponse 
-      : referencesResponse?.text || JSON.stringify(referencesResponse);
+      const references =
+        typeof referencesResponse === "string"
+          ? referencesResponse
+          : referencesResponse?.text || JSON.stringify(referencesResponse);
 
       sections.push(` References\n${references}\n`);
-  
-   
+
       // Combine all sections into a single string
-      const endOfBookContent = sections.join('\n');
+      const endOfBookContent = sections.join("\n");
       return endOfBookContent;
     } catch (error) {
-      console.error('Error generating end-of-book content:', error);
-      throw new Error('Failed to generate end-of-book content');
+      console.error("Error generating end-of-book content:", error);
+      throw new Error("Failed to generate end-of-book content");
     }
   }
 
@@ -441,81 +514,90 @@ export class BookGenerationService {
         Ensure the response starts with "graph TD" or "graph LR".
         Do not include any extra text, explanations, or markdown code blocks (e.g., do not wrap in \`\`\`mermaid ... \`\`\`).
       `;
-      
+
       const response = await this.textModel.invoke(flowchartPrompt);
-  
-      let flowchartCode = typeof response === 'string' ? response : response?.content || '';
-  
-      flowchartCode = flowchartCode.replace(/```mermaid/g, '').replace(/```/g, '').trim();
-  
-      if (!flowchartCode.includes('graph')) {
-        throw new Error('Invalid Mermaid.js output from AI.');
+
+      let flowchartCode =
+        typeof response === "string" ? response : response?.content || "";
+
+      flowchartCode = flowchartCode
+        .replace(/```mermaid/g, "")
+        .replace(/```/g, "")
+        .trim();
+
+      if (!flowchartCode.includes("graph")) {
+        throw new Error("Invalid Mermaid.js output from AI.");
       }
-      if (flowchartCode.startsWith('graph TD') && !flowchartCode.startsWith('graph TD\n')) {
-        flowchartCode = flowchartCode.replace('graph TD', 'graph TD\n');
+      if (
+        flowchartCode.startsWith("graph TD") &&
+        !flowchartCode.startsWith("graph TD\n")
+      ) {
+        flowchartCode = flowchartCode.replace("graph TD", "graph TD\n");
       }
       // Similarly for graph LR if needed.
-      
-  
-      const filePath = await this.saveFlowchartImage(flowchartCode, 'flowchart');
+
+      const filePath = await this.saveFlowchartImage(
+        flowchartCode,
+        "flowchart"
+      );
       return filePath;
     } catch (error) {
       this.logger.error(`Error generating flowchart: ${error.message}`);
-      throw new Error('Failed to generate flowchart');
+      throw new Error("Failed to generate flowchart");
     }
   }
-  
-  
-  
-  
-  private async createBookContent(promptData: BookGenerationDto): Promise<string> {
+
+  private async createBookContent(promptData: BookGenerationDto) {
     try {
       const sections: string[] = [];
-  
+
       // Generate Introduction Content
-      const introduction = await this.introductionContent(promptData);
-      sections.push(introduction);
-  
+      const { section, tableOfContents } =
+        await this.introductionContent(promptData);
+      sections.push(section);
+
       // Generate End-of-Book Content
       const endOfBook = await this.endOfBookContent(promptData);
       sections.push(endOfBook);
-  
+
       // Combine all sections into a single string
-      const fullBookContent = sections.join('\n\n');
-      return fullBookContent;
+      const fullBookContent = sections.join("\n\n");
+      return { fullBookContent, tableOfContents };
     } catch (error) {
       this.logger.error(`Error creating book content: ${error.message}`);
-      throw new Error('Failed to create book content');
+      throw new Error(error.message);
     }
   }
   async getAllBooksByUser(user: UserDto): Promise<BookGeneration[]> {
     const query = this.bookGenerationRepository
-      .createQueryBuilder('bookGeneration')
-      .leftJoinAndSelect('bookGeneration.bookChapter', 'bookChapter')
-      .orderBy('bookGeneration.createdAt', 'DESC')
-      .addOrderBy('bookChapter.createdAt', 'ASC');
-  
-    if (user.role !== 'admin') {
-      query.where('bookGeneration.userId = :userId', { userId: user.id });
+      .createQueryBuilder("bookGeneration")
+      .leftJoinAndSelect("bookGeneration.bookChapter", "bookChapter")
+      .orderBy("bookGeneration.createdAt", "DESC")
+      .addOrderBy("bookChapter.createdAt", "ASC");
+
+    if (user.role !== "admin") {
+      query.where("bookGeneration.userId = :userId", { userId: user.id });
     }
-  
+
     return await query.getMany();
   }
-  
-  
 
-  async getBook(id:number) {
-    return await this.bookGenerationRepository.findOne( {where:{id}} );
-
+  async getBook(id: number) {
+    return await this.bookGenerationRepository.findOne({ where: { id } });
   }
 
-  async generateAndSaveBook(userId: number, promptData: BookGenerationDto): Promise<BookGeneration> {
+  async generateAndSaveBook(
+    userId: number,
+    promptData: BookGenerationDto
+  ): Promise<BookGeneration> {
     try {
       await this.initializeAIModels(); // Ensure API keys are loaded before generating content
 
-      const bookContent = await this.createBookContent(promptData);
+      const { fullBookContent, tableOfContents } =
+        await this.createBookContent(promptData);
       const coverImagePath = await this.generateBookCover(promptData);
-      const backgroundImagePath = await this.generateBookBackgroundCover(promptData);
+      const backgroundImagePath =
+        await this.generateBookBackgroundCover(promptData);
 
       const book = new BookGeneration();
       book.userId = userId;
@@ -530,65 +612,65 @@ export class BookGenerationService {
       book.additionalContent = promptData.additionalContent;
       book.additionalData = {
         coverImageUrl: coverImagePath,
-        fullContent: bookContent,
-        backCoverImageUrl: backgroundImagePath
+        fullContent: fullBookContent,
+        backCoverImageUrl: backgroundImagePath,
+        tableOfContents: tableOfContents,
       };
 
       const savedBook = await this.bookGenerationRepository.save(book);
-      this.logger.log(`Book saved successfully for user ${userId}: ${promptData.bookTitle}`);
+      this.logger.log(
+        `Book saved successfully for user ${userId}: ${promptData.bookTitle}`
+      );
 
       return savedBook;
     } catch (error) {
       this.logger.error(`Error generating and saving book: ${error.message}`);
-      throw new Error('Failed to generate and save book');
+      throw new Error(error.message);
     }
   }
   async searchBookQuery(userId: number, search: SearchDto) {
     try {
       // Prepare the query filter based on the provided search parameters
-      const query:any = {userId};
-  
+      const query: any = { userId };
+
       if (search.bookTitle) {
-        query['bookTitle'] = { $regex: new RegExp(search.bookTitle, 'i') }; // case-insensitive search
+        query["bookTitle"] = { $regex: new RegExp(search.bookTitle, "i") }; // case-insensitive search
       }
       if (search.genre) {
-        query['genre'] = search.genre;
+        query["genre"] = search.genre;
       }
       if (search.theme) {
-        query['theme'] = search.theme;
+        query["theme"] = search.theme;
       }
       if (search.language) {
-        query['language'] = search.language;
+        query["language"] = search.language;
       }
       if (search.targetAudience) {
-        query['targetAudience'] = search.targetAudience;
+        query["targetAudience"] = search.targetAudience;
       }
       if (search.numberOfPages) {
-        query['numberOfPages'] = search.numberOfPages;
+        query["numberOfPages"] = search.numberOfPages;
       }
-  
+
       // Optional: If 'isFlowChart' or 'isDiagram' is provided, filter by them
       if (search.isFlowChart !== undefined) {
-        query['isFlowChart'] = search.isFlowChart;
+        query["isFlowChart"] = search.isFlowChart;
       }
       if (search.isDiagram !== undefined) {
-        query['isDiagram'] = search.isDiagram;
+        query["isDiagram"] = search.isDiagram;
       }
-  
+
       // Execute the search query to find matching books
       const books = await this.bookGenerationRepository.find(query);
-  
+
       if (!books || books.length === 0) {
-        throw new Error('No books found based on the search criteria.');
+        throw new Error("No books found based on the search criteria.");
       }
-  
+
       return books;
     } catch (error) {
       this.logger.error(`Error during book search: ${error.message}`);
-      throw new Error('Failed to search books.');
+      throw new Error("Failed to search books.");
     }
   }
-  
 }
-
-

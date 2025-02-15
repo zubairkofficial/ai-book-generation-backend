@@ -54,6 +54,7 @@ export class BookGeneration extends BaseEntity {
     styling?: object;
     fullContent?: string;
     backCoverImageUrl?: string;
+    tableOfContents?: string;
   };
 
   @OneToMany(() => BookChapter, (bookChapter) => bookChapter.bookGeneration)

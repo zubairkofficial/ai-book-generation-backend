@@ -41,4 +41,10 @@ export class BookChapterGenerationDto {
   @IsOptional()
   noOfImages: number;
 
+  @IsString()
+  @IsNotEmpty()
+  chapterName: string;
+
+
+
 }

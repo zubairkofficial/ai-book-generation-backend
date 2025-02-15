@@ -53,9 +53,9 @@ export class BookGenerationController {
     } catch (error) {
       this.logger.error(`Error generating and saving book for user ID: ${userId}`, error.stack);
       if (error instanceof UnauthorizedException) {
-        throw error;
+        throw error.message;
       }
-      throw new InternalServerErrorException('An error occurred while generating and saving the book.');
+      throw new InternalServerErrorException(error.message);
     }
   }
 
@@ -84,7 +84,7 @@ export class BookGenerationController {
       };
     } catch (error) {
       this.logger.error(`Error retrieving books for user ID: ${user.id}`, error.stack);
-      throw new InternalServerErrorException('An error occurred while fetching books.');
+      throw new InternalServerErrorException(error.message);
     }
   }
 
