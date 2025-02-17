@@ -609,6 +609,7 @@ export class BookGenerationService {
       book.authorName = promptData.authorName;
       book.authorBio = promptData.authorBio;
       book.genre = promptData.genre;
+      book.ideaCore = promptData.bookInformation;
       book.characters = promptData.characters;
       book.numberOfChapters = promptData.numberOfChapters;
       book.targetAudience = promptData.targetAudience;
