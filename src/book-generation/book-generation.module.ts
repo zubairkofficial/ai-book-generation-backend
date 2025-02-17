@@ -13,5 +13,6 @@ import { ChapterPlotChain, EventsChain } from 'src/common/function/chapter-plot-
   ],
   controllers: [BookGenerationController],
   providers: [BookGenerationService, ChapterPlotChain, EventsChain],
+  exports: [BookGenerationService],
 })
 export class BookGenerationModule {}

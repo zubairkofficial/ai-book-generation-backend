@@ -78,6 +78,9 @@ export class AuthService {
   // starts 
   // Step 1: Generate OTP for Login Attempt
   async generateOtpForLogin(signInDto: SignInDto) {
+  try {
+    
+  
     const { email, password } = signInDto;
   
     // Verify if the user exists
@@ -96,15 +99,21 @@ export class AuthService {
     const otp = await this.otpService.generateOtp(email);
   
     // Send OTP via email
-    // await this.emailService.sendOtpEmail(email, otp.code);
+    await this.emailService.sendOtpEmail(email, otp.code);
   
     return { message: 'OTP sent to your email. Please verify to log in.' };
+  } catch (error) {
+    throw new  Error(error.message) 
+  }
   }
   
 
   // Step 2: Verify OTP and Log In
   async verifyOtpAndLogin(email: string, otpCode: string) {
     // Verify OTP
+    try {
+      
+   
     const isOtpValid = await this.otpService.verifyOtp(email, otpCode);
 
     if (!isOtpValid) {
@@ -125,6 +134,9 @@ const oneDay=this.configService.get<string>('ACCESS_TOKEN_EXPIRES_IN')
    
 
     return { user, accessToken };
+  } catch (error) {
+throw new Error(error.message)
+  }
   }
 
   // Standard Login without OTP

@@ -16,7 +16,7 @@ export class SignUpDto {
   @MinLength(6, { message: 'Password must be at least 6 characters long' }) // Minimum length reduced to 6
  password: string;
 
-  @ApiProperty({ example: '+1234567890' })
-  @IsString()
-  phoneNumber: string;
+  // @ApiProperty({ example: '+1234567890' })
+  // @IsString()
+  // phoneNumber: string;
 }

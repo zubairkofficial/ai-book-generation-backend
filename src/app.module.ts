@@ -8,6 +8,7 @@ import { OtpModule } from './otp/otp.module';
 import { BookGenerationModule } from './book-generation/book-generation.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { BookChapterModule } from './book-chapter/book-chapter.module';
+import { StatsModule } from './stats/stats.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { BookChapterModule } from './book-chapter/book-chapter.module';
     BookGenerationModule,
     ApiKeysModule,
     BookChapterModule,
+    StatsModule,
   ],
 })
 export class AppModule {}

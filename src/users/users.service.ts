@@ -64,6 +64,9 @@ async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<User> {
   async update(id: number, updateData: Partial<User>): Promise<void> {
     await this.userRepository.update(id, updateData);
   }
+  async getAllUsersCount(): Promise<number> {
+   return await this.userRepository.count();
+  }
   
   async markEmailAsVerified(id: number): Promise<void> {
     await this.userRepository.update(id, { isEmailVerified: true });

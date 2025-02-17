@@ -585,6 +585,10 @@ export class BookGenerationService {
   async getBook(id: number) {
     return await this.bookGenerationRepository.findOne({ where: { id } });
   }
+  async getAllBooksCount(userId:number|null) {
+    if(userId) return await this.bookGenerationRepository.count({where: { userId: userId}});
+    else return await this.bookGenerationRepository.count();
+  }
 
   async generateAndSaveBook(
     userId: number,
