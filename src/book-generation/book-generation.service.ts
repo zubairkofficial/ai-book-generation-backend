@@ -206,51 +206,73 @@ export class BookGenerationService {
     }
   }
 
-  private async generateBookCover(
-    promptData: BookGenerationDto
-  ): Promise<string> {
+  private async generateBookSummary(promptData: BookGenerationDto): Promise<string> {
+    try {
+      const summaryPrompt = `Generate maximum 400 characters length of summary for "${promptData.bookTitle}". 
+      Consider the following aspects:
+      - Genre: ${promptData.genre}
+      - Target audience: ${promptData.targetAudience || 'General readers'}
+      - CoreIdea: ${promptData.bookInformation}
+      
+      Provide a compelling and vivid description that captures the essence of the book.`;
+  
+      const response = await this.textModel.invoke(summaryPrompt);
+      console.log("Summary of Dall",summaryPrompt,response)
+      return response.content.toString();
+    } catch (error) {
+      this.logger.error(`Error generating book summary: ${error.message}`);
+      throw new Error('Failed to generate book summary');
+    }
+  }
+
+
+  private async generateBookCover(promptData: BookGenerationDto): Promise<string> {
     try {
       type AllowedSize = (typeof allowedSizes)[number];
-
-      const imageSize = this.configService.get<string>(
-        "IMAGE_SIZE"
-      ) as AllowedSize;
-
+  
+      const imageSize = this.configService.get<string>("IMAGE_SIZE") as AllowedSize;
+  
       if (!allowedSizes.includes(imageSize)) {
         throw new Error(
           `Invalid image size: ${imageSize}. Allowed sizes are: ${allowedSizes.join(", ")}`
         );
       }
-
-      const coverImagePrompt =
-        promptData.bookInformation ||
-        `Create a professional book cover for "${promptData.bookTitle}", a ${promptData.genre} book.`;
-
+  
+      // Generate prompt and ensure it is within 1000 characters
+      let coverImagePrompt = await this.generateBookSummary(promptData);
+  
+      if (coverImagePrompt.length > 1000) {
+        console.warn(`Prompt truncated from ${coverImagePrompt.length} to 1000 characters.`);
+        coverImagePrompt = coverImagePrompt.substring(0, 997) + "..."; // Ensure the prompt doesn't exceed 1000 characters
+      }
+  
+      console.log("Final cover prompt:", coverImagePrompt);
+  
       const response = await this.openai.images.generate({
         prompt: coverImagePrompt,
         n: 1,
         size: imageSize,
         response_format: "b64_json",
       });
-
+  
       if (!response.data[0]?.b64_json) {
         throw new Error("No image data received from OpenAI");
       }
-
+  
       const imagePath = await this.saveImage(
         `data:image/png;base64,${response.data[0].b64_json}`,
         promptData.bookTitle
       );
-
+  
       return imagePath;
     } catch (error) {
       this.logger.error(`Error generating book cover: ${error.message}`);
       throw new Error(error.message);
     }
   }
-  private async generateBookBackgroundCover(
-    promptData: BookGenerationDto
-  ): Promise<string> {
+  
+
+  private async generateBookBackgroundCover(promptData: BookGenerationDto): Promise<string> {
     try {
       const allowedSizes = [
         "256x256",
@@ -260,43 +282,50 @@ export class BookGenerationService {
         "1024x1792",
       ] as const;
       type AllowedSize = (typeof allowedSizes)[number];
-
-      const imageSize = this.configService.get<string>(
-        "IMAGE_SIZE"
-      ) as AllowedSize;
-
+  
+      const imageSize = this.configService.get<string>("IMAGE_SIZE") as AllowedSize;
+  
       if (!allowedSizes.includes(imageSize)) {
         throw new Error(
           `Invalid image size: ${imageSize}. Allowed sizes are: ${allowedSizes.join(", ")}`
         );
       }
-
-      const coverImagePrompt =
-        promptData.bookInformation ||
-        `Create a professional book back cover for "${promptData.bookTitle}", a ${promptData.genre} book.`;
-
+  
+      // Generate prompt and ensure it is within 1000 characters
+      let coverImagePrompt = promptData.bookInformation
+        ? promptData.bookInformation
+        : await this.generateBookSummary(promptData);
+  
+      if (coverImagePrompt.length > 1000) {
+        console.warn(`Prompt truncated from ${coverImagePrompt.length} to 1000 characters.`);
+        coverImagePrompt = coverImagePrompt.substring(0, 997) + "..."; // Ensure the prompt doesn't exceed 1000 characters
+      }
+  
+      console.log("Final background cover prompt:", coverImagePrompt);
+  
       const response = await this.openai.images.generate({
         prompt: coverImagePrompt,
         n: 1,
         size: imageSize,
         response_format: "b64_json",
       });
-
+  
       if (!response.data[0]?.b64_json) {
         throw new Error("No image data received from OpenAI");
       }
-
+  
       const imagePath = await this.saveImage(
         `data:image/png;base64,${response.data[0].b64_json}`,
         promptData.bookTitle
       );
-
+  
       return imagePath;
     } catch (error) {
       this.logger.error(`Error generating book cover: ${error.message}`);
       throw new Error(`Failed to generate book cover ${error.message}`);
     }
   }
+  
 
   private getDefaultStyling() {
     return {
