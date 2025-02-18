@@ -12,6 +12,9 @@ export class ApiKey extends BaseEntity {
   @Column()
   dalle_key: string;
 
+  @Column({nullable:true})
+  fal_ai: string;
+
   @Column()
   model: string;
 }

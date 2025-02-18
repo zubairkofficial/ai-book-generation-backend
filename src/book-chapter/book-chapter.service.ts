@@ -10,11 +10,12 @@ import * as path from "path";
 import { BookChapterGenerationDto } from "./dto/book-chapter.dto";
 import { BookGeneration } from "src/book-generation/entities/book-generation.entity";
 import { BookChapter } from "./entities/book-chapter.entity";
-import { ConversationSummaryBufferMemory  } from "langchain/memory";
+import { ConversationSummaryBufferMemory } from "langchain/memory";
+import axios from "axios";
 @Injectable()
 export class BookChapterService {
   private textModel;
-
+  private apiKeyRecord;
   private openai: OpenAI;
   private readonly logger = new Logger(BookChapterService.name);
   private readonly uploadsDir: string;
@@ -59,32 +60,30 @@ export class BookChapterService {
   }
   private async initializeAIModels() {
     try {
-      const apiKeyRecord: any = await this.apiKeyRepository.find();
-      if (!apiKeyRecord) {
+      this.apiKeyRecord = await this.apiKeyRepository.find();
+      if (!this.apiKeyRecord) {
         throw new Error("No API keys found in the database.");
       }
 
       this.textModel = new ChatOpenAI({
-        openAIApiKey: apiKeyRecord[0].openai_key,
+        openAIApiKey: this.apiKeyRecord[0].openai_key,
         temperature: 0.7,
         maxTokens: 16000,
-        modelName: apiKeyRecord[0].model,
+        modelName: this.apiKeyRecord[0].model,
       });
 
       this.openai = new OpenAI({
-        apiKey: apiKeyRecord[0].dalle_key,
+        apiKey: this.apiKeyRecord[0].dalle_key,
       });
 
       this.logger.log(
-        `AI Models initialized successfully with model: ${apiKeyRecord[0].model}`
+        `AI Models initialized successfully with model: ${this.apiKeyRecord[0].model}`
       );
     } catch (error) {
       this.logger.error(`Failed to initialize AI models: ${error.message}`);
       throw new Error("Failed to initialize AI models.");
     }
   }
-
-
 
   private async invokeWithSimulatedStreaming(
     prompt: string,
@@ -132,7 +131,73 @@ export class BookChapterService {
     }
   }
 
+  private async saveGeneratedImage(
+    responseUrl: string,
+    bookTitle: string
+  ): Promise<string> {
+    try {
+      const dirPath = path.join(this.uploadsDir, "chapters");
+      const baseUrl = this.configService.get<string>("BASE_URL");
+      const maxRetries = 5; // Adjust the number of retries as needed
+      const delayMs = 2000; // Wait time before retrying (2 seconds)
   
+      let imageUrl = null;
+      let attempt = 0;
+  
+      while (attempt < maxRetries) {
+        try {
+          const getResponse = await axios.get(responseUrl, {
+            headers: {
+              Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
+              "Content-Type": "application/json",
+            },
+          });
+  
+          if (getResponse.data.images && getResponse.data.images.length > 0) {
+            imageUrl = getResponse.data.images[0].url;
+            break; // Exit loop once the image is available
+          }
+        } catch (error) {
+          if (error.response?.status === 400 || error.response?.status === 401) {
+            this.logger.warn(`Retrying fetch image (Attempt ${attempt + 1}/${maxRetries})`);
+            await new Promise((resolve) => setTimeout(resolve, delayMs)); // Wait before retrying
+            attempt++;
+            continue;
+          } else {
+            throw new Error(`Error fetching image: ${error.message}`);
+          }
+        }
+      }
+  
+      if (!imageUrl) {
+        throw new Error("Failed to fetch image after multiple attempts.");
+      }
+  
+      // Fetch the image binary
+      const imageResponse = await axios.get(imageUrl, { responseType: "arraybuffer" });
+  
+      // Generate filename
+      const timestamp = new Date().getTime();
+      const sanitizedFileName = bookTitle.replace(/[^a-z0-9]/gi, "_").toLowerCase();
+      const fullFileName = `${sanitizedFileName}_chapter_image_${timestamp}.png`;
+      const imagePath = path.join(dirPath, fullFileName);
+  
+      // Ensure directory exists
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+      }
+  
+      // Save image
+      fs.writeFileSync(imagePath, imageResponse.data);
+  
+      return `${baseUrl}/uploads/chapters/${fullFileName}`;
+    } catch (error) {
+      this.logger.error(`Error saving generated chapter image: ${error.message}`);
+      throw new Error(error.message);
+    }
+  }
+  
+
   private async ChapterContent(
     promptData: BookChapterGenerationDto,
     bookInfo: BookGeneration,
@@ -145,7 +210,61 @@ export class BookChapterService {
         memoryKey: "chapter_summary", // Stores summarized chapter details
         returnMessages: true, // Ensures memory retains past summaries
       });
-  
+
+      const imageCount = Math.floor(Math.random() * 2) + 2; // Generate 2 or 3 images
+      const totalImages = Math.min(+promptData.noOfImages, imageCount);
+      const chapterImages: { title: string; url: string }[] = [];
+
+
+      for (let imageIndex = 1; imageIndex <= totalImages; imageIndex++) {
+        const imageTitlePrompt = `
+          Provide a short but descriptive title for an illustration in Chapter ${promptData.chapterNo} of the book "${bookInfo.bookTitle}".
+          Genre: "${bookInfo.genre}"
+          Target Audience: "${bookInfo.targetAudience}"
+          Language: "${bookInfo.language}"
+          Please ensure the title is unique and relevant to the chapter's content.
+         `;
+
+        const imageTitleResponse =
+          await this.textModel.invoke(imageTitlePrompt);
+        const imageTitle =
+          imageTitleResponse.content?.trim() || `Image ${imageIndex}`;
+
+        const imagePrompt = `
+          Create an image titled "${imageTitle}" for Chapter ${promptData.chapterNo} in "${bookInfo.bookTitle}".
+          Genre: "${bookInfo.genre}"
+          Target Audience: "${bookInfo.targetAudience}"
+          Core Idea: "${bookInfo.ideaCore}"
+         `;
+
+        const requestData = {
+          prompt: imagePrompt, // Adjusted prompt based on cover type
+          num_images: 1,
+          enable_safety_checker: true,
+          safety_tolerance: "2",
+          output_format: "jpeg",
+          aspect_ratio: "9:16",
+          raw: false,
+          // Add other fields as required by the API
+        };
+
+        const postResponse = await axios.post(
+          this.configService.get<string>("BASE_URL_FAL_AI"),
+          requestData,
+          {
+            headers: {
+              Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        chapterImages.push({
+          title: imageTitle,
+          url: postResponse.data.response_url,
+        });
+      }
+
       // Construct the prompt
       const chapterPrompt = `
         You are a master book writer. Your task is to write **Chapter ${promptData.chapterNo}** of the book titled **"${bookInfo.bookTitle}"**.
@@ -180,107 +299,70 @@ export class BookChapterService {
   
         **📝 Begin Chapter ${promptData.chapterNo}:**
       `;
-  
+
       // Stream response using OpenAI API
       const stream = await this.textModel.stream(chapterPrompt);
       let chapterText = "";
       const chunks = [];
-  
+
       for await (const chunk of stream) {
         chunks.push(chunk);
         chapterText += chunk.content;
         onTextUpdate(chunk.content); // Send real-time updates
       }
-  
+
       // Ensure chapter text is not empty
       if (!chapterText || chapterText.trim() === "") {
-        throw new Error(`Chapter ${promptData.chapterNo} content is empty or undefined`);
+        throw new Error(
+          `Chapter ${promptData.chapterNo} content is empty or undefined`
+        );
       }
-  
-      const baseUrl = this.configService.get<string>("BASE_URL");
-  
-      // Generate images
-      const imageCount = Math.floor(Math.random() * 2) + 2; // Generate 2 or 3 images
-      const totalImages = Math.min(+promptData.noOfImages, imageCount);
-      const chapterImages: { title: string; url: string }[] = [];
-  
-      for (let imageIndex = 1; imageIndex <= totalImages; imageIndex++) {
-        let formattedImage = ``;
-  
-        const imageTitlePrompt = `
-          Provide a short but descriptive title for an illustration in Chapter ${promptData.chapterNo} of the book "${bookInfo.bookTitle}".
-          Genre: "${bookInfo.genre}"
-          Target Audience: "${bookInfo.targetAudience}"
-          Language: "${bookInfo.language}"
-          Please ensure the title is unique and relevant to the chapter's content.
-  
-          ## Illustration Guidance:
-          ${promptData.imagePrompt || "Illustrate a key thought or idea from the chapter with vivid imagery, capturing the essence of the chapter."}
-        `;
-  
-        const imageTitleResponse = await this.textModel.invoke(imageTitlePrompt);
-        const imageTitle = imageTitleResponse.content?.trim() || `Image ${imageIndex}`;
-  
-        const imagePrompt = `
-          Create an image titled "${imageTitle}" for Chapter ${promptData.chapterNo} in "${bookInfo.bookTitle}".
-          Genre: "${bookInfo.genre}"
-          Target Audience: "${bookInfo.targetAudience}"
-  
-          ## Illustration Guidance:
-          ${promptData.imagePrompt || "Illustrate a key scene from the chapter with vivid imagery, capturing the essence of the story."}
-        `;
-  
-        const imageResponse = await this.openai.images.generate({
-          model: "dall-e-3",
-          prompt: imagePrompt,
-          n: 1,
-          size: "1024x1024",
-          response_format: "b64_json",
+      let chapterImageInfo = [];
+      for (let chapterImage of chapterImages) {
+      let formattedImage = "";
+        // Save the image to the uploads directory
+        const savedImagePath = await this.saveGeneratedImage(
+          chapterImage.url,
+          chapterImage.title
+        );
+        chapterImageInfo.push({
+          url: savedImagePath,
+          title: chapterImage.title,
         });
-  
-        if (imageResponse.data?.[0]?.b64_json) {
-          const savedImagePath = await this.saveImage(
-            `data:image/png;base64,${imageResponse.data[0].b64_json}`,
-            `${bookInfo.bookTitle}_chapter_${promptData.chapterNo}_image_${imageIndex}`,
-            "chapters"
-          );
-  
-          chapterImages.push({ title: imageTitle, url: savedImagePath });
-  
-          formattedImage += `### ${imageTitle}\n\n`;
-          formattedImage += `![${imageTitle}](${baseUrl}/uploads/${savedImagePath})\n\n`;
-  
-          onTextUpdate(formattedImage);
-        } else {
-          this.logger.warn(
-            `Image ${imageIndex} for Chapter ${promptData.chapterNo} was not generated.`
-          );
-        }
+        formattedImage += `### ${chapterImage.title}\n\n`;
+        formattedImage += `![${chapterImage.title}](${savedImagePath})\n\n`;
+
+        onTextUpdate(formattedImage);
       }
-  
+
       // Split text into chunks and insert images dynamically
-      const chunkSize = Math.ceil(chapterText.length / (chapterImages.length + 1));
-      const textChunks = chapterText.match(new RegExp(`.{1,${chunkSize}}`, "g")) || ["No content generated."];
-  
+      const chunkSize = Math.ceil(
+        chapterText.length / (chapterImageInfo.length + 1)
+      );
+      const textChunks = chapterText.match(
+        new RegExp(`.{1,${chunkSize}}`, "g")
+      ) || ["No content generated."];
+
       let formattedChapter = "";
-  
+
       for (let i = 0; i < textChunks.length; i++) {
         formattedChapter += textChunks[i] + "\n\n";
-  
+
         if (chapterImages[i]) {
           formattedChapter += `### ${chapterImages[i].title}\n\n`;
-          formattedChapter += `![${chapterImages[i].title}](${baseUrl}/uploads/${chapterImages[i].url})\n\n`;
+          formattedChapter += `![${chapterImages[i].title}](${chapterImages[i].url})\n\n`;
         }
       }
-  
+
       return formattedChapter;
     } catch (error) {
-      console.error("Error generating chapter content with streaming and images:", error);
+      console.error(
+        "Error generating chapter content with streaming and images:",
+        error
+      );
       throw new Error(error.message);
     }
   }
-  
-  
 
   async generateChapterOfBook(
     input: BookChapterGenerationDto,
@@ -288,16 +370,16 @@ export class BookChapterService {
   ) {
     try {
       await this.initializeAIModels();
-  
+
       // Retrieve the book generation info
       const bookInfo = await this.bookGenerationRepository.findOne({
         where: { id: input.bookGenerationId },
       });
-  
+
       if (!bookInfo) {
         throw new Error("Book generation record not found.");
       }
-  
+
       // Check if chapter already exists for the given bookGenerationId & chapterNo
       let bookChapter = await this.bookChapterRepository.findOne({
         where: {
@@ -306,11 +388,14 @@ export class BookChapterService {
         },
         relations: ["bookGeneration"], // Ensure related data is loaded
       });
-      
-  
+
       // Generate new chapter content
-      const formattedChapter = await this.ChapterContent(input, bookInfo, onTextUpdate);
-  
+      const formattedChapter = await this.ChapterContent(
+        input,
+        bookInfo,
+        onTextUpdate
+      );
+
       if (bookChapter) {
         // If chapter exists, update it
         bookChapter.chapterInfo = formattedChapter;
@@ -325,7 +410,7 @@ export class BookChapterService {
         bookChapter.maxWords = input.maxWords;
         bookChapter.minWords = input.minWords;
       }
-  
+
       // Save (either insert or update)
       const savedChapter = await this.bookChapterRepository.save(bookChapter);
       return savedChapter;
@@ -334,7 +419,7 @@ export class BookChapterService {
       throw new Error(error.message);
     }
   }
-  
+
   async getBook(id: number) {
     return await this.bookGenerationRepository.findOne({ where: { id } });
   }

@@ -14,11 +14,12 @@ import mermaid from "mermaid";
 import { BookGenerationDto, SearchDto } from "./dto/book-generation.dto";
 import { allowedSizes } from "src/common";
 import { UserDto } from "src/auth/types/request-with-user.interface";
+import axios from "axios";
 
 @Injectable()
 export class BookGenerationService {
   private textModel;
-
+  private apiKeyRecord;
   private openai: OpenAI;
   private readonly logger = new Logger(BookGenerationService.name);
   private readonly uploadsDir: string;
@@ -34,23 +35,23 @@ export class BookGenerationService {
   }
   private async initializeAIModels() {
     try {
-      const apiKeyRecord: any = await this.apiKeyRepository.find();
-      if (!apiKeyRecord) {
+      this.apiKeyRecord = await this.apiKeyRepository.find();
+      if (!this.apiKeyRecord) {
         throw new Error("No API keys found in the database.");
       }
 
       this.textModel = new ChatOpenAI({
-        openAIApiKey: apiKeyRecord[0].openai_key,
+        openAIApiKey: this.apiKeyRecord[0].openai_key,
         temperature: 0.4,
-        modelName: apiKeyRecord[0].model,
+        modelName: this.apiKeyRecord[0].model,
       });
 
       this.openai = new OpenAI({
-        apiKey: apiKeyRecord[0].dalle_key,
+        apiKey: this.apiKeyRecord[0].dalle_key,
       });
 
       this.logger.log(
-        `AI Models initialized successfully with model: ${apiKeyRecord[0].model}`
+        `AI Models initialized successfully with model: ${this.apiKeyRecord[0].model}`
       );
     } catch (error) {
       this.logger.error(`Failed to initialize AI models: ${error.message}`);
@@ -99,9 +100,7 @@ export class BookGenerationService {
         .toLowerCase();
       const fullFileName = `${sanitizedFileName}_${timestamp}.png`;
       const filePath = path.join(dirPath, fullFileName);
-
-      const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
-      fs.writeFileSync(filePath, base64Data, { encoding: "base64" });
+      fs.writeFileSync(filePath, imageData);
 
       this.logger.log(`Image saved successfully: ${filePath}`);
       return path.join(subDirectory, fullFileName);
@@ -206,126 +205,134 @@ export class BookGenerationService {
     }
   }
 
-  private async generateBookSummary(promptData: BookGenerationDto): Promise<string> {
+  private async generateBookSummary(
+    promptData: BookGenerationDto
+  ): Promise<string> {
     try {
       const summaryPrompt = `Generate maximum 400 characters length of summary for "${promptData.bookTitle}". 
       Consider the following aspects:
       - Genre: ${promptData.genre}
-      - Target audience: ${promptData.targetAudience || 'General readers'}
+      - Target audience: ${promptData.targetAudience || "General readers"}
       - CoreIdea: ${promptData.bookInformation}
       
       Provide a compelling and vivid description that captures the essence of the book.`;
-  
+
       const response = await this.textModel.invoke(summaryPrompt);
-      console.log("Summary of Dall",summaryPrompt,response)
+      console.log("Summary of Dall", summaryPrompt, response);
       return response.content.toString();
     } catch (error) {
       this.logger.error(`Error generating book summary: ${error.message}`);
-      throw new Error('Failed to generate book summary');
+      throw new Error("Failed to generate book summary");
     }
   }
 
-
-  private async generateBookCover(promptData: BookGenerationDto): Promise<string> {
+  private async generateBookImage(responseUrl, promptData): Promise<string> {
     try {
-      type AllowedSize = (typeof allowedSizes)[number];
-  
-      const imageSize = this.configService.get<string>("IMAGE_SIZE") as AllowedSize;
-  
-      if (!allowedSizes.includes(imageSize)) {
-        throw new Error(
-          `Invalid image size: ${imageSize}. Allowed sizes are: ${allowedSizes.join(", ")}`
-        );
-      }
-  
-      // Generate prompt and ensure it is within 1000 characters
-      let coverImagePrompt = await this.generateBookSummary(promptData);
-  
-      if (coverImagePrompt.length > 1000) {
-        console.warn(`Prompt truncated from ${coverImagePrompt.length} to 1000 characters.`);
-        coverImagePrompt = coverImagePrompt.substring(0, 997) + "..."; // Ensure the prompt doesn't exceed 1000 characters
-      }
-  
-      console.log("Final cover prompt:", coverImagePrompt);
-  
-      const response = await this.openai.images.generate({
-        prompt: coverImagePrompt,
-        n: 1,
-        size: imageSize,
-        response_format: "b64_json",
+      const getResponse = await axios.get(responseUrl, {
+        headers: {
+          Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
+          "Content-Type": "application/json",
+        },
       });
-  
-      if (!response.data[0]?.b64_json) {
-        throw new Error("No image data received from OpenAI");
+
+      // If the image is ready
+
+      const dirPath = path.join(this.uploadsDir, "covers");
+
+      const imageUrl = getResponse.data.images[0].url;
+      // Once the image is ready, download and save it
+      const imageResponse = await axios.get(imageUrl, {
+        responseType: "arraybuffer",
+      });
+
+      // Define the sanitized file name for the image
+      const timestamp = new Date().getTime();
+      const sanitizedFileName = promptData.bookTitle
+        .replace(/[^a-z0-9]/gi, "_")
+        .toLowerCase();
+      const fullFileName = `${sanitizedFileName}_${timestamp}.png`;
+
+      // Define the path to save the image in the 'uploads/covers/images' folder
+      const imagePath = path.join(dirPath, `${fullFileName}`);
+
+      // Ensure the 'covers/images' folder exists, create if it doesn't
+      const imageFolderPath = path.dirname(imagePath);
+      if (!fs.existsSync(imageFolderPath)) {
+        fs.mkdirSync(imageFolderPath, { recursive: true });
       }
-  
-      const imagePath = await this.saveImage(
-        `data:image/png;base64,${response.data[0].b64_json}`,
-        promptData.bookTitle
-      );
-  
-      return imagePath;
+
+      // Save the image to the specified folder
+      fs.writeFileSync(imagePath, imageResponse.data);
+
+      // Return the relative endpoint (e.g., /cover/image_name)
+      const relativePath = `covers/${fullFileName}`;
+      return relativePath;
     } catch (error) {
       this.logger.error(`Error generating book cover: ${error.message}`);
       throw new Error(error.message);
     }
   }
-  
-
-  private async generateBookBackgroundCover(promptData: BookGenerationDto): Promise<string> {
+  private async generateBookCover(
+    promptData: BookGenerationDto,
+    coverType: "front" | "back",
+   
+  ): Promise<string> {
     try {
-      const allowedSizes = [
-        "256x256",
-        "512x512",
-        "1024x1024",
-        "1792x1024",
-        "1024x1792",
-      ] as const;
       type AllowedSize = (typeof allowedSizes)[number];
-  
-      const imageSize = this.configService.get<string>("IMAGE_SIZE") as AllowedSize;
-  
+      const imageSize = this.configService.get<string>(
+        "IMAGE_SIZE"
+      ) as AllowedSize;
+
       if (!allowedSizes.includes(imageSize)) {
         throw new Error(
           `Invalid image size: ${imageSize}. Allowed sizes are: ${allowedSizes.join(", ")}`
         );
       }
-  
-      // Generate prompt and ensure it is within 1000 characters
-      let coverImagePrompt = promptData.bookInformation
-        ? promptData.bookInformation
-        : await this.generateBookSummary(promptData);
-  
-      if (coverImagePrompt.length > 1000) {
-        console.warn(`Prompt truncated from ${coverImagePrompt.length} to 1000 characters.`);
-        coverImagePrompt = coverImagePrompt.substring(0, 997) + "..."; // Ensure the prompt doesn't exceed 1000 characters
+
+      const dirPath = path.join(this.uploadsDir, "covers");
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
       }
-  
-      console.log("Final background cover prompt:", coverImagePrompt);
-  
-      const response = await this.openai.images.generate({
-        prompt: coverImagePrompt,
-        n: 1,
-        size: imageSize,
-        response_format: "b64_json",
-      });
-  
-      if (!response.data[0]?.b64_json) {
-        throw new Error("No image data received from OpenAI");
-      }
-  
-      const imagePath = await this.saveImage(
-        `data:image/png;base64,${response.data[0].b64_json}`,
-        promptData.bookTitle
+      // Adjust the prompt based on coverType
+      const coverPrompt =
+  coverType === "front"
+    ? `Design a visually striking and professional front cover for a book titled "${promptData.bookTitle}". The cover should reflect the book's core theme: "${promptData.bookInformation}". Use a creative, high-quality design that aligns with the book's genre and mood. Include the title prominently, an engaging background, and the author's name in a well-balanced layout. Avoid excessive text clutter; focus on a compelling, visually appealing composition.`
+    : `Generate a professional back cover for a book titled "${promptData.bookTitle}". The design should complement the front cover and reflect the core theme: "${promptData.bookInformation}". Ensure space for a book summary, author bio, and possibly a small author photo. Maintain a structured and aesthetically pleasing layout with balanced text placement. Avoid excessive text that overwhelms the design.`;
+
+
+      const requestData = {
+        prompt: coverPrompt, // Adjusted prompt based on cover type
+        num_images: 1,
+        enable_safety_checker: true,
+        safety_tolerance: "2",
+        output_format: "jpeg",
+        aspect_ratio: "9:16",
+        raw: false,
+        // Add other fields as required by the API
+      };
+
+      // Send the POST request to generate the cover
+      const postResponse = await axios.post(
+       this.configService.get<string>("BASE_URL_FAL_AI"),
+        requestData,
+        {
+          headers: {
+            Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
+            "Content-Type": "application/json",
+          },
+        }
       );
-  
-      return imagePath;
+
+      const responseUrl = postResponse.data.response_url;
+
+       return responseUrl;
+      
     } catch (error) {
       this.logger.error(`Error generating book cover: ${error.message}`);
-      throw new Error(`Failed to generate book cover ${error.message}`);
+      throw new Error(error.message);
     }
   }
-  
+
 
   private getDefaultStyling() {
     return {
@@ -614,8 +621,11 @@ export class BookGenerationService {
   async getBook(id: number) {
     return await this.bookGenerationRepository.findOne({ where: { id } });
   }
-  async getAllBooksCount(userId:number|null) {
-    if(userId) return await this.bookGenerationRepository.count({where: { userId: userId}});
+  async getAllBooksCount(userId: number | null) {
+    if (userId)
+      return await this.bookGenerationRepository.count({
+        where: { userId: userId },
+      });
     else return await this.bookGenerationRepository.count();
   }
 
@@ -626,11 +636,22 @@ export class BookGenerationService {
     try {
       await this.initializeAIModels(); // Ensure API keys are loaded before generating content
 
+      const coverImageUrl = await this.generateBookCover(promptData, "front"); // Front cover
+      const backgroundImageUrl = await this.generateBookCover(
+        promptData,
+        "back"
+      ); // Back cover
+
       const { fullBookContent, tableOfContents } =
         await this.createBookContent(promptData);
-      const coverImagePath = await this.generateBookCover(promptData);
-      const backgroundImagePath =
-        await this.generateBookBackgroundCover(promptData);
+      const coverImagePath = await this.generateBookImage(
+        coverImageUrl,
+        promptData
+      ); // Front cover
+      const backgroundImagePath = await this.generateBookImage(
+        backgroundImageUrl,
+        promptData
+      ); // Back cover
 
       const book = new BookGeneration();
       book.userId = userId;
