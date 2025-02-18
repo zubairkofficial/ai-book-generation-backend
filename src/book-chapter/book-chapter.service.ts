@@ -230,21 +230,22 @@ export class BookChapterService {
         const imageTitle =
           imageTitleResponse.content?.trim() || `Image ${imageIndex}`;
 
-        const imagePrompt = `
-          Create an image titled "${imageTitle}" for Chapter ${promptData.chapterNo} in "${bookInfo.bookTitle}".
-          Genre: "${bookInfo.genre}"
-          Target Audience: "${bookInfo.targetAudience}"
-          Core Idea: "${bookInfo.ideaCore}"
-         `;
+          const imagePrompt = `
+          Create an image for Chapter ${promptData.chapterNo} of the book titled "${bookInfo.bookTitle}". 
+          The image should reflect the following details:
+          - Title: "${imageTitle}" 
+          - Genre: "${bookInfo.genre}"
+          - Target Audience: "${bookInfo.targetAudience}"
+          - Core Idea: "${bookInfo.ideaCore}"
+          Please ensure the title is correctly represented in the image, and avoid including any incorrect words or context that do not fit the theme.
+          Only generate the image if the title aligns with the chapter's theme and core idea.
+        `;
+        
+        
 
         const requestData = {
           prompt: imagePrompt, // Adjusted prompt based on cover type
-          num_images: 1,
-          enable_safety_checker: true,
-          safety_tolerance: "2",
-          output_format: "jpeg",
-          aspect_ratio: "9:16",
-          raw: false,
+         
           // Add other fields as required by the API
         };
 
@@ -350,7 +351,7 @@ export class BookChapterService {
 
         if (chapterImages[i]) {
           formattedChapter += `### ${chapterImages[i].title}\n\n`;
-          formattedChapter += `![${chapterImages[i].title}](${chapterImages[i].url})\n\n`;
+          formattedChapter += `![${chapterImages[i].title}](${chapterImageInfo[i].url})\n\n`;
         }
       }
 
