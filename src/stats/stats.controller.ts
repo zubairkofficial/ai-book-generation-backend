@@ -10,30 +10,17 @@ import { RequestWithUser } from 'src/auth/types/request-with-user.interface';
 export class StatsController {
   constructor(private readonly statsService: StatsService) {}
 
-  @Post()
-  create(@Body() createStatDto: CreateStatDto) {
-    return this.statsService.create(createStatDto);
-  }
-
-
-  @Get()
+    @Get()
   getAllStats( @Req() request: RequestWithUser) {
+    try {
+      
+   
     const user = request.user;
     return this.statsService.getAllStats(user);
+  } catch (error) {
+      throw new Error(error.message);
+  
+  }
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.statsService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateStatDto: UpdateStatDto) {
-    return this.statsService.update(+id, updateStatDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.statsService.remove(+id);
-  }
 }
