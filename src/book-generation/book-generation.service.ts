@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, InternalServerErrorException, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { ChatOpenAI, OpenAI as LangchainOpenAI } from "@langchain/openai"; // For text generation
@@ -694,22 +694,27 @@ return this.bookGenerationRepository.remove(getBookById)
       throw new Error(error.message);
 }
   }
-  async getBooksByType(type:string,user: UserInterface){
+  async getBooksByType(type: string, user: UserInterface) {
     try {
-      const query= this.bookGenerationRepository
-       .createQueryBuilder("bookGeneration")
-       .leftJoinAndSelect("bookGeneration.bookChapter", "bookChapter")
-      //  
-       .andWhere("bookGeneration.type = :type", { type });
-       if(user.role!=='admin'){
-        query.where("bookGeneration.userId = :userId", { userId: user.id })
-       }
-return query.getMany()
+      const query = this.bookGenerationRepository
+        .createQueryBuilder("bookGeneration")
+        .leftJoinAndSelect("bookGeneration.bookChapter", "bookChapter")
+        .where("bookGeneration.type = :type", { type });
+  
+      // Apply user-based filtering if the user is not an admin
+      if (user.role !== 'admin') {
+        query.andWhere("bookGeneration.userId = :userId", { userId: user.id });
+      }
+  
+      // Execute the query and return the result
+      return await query.getMany();
+    } catch (error) {
+      // Enhanced error handling
+      this.logger.error(`Error retrieving books of type '${type}' for user ID: ${user.id}`, error.stack);
+      throw new InternalServerErrorException(error.message);
+    }
   }
-  catch(error){
-
-  }
-}
+  
   async searchBookQuery(userId: number, search: SearchDto) {
     try {
       // Prepare the query filter based on the provided search parameters
