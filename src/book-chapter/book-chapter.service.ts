@@ -8,7 +8,7 @@ import OpenAI from "openai";
 import * as fs from "fs";
 import * as path from "path";
 import { BookChapterGenerationDto } from "./dto/book-chapter.dto";
-import { BookGeneration } from "src/book-generation/entities/book-generation.entity";
+import { BookGeneration, BookType } from "src/book-generation/entities/book-generation.entity";
 import { BookChapter } from "./entities/book-chapter.entity";
 import { ConversationSummaryBufferMemory } from "langchain/memory";
 import axios from "axios";
@@ -622,7 +622,17 @@ export class BookChapterService {
         bookChapter.maxWords = input.maxWords;
         bookChapter.minWords = input.minWords;
       }
-
+if(bookChapter.chapterNo===input.chapterNo){
+  const updatedBookGeneration = {
+    ...bookChapter.bookGeneration,
+    type: BookType.COMPLETE
+  };
+  
+   await this.bookGenerationRepository.update(
+    { id: bookChapter.bookGeneration.id }, // Search condition
+    updatedBookGeneration                   // Fields to update
+  );
+}
       // Save (either insert or update)
       const savedChapter = await this.bookChapterRepository.save(bookChapter);
       return savedChapter;

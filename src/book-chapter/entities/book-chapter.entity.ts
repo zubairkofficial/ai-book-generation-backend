@@ -2,10 +2,12 @@ import { BookGeneration } from 'src/book-generation/entities/book-generation.ent
 import { BaseEntity } from 'src/common/entities/base.entity';
 import { Entity, Column,  ManyToOne, JoinColumn } from 'typeorm';
 
+
+
 @Entity()
 export class BookChapter extends BaseEntity {
 
-  @ManyToOne(() => BookGeneration, (bookGeneration) => bookGeneration.bookChapter)
+  @ManyToOne(() => BookGeneration, (bookGeneration) => bookGeneration.bookChapter,{ onDelete: 'CASCADE' })
   @JoinColumn({ name: 'bookGenerationId' })
   bookGeneration: BookGeneration;
 
@@ -21,4 +23,5 @@ export class BookChapter extends BaseEntity {
   @Column('jsonb', { nullable: true })
   chapterInfo?:  string;
   
+
 }

@@ -2,6 +2,10 @@ import { BookChapter } from 'src/book-chapter/entities/book-chapter.entity';
 import { BaseEntity } from 'src/common/entities/base.entity';
 import { Entity, Column,  OneToMany } from 'typeorm';
 
+export enum BookType {
+  COMPLETE = 'complete',
+  INCOMPLETE = 'incomplete',
+}
 @Entity()
 export class BookGeneration extends BaseEntity {
 
@@ -52,7 +56,15 @@ export class BookGeneration extends BaseEntity {
     tableOfContents?: string;
   };
 
-  @OneToMany(() => BookChapter, (bookChapter) => bookChapter.bookGeneration)
+
+  @Column({
+    type: 'enum',
+    enum: BookType,
+    default: BookType.INCOMPLETE,
+  })
+  type: BookType;
+
+  @OneToMany(() => BookChapter, (bookChapter) => bookChapter.bookGeneration, { onDelete: 'CASCADE' })
   bookChapter: BookChapter[];
  
 }

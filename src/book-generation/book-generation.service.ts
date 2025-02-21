@@ -15,6 +15,7 @@ import { BookGenerationDto, SearchDto } from "./dto/book-generation.dto";
 import { allowedSizes } from "src/common";
 import { UserDto } from "src/auth/types/request-with-user.interface";
 import axios from "axios";
+import { UserInterface } from "src/users/dto/users.dto";
 
 @Injectable()
 export class BookGenerationService {
@@ -683,6 +684,29 @@ export class BookGenerationService {
       throw new Error(error.message);
     }
   }
+
+
+  async deleteBookById(id:number){
+    try {
+const getBookById=await this.getBook(id)
+return this.bookGenerationRepository.remove(getBookById)
+} catch (error) {
+      throw new Error(error.message);
+}
+  }
+  async getBooksByType(type:string,user: UserInterface){
+    try {
+      return this.bookGenerationRepository
+       .createQueryBuilder("bookGeneration")
+       .leftJoinAndSelect("bookGeneration.bookChapter", "bookChapter")
+       .where("bookGeneration.userId = :userId", { userId: user.id })
+       .andWhere("bookGeneration.type = :type", { type });
+
+  }
+  catch(error){
+
+  }
+}
   async searchBookQuery(userId: number, search: SearchDto) {
     try {
       // Prepare the query filter based on the provided search parameters

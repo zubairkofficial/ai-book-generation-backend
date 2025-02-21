@@ -22,3 +22,6 @@ export class UpdateUserDto {
   @IsString()
   phoneNumber?: string | null;
 }
+
+
+export interface UserInterface{ id: number; email?: string; role: string }

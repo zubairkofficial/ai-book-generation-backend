@@ -6,6 +6,7 @@ import { BookGenerationService } from "src/book-generation/book-generation.servi
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { BookGeneration } from "src/book-generation/entities/book-generation.entity";
+import { UserInterface } from "src/users/dto/users.dto";
 
 @Injectable()
 export class StatsService {
@@ -18,7 +19,7 @@ export class StatsService {
 
 
 
-  async getAllStats(user: { id: number; email?: string; role: string }) {
+  async getAllStats(user:UserInterface ) {
     const isAdmin = user.role == "admin";
     const userId = !isAdmin ? user.id:null;
     try {

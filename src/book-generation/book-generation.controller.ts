@@ -7,7 +7,9 @@ import {
   UnauthorizedException,
   InternalServerErrorException,
   Logger,
-  Get
+  Get,
+  Delete,
+  Param
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { BookGenerationService } from './book-generation.service';
@@ -80,6 +82,49 @@ export class BookGenerationController {
       const books = await this.bookGenerationService.getAllBooksByUser(user);
       return {
         message: 'Books successfully retrieved.',
+        data: books,
+      };
+    } catch (error) {
+      this.logger.error(`Error retrieving books for user ID: ${user.id}`, error.stack);
+      throw new InternalServerErrorException(error.message);
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id')
+  async deleteBookById(@Req() request: RequestWithUser,@Param('id') id:number) {
+    const user = request.user;
+    
+    if (!user) {
+      this.logger.error('Unauthorized: User ID not found in the request.');
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+
+    try {
+      const books = await this.bookGenerationService.deleteBookById(id);
+      return {
+        message: 'Books successfully deleted.',
+        data: books,
+      };
+    } catch (error) {
+      this.logger.error(`Error retrieving books for user ID: ${user.id}`, error.stack);
+      throw new InternalServerErrorException(error.message);
+    }
+  }
+  @UseGuards(JwtAuthGuard)
+  @Get(':type')
+  async getBooksByType(@Req() request: RequestWithUser,@Param('type') type:string) {
+    const user = request.user;
+    
+    if (!user) {
+      this.logger.error('Unauthorized: User ID not found in the request.');
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+
+    try {
+      const books = await this.bookGenerationService.getBooksByType(type,user);
+      return {
+        message: 'Books successfully deleted.',
         data: books,
       };
     } catch (error) {
