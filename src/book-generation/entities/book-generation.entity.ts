@@ -38,11 +38,6 @@ export class BookGeneration extends BaseEntity {
   @Column()
   language: string;
 
-  // @Column({type: 'boolean', default:false})
-  // isFlowChart: boolean;
-
-  // @Column({type: 'boolean', default:false})
-  // isDiagram: boolean;
 
   @Column({ type: 'text', nullable: true })
   additionalContent?: string;

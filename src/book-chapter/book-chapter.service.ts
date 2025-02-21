@@ -70,7 +70,6 @@ export class BookChapterService {
       this.textModel = new ChatOpenAI({
         openAIApiKey: this.apiKeyRecord[0].openai_key,
         temperature: 0.7,
-        maxTokens: 16000,
         modelName: this.apiKeyRecord[0].model,
       });
 

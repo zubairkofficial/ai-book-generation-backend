@@ -1,34 +1,20 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
-import { AiAssistantService } from './ai-assistant.service';
-import { CreateAiAssistantDto } from './dto/create-ai-assistant.dto';
-import { UpdateAiAssistantDto } from './dto/update-ai-assistant.dto';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { AiAssistant } from "./entities/ai-assistant.entity";
+import { AiAssistantService } from "./ai-assistant.service";
+import { AiAssistantDto } from "./dto/ai-assistant.dto";
+import { JwtAuthGuard } from "src/auth/guards/jwt-auth.guard";
+import { RequestWithUser } from "src/auth/types/request-with-user.interface";
 
-@Controller('ai-assistant')
+@Controller("ai-assistant")
 export class AiAssistantController {
-  constructor(private readonly aiAssistantService: AiAssistantService) {}
+  constructor(
+    private readonly aiAssistantService: AiAssistantService
+  ) {}
 
+  @UseGuards(JwtAuthGuard)
   @Post()
-  create(@Body() createAiAssistantDto: CreateAiAssistantDto) {
-    return this.aiAssistantService.create(createAiAssistantDto);
-  }
-
-  @Get()
-  findAll() {
-    return this.aiAssistantService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.aiAssistantService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateAiAssistantDto: UpdateAiAssistantDto) {
-    return this.aiAssistantService.update(+id, updateAiAssistantDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.aiAssistantService.remove(+id);
+  async getAiAssistantResponse( @Body() input:AiAssistantDto, @Req() request: RequestWithUser,): Promise<AiAssistant> {
+    const userId = request.user?.id;
+    return this.aiAssistantService.processAiAssistantTask(userId,input)
   }
 }

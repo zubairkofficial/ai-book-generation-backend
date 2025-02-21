@@ -1,5 +1,6 @@
+import { AiAssistant } from 'src/ai-assistant/entities/ai-assistant.entity';
 import { BaseEntity } from 'src/common/entities/base.entity';
-import { Entity, Column } from 'typeorm';
+import { Entity, Column, OneToMany } from 'typeorm';
 
 export enum UserRole {
   USER = 'user',
@@ -32,4 +33,7 @@ export class User extends BaseEntity {
     default: UserRole.USER,
   })
   role: UserRole;
+
+  @OneToMany(() => AiAssistant, (aiAssistant) => aiAssistant.user, { cascade: true })
+  aiAssistants: AiAssistant[];
 }
