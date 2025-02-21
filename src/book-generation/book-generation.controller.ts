@@ -16,6 +16,7 @@ import { BookGenerationService } from './book-generation.service';
 import {  BookGenerationDto } from './dto/book-generation.dto';
 import { RequestWithUser } from '../auth/types/request-with-user.interface';
 import { ApiOperation, ApiResponse, ApiBody, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { BookType } from './entities/book-generation.entity';
 
 @ApiTags('books')
 @ApiBearerAuth('JWT-auth')
@@ -115,16 +116,16 @@ export class BookGenerationController {
   @Get(':type')
   async getBooksByType(@Req() request: RequestWithUser,@Param('type') type:string) {
     const user = request.user;
-    
+    const bookType=type=='draft'?BookType.INCOMPLETE:BookType.COMPLETE
     if (!user) {
       this.logger.error('Unauthorized: User ID not found in the request.');
       throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
     }
 
     try {
-      const books = await this.bookGenerationService.getBooksByType(type,user);
+      const books = await this.bookGenerationService.getBooksByType(bookType,user);
       return {
-        message: 'Books successfully deleted.',
+        message: 'Books successfully retrieved.',
         data: books,
       };
     } catch (error) {

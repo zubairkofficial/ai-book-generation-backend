@@ -696,12 +696,15 @@ return this.bookGenerationRepository.remove(getBookById)
   }
   async getBooksByType(type:string,user: UserInterface){
     try {
-      return this.bookGenerationRepository
+      const query= this.bookGenerationRepository
        .createQueryBuilder("bookGeneration")
        .leftJoinAndSelect("bookGeneration.bookChapter", "bookChapter")
-       .where("bookGeneration.userId = :userId", { userId: user.id })
+      //  
        .andWhere("bookGeneration.type = :type", { type });
-
+       if(user.role!=='admin'){
+        query.where("bookGeneration.userId = :userId", { userId: user.id })
+       }
+return query.getMany()
   }
   catch(error){
 
