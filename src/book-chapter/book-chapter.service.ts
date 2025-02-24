@@ -436,38 +436,39 @@ export class BookChapterService {
 
       // Step 1: Generate the Chapter Text
       const chapterPrompt = `
-            You are a master book writer. Your task is to write **Chapter ${promptData.chapterNo}** of the book titled **"${bookInfo.bookTitle}"**.
-      
-            ## 📖 Book Information:
-            - **Genre**: ${bookInfo.genre}
-            - **Author**: ${bookInfo.authorName || "A knowledgeable expert"}
-            - **Core Idea**: ${bookInfo.ideaCore || "A detailed and insightful book on the subject."}
-            - **Target Audience**: ${bookInfo.targetAudience || "Professionals, students, and knowledge seekers."}
-            - **Language**: The book is written in ${bookInfo.language || "English"}.
-      
-            ## 🎯 Writing Style:
-            Based on the genre **"${bookInfo.genre}"**, adopt an appropriate writing style.
-            - Use a **tone** and **structure** that aligns with the genre.
-            - Adapt the complexity and depth based on the **target audience**.
-      
-            ## 📝 Context Memory (Summarized Previous Chapters):
-            ${memory}
-      
-            ## 📖 Chapter Writing Instructions:
-            - Begin with a **strong introduction** that aligns with the book's theme.
-            - **Your writing must contain between ${promptData.minWords || 5000} and ${promptData.maxWords || 20000} words**.
-            - **DO NOT** generate content below the minimum word count.
-            - **DO NOT** exceed the maximum word count.
-      
-            ## 🔍 Additional Guidance:
-            ${promptData.additionalInfo || "Follow the established style, tone, and pacing from previous chapters."}
-      
-            ---
-            ## 📝 Previous Chapter Summary:
-            ${memory || "No previous summary available."}
-      
-            **📝 Begin Chapter ${promptData.chapterNo}:**
-          `;
+You are a master book writer. Your task is to write **Chapter ${promptData.chapterNo}** of the book titled **"${bookInfo.bookTitle}"**.
+
+## 📖 Book Information:
+- **Genre**: ${bookInfo.genre}
+- **Author**: ${bookInfo.authorName || "A knowledgeable expert"}
+- **Core Idea**: ${bookInfo.ideaCore || "A detailed and insightful book on the subject."}
+- **Target Audience**: ${bookInfo.targetAudience || "Professionals, students, and knowledge seekers."}
+- **Language**: The book is written in ${bookInfo.language || "English"}.
+
+## 🎯 Writing Style:
+Based on the genre **"${bookInfo.genre}"**, adopt an appropriate writing style.
+- Use a **tone** and **structure** that aligns with the genre.
+- Adapt the complexity and depth based on the **target audience**.
+
+## 📝 Context Memory (Summarized Previous Chapters):
+${memory}
+
+## 📖 Chapter Writing Instructions:
+- Begin with a **strong introduction** that aligns with the book's theme.
+- **Your writing must contain between ${promptData.minWords || 5000} and ${promptData.maxWords || 20000} words**.
+- **DO NOT** generate content below the minimum word count.
+- **DO NOT** exceed the maximum word count.
+
+## 🔍 Additional Guidance:
+${promptData.additionalInfo || "Follow the established style, tone, and pacing from previous chapters."}
+
+---
+## 📝 Previous Chapter Summary:
+${memory || "No previous summary available."}
+
+**📝 Begin Chapter ${promptData.chapterNo}:**
+`;
+
 
       const stream = await this.textModel.stream(chapterPrompt);
       let chapterText = "";

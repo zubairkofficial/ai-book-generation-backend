@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { AiAssistantType } from '../entities/ai-assistant.entity';
 import { Type } from 'class-transformer';
 
@@ -79,5 +79,13 @@ export class AiAssistantDto {
   @Type(() => BookWriteDTO)
   bookWriteInfo?: BookWriteDTO;
 
+  
+}
+export class AiAssistantMessage {
+@IsString()
+  message:string
+  
+@IsNumber()
+  aiAssistantId:number
   
 }

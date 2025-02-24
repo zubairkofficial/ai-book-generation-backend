@@ -1,11 +1,12 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { AiAssistant, AiAssistantType } from "./entities/ai-assistant.entity";
 import { ChatOpenAI, OpenAI } from "@langchain/openai";
 import { ApiKeysService } from "src/api-keys/api-keys.service";
-import { AiAssistantDto, StoryDTO } from "./dto/ai-assistant.dto";
+import { AiAssistantDto, AiAssistantMessage, StoryDTO } from "./dto/ai-assistant.dto";
 import { UsersService } from "src/users/users.service";
+import { ConversationSummaryBufferMemory } from "langchain/memory";
 
 @Injectable()
 export class AiAssistantService {
@@ -101,7 +102,89 @@ export class AiAssistantService {
       const aiAssistantDetail = await this.aiAssistantRepository.save(aiAssistant);
       return aiAssistantDetail;
   }
+  async getAiAssistantChat(userId: number, input: AiAssistantMessage) {
+   try {
+    
   
+    await this.initializeAIModels();
+  
+    const user = await this.usersService.getProfile(userId);
+  
+    const aiAssistant = await this.aiAssistantRepository.findOne({
+      where: { id: +input.aiAssistantId },
+    });
+  
+    if (!aiAssistant) throw new NotFoundException('AI Assistant not found');
+  
+    const memory = new ConversationSummaryBufferMemory({
+      llm: this.textModel,
+    });
+  
+    if (aiAssistant.response?.generatedText) {
+      await memory.saveContext(
+        { input: 'previous response' },
+        { output: aiAssistant.response.generatedText },
+      );
+    }
+  
+    await memory.saveContext({ input: input.message }, { output: '' });
+  
+    let prompt;
+  
+    switch (aiAssistant.type) {
+      case AiAssistantType.BOOK_IDEA:
+        prompt = this.messagePrompt(aiAssistant, input.message);
+        break;
+  
+      case AiAssistantType.BOOK_COVER_IMAGE:
+        prompt = this.messagePrompt(aiAssistant, input.message);
+        break;
+  
+      case AiAssistantType.WRITING_ASSISTANT:
+        prompt = this.messagePrompt(aiAssistant, input.message);
+        break;
+  
+      default:
+        throw new Error(`Unsupported AI Assistant type: ${aiAssistant.type}`);
+    }
+  
+    const generatedResponse = await this.textModel.invoke(prompt + '\n' + input.message);
+  
+    // Save the new response in memory
+    await memory.saveContext({ input: input.message }, { output: generatedResponse });
+  
+    // Persist response to database
+    // aiAssistant.response = {
+    //   generatedText: generatedResponse,
+    //   timestamp: new Date(),
+    // };
+    // await this.aiAssistantRepository.save(aiAssistant);
+  
+    return generatedResponse;
+  } catch (error) {
+    throw new InternalServerErrorException(error.message)
+  }
+  }
+  
+  messagePrompt(aiAssistant: AiAssistant, message: string): string {
+    const previousResponse = aiAssistant.response?.generatedText
+      ? `Previous response: ${aiAssistant.response.generatedText}\n`
+      : '';
+  
+    switch (aiAssistant.type) {
+      case AiAssistantType.BOOK_IDEA:
+        return `${previousResponse}You're an AI specialized in suggesting innovative and engaging book ideas. Based on user input: ${message}`;
+  
+      case AiAssistantType.BOOK_COVER_IMAGE:
+        return `${previousResponse}You're an AI specialized in describing creative book cover images. User description: ${message}`;
+  
+      case AiAssistantType.WRITING_ASSISTANT:
+        return `${previousResponse}You're an AI writing assistant helping users to enhance their writing. User input: ${message}`;
+  
+      default:
+        throw new Error(`Unsupported AI Assistant type: ${aiAssistant.type}`);
+    }
+  }
 
   private generatePrompt(type: AiAssistantType, info: Record<string, any>): string {
     switch (type) {
