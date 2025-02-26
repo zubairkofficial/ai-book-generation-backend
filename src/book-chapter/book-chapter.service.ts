@@ -507,7 +507,7 @@ if(promptData.instruction){
         bookChapter.maxWords = input.maxWords;
         bookChapter.minWords = input.minWords;
       }
-if(bookChapter.chapterNo===input.chapterNo){
+if(bookInfo.numberOfChapters===input.chapterNo){
   const updatedBookGeneration = {
     ...bookChapter.bookGeneration,
     type: BookType.COMPLETE
