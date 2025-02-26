@@ -206,133 +206,107 @@ export class BookGenerationService {
     }
   }
 
-  private async generateBookSummary(
-    promptData: BookGenerationDto
-  ): Promise<string> {
-    try {
-      const summaryPrompt = `Generate maximum 400 characters length of summary for "${promptData.bookTitle}". 
-      Consider the following aspects:
-      - Genre: ${promptData.genre}
-      - Target audience: ${promptData.targetAudience || "General readers"}
-      - CoreIdea: ${promptData.bookInformation}
-      
-      Provide a compelling and vivid description that captures the essence of the book.`;
-
-      const response = await this.textModel.invoke(summaryPrompt);
-      console.log("Summary of Dall", summaryPrompt, response);
-      return response.content.toString();
-    } catch (error) {
-      this.logger.error(`Error generating book summary: ${error.message}`);
-      throw new Error("Failed to generate book summary");
-    }
-  }
+ 
 
   private async generateBookImage(responseUrl, promptData): Promise<string> {
     try {
-      const getResponse = await axios.get(responseUrl, {
-        headers: {
-          Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      // If the image is ready
-
-      const dirPath = path.join(this.uploadsDir, "covers");
-
-      const imageUrl = getResponse.data.images[0].url;
-      // Once the image is ready, download and save it
-      const imageResponse = await axios.get(imageUrl, {
-        responseType: "arraybuffer",
-      });
-
-      // Define the sanitized file name for the image
-      const timestamp = new Date().getTime();
-      const sanitizedFileName = promptData.bookTitle
-        .replace(/[^a-z0-9]/gi, "_")
-        .toLowerCase();
-      const fullFileName = `${sanitizedFileName}_${timestamp}.png`;
-
-      // Define the path to save the image in the 'uploads/covers/images' folder
-      const imagePath = path.join(dirPath, `${fullFileName}`);
-
-      // Ensure the 'covers/images' folder exists, create if it doesn't
-      const imageFolderPath = path.dirname(imagePath);
-      if (!fs.existsSync(imageFolderPath)) {
-        fs.mkdirSync(imageFolderPath, { recursive: true });
+      const maxRetries = 12;
+      const delayMs = 10000; // 10 seconds between retries
+  
+      let imageUrl: string | null = null;
+  
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const getResponse = await axios.get(responseUrl, {
+            headers: {
+              Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
+              "Content-Type": "application/json",
+            },
+          });
+  
+          if (getResponse.data.images?.length > 0) {
+            imageUrl = getResponse.data.images[0].url;
+            break;
+          }
+        } catch (error) {
+          this.logger.warn(`⏳ Image not ready (Attempt ${attempt}/${maxRetries})`);
+        }
+  
+        await new Promise((resolve) => setTimeout(resolve, delayMs)); // Wait before retrying
       }
-
-      // Save the image to the specified folder
+  
+      if (!imageUrl) throw new Error("❌ Image generation failed after retries.");
+  
+      // Download & Save Image
+      const imageResponse = await axios.get(imageUrl, { responseType: "arraybuffer" });
+  
+      const sanitizedFileName = promptData.bookTitle.replace(/[^a-z0-9]/gi, "_").toLowerCase();
+      const fullFileName = `${sanitizedFileName}_${Date.now()}.png`;
+      const imagePath = path.join(this.uploadsDir, "covers", fullFileName);
+  
+      fs.mkdirSync(path.dirname(imagePath), { recursive: true });
       fs.writeFileSync(imagePath, imageResponse.data);
-
-      // Return the relative endpoint (e.g., /cover/image_name)
-      const relativePath = `covers/${fullFileName}`;
-      return relativePath;
+  
+      return `covers/${fullFileName}`;
     } catch (error) {
-      this.logger.error(`Error generating book cover: ${error.message}`);
+      this.logger.error(`❌ Error downloading book image: ${error.message}`);
       throw new Error(error.message);
     }
   }
-  private async generateBookCover(
-    promptData: BookGenerationDto,
-    coverType: "front" | "back",
-   
-  ): Promise<string> {
+  
+  private async generateBookCover(promptData: BookGenerationDto, coverType: "front" | "back"): Promise<string> {
     try {
-      type AllowedSize = (typeof allowedSizes)[number];
-      const imageSize = this.configService.get<string>(
-        "IMAGE_SIZE"
-      ) as AllowedSize;
-
-      if (!allowedSizes.includes(imageSize)) {
-        throw new Error(
-          `Invalid image size: ${imageSize}. Allowed sizes are: ${allowedSizes.join(", ")}`
-        );
-      }
-
-      const dirPath = path.join(this.uploadsDir, "covers");
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-      }
-      // Adjust the prompt based on coverType
+      const maxRetries = 5; // Retry up to 5 times
+      const delayMs = 3000; // Wait 3 seconds between retries
+  
       const coverPrompt =
-  coverType === "front"
-    ? `Design a visually striking and professional front cover for a book titled "${promptData.bookTitle}". The cover should reflect the book's core theme: "${promptData.bookInformation}". Use a creative, high-quality design that aligns with the book's genre and mood. Include the title prominently, an engaging background, and the author's name in a well-balanced layout. Avoid excessive text clutter; focus on a compelling, visually appealing composition.`
-    : `Generate a professional back cover for a book titled "${promptData.bookTitle}". The design should complement the front cover and reflect the core theme: "${promptData.bookInformation}". Ensure space for a book summary, author bio, and possibly a small author photo. Maintain a structured and aesthetically pleasing layout with balanced text placement. Avoid excessive text that overwhelms the design.`;
-
-
+        coverType === "front"
+          ? `Design a visually striking and professional front cover for "${promptData.bookTitle}".`
+          : `Generate a professional back cover for "${promptData.bookTitle}".`;
+  
       const requestData = {
-        prompt: coverPrompt, // Adjusted prompt based on cover type
+        prompt: coverPrompt,
         num_images: 1,
         enable_safety_checker: true,
         safety_tolerance: "2",
         output_format: "jpeg",
         aspect_ratio: "9:16",
         raw: false,
-        // Add other fields as required by the API
       };
-
-      // Send the POST request to generate the cover
-      const postResponse = await axios.post(
-       this.configService.get<string>("BASE_URL_FAL_AI"),
-        requestData,
-        {
-          headers: {
-            Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
-            "Content-Type": "application/json",
-          },
+  
+      let responseUrl: string | null = null;
+  
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const postResponse = await axios.post(
+            this.configService.get<string>("BASE_URL_FAL_AI"),
+            requestData,
+            {
+              headers: {
+                Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
+                "Content-Type": "application/json",
+              },
+            }
+          );
+  
+          responseUrl = postResponse.data.response_url;
+          if (responseUrl) break; // ✅ Stop retrying if successful
+        } catch (error) {
+          this.logger.warn(`⚠️ Attempt ${attempt}/${maxRetries} failed: ${error.message}`);
+          if (attempt < maxRetries) await new Promise((resolve) => setTimeout(resolve, delayMs));
         }
-      );
-
-      const responseUrl = postResponse.data.response_url;
-
-       return responseUrl;
+      }
+  
+      if (!responseUrl) throw new Error("❌ Failed to generate book cover after retries.");
       
+      return responseUrl;
     } catch (error) {
-      this.logger.error(`Error generating book cover: ${error.message}`);
+      this.logger.error(`❌ Error generating book cover: ${error.message}`);
       throw new Error(error.message);
     }
   }
+  
+  
 
 
   private getDefaultStyling() {
@@ -356,87 +330,70 @@ export class BookGenerationService {
 
   private async introductionContent(promptData: BookGenerationDto) {
     try {
-      const sections: string[] = [];
+      this.logger.log(`📖 Generating Introduction Content for: "${promptData.bookTitle}"`);
+  
+      // Prepare all prompts (UNCHANGED)
       const coverPagePrompt = `
         Create a professional Cover Page with the following details:
         - Title: "${promptData.bookTitle}"
         - Author: "${promptData.authorName || "Anonymous"}"
         - Publisher: ${promptData.authorName || "AiBookPublisher"}
-        - AuthorBio: ${promptData.authorBio || "Writter"}
+        - AuthorBio: ${promptData.authorBio || "Writer"}
         - Language: ${promptData.language || "English"}
         - CoreIdea: ${promptData.bookInformation}
       `;
-      const coverPageResponse = await this.textModel.invoke(coverPagePrompt);
-
-      const coverPage =
-        typeof coverPageResponse === "string"
-          ? coverPageResponse
-          : coverPageResponse?.text || JSON.stringify(coverPageResponse);
-
-      sections.push(` Cover Page\n${coverPage}\n`);
-
-      // Dedication Page
+  
       const dedicationPrompt = `
         Write a dedication for the book titled "${promptData.bookTitle}".
       `;
-      const dedicationResponse = await this.textModel.invoke(dedicationPrompt);
-      const dedication =
-        typeof dedicationResponse === "string"
-          ? dedicationResponse
-          : dedicationResponse?.text || JSON.stringify(dedicationResponse);
-
-      sections.push(`Dedication\n${dedication}\n`);
-
-      // Preface/Introduction
+  
       const prefacePrompt = `
         Write a compelling preface for the book titled "${promptData.bookTitle}".
         Include sections like Overview, Use in Curriculum, Goals, and Acknowledgments.
       `;
-      const prefaceResponse = await this.textModel.invoke(prefacePrompt);
-      const preface =
-        typeof prefaceResponse === "string"
-          ? prefaceResponse
-          : prefaceResponse?.text || JSON.stringify(prefaceResponse);
-
-      sections.push(` Preface\n${preface}\n`);
-
-      // Table of Contents
+  
       const tableOfContentsPrompt = `
-  Create a list of unique, engaging chapter titles for a book with ${promptData.numberOfChapters} chapters. Each title should reflect the theme of the book and evoke curiosity. The titles should be concise, descriptive, and hint at the main events or ideas in each chapter.
-
-    - Title: "${promptData.bookTitle}"
-    - Language: ${promptData.language || "English"}
-    - CoreIdea: ${promptData.bookInformation}
-    - Number of Chapters: ${promptData.numberOfChapters}
-   ## Output Format (STRICTLY FOLLOW THIS FORMAT):
-  Chapter 1: [Title]
-  Chapter 2: [Title]
-  Chapter 3: [Title]
-  ...
-  Chapter ${promptData.numberOfChapters}: [Title]
-
-  Continue for all chapters, ensuring each title is creative and fitting for the respective chapter's content.
-`;
-
-      const tableOfContentsResponse = await this.textModel.invoke(
-        tableOfContentsPrompt
-      );
-      const tableOfContents =
-        typeof tableOfContentsResponse === "string"
-          ? tableOfContentsResponse
-          : tableOfContentsResponse?.text ||
-            JSON.stringify(tableOfContentsResponse);
-
-      // sections.push(` Table of Contents\n${tableOfContents}\n`);
-
-      return { section: sections.join("\n"), tableOfContents };
+        Create a list of unique, engaging chapter titles for a book with ${promptData.numberOfChapters} chapters.
+        Each title should reflect the theme of the book and evoke curiosity.
+        The titles should be concise, descriptive, and hint at the main events or ideas in each chapter.
+  
+        - Title: "${promptData.bookTitle}"
+        - Language: ${promptData.language || "English"}
+        - CoreIdea: ${promptData.bookInformation}
+        - Number of Chapters: ${promptData.numberOfChapters}
+  
+        ## Output Format (STRICTLY FOLLOW THIS FORMAT):
+        Chapter 1: [Title]
+        Chapter 2: [Title]
+        Chapter 3: [Title]
+        ...
+        Chapter ${promptData.numberOfChapters}: [Title]
+  
+        Continue for all chapters, ensuring each title is creative and fitting for the respective chapter's content.
+      `;
+  
+      // **Run all AI calls in parallel** (Faster Execution)
+      const [coverPageResponse, dedicationResponse, prefaceResponse, tableOfContentsResponse] = await Promise.all([
+        this.textModel.invoke(coverPagePrompt),
+        this.textModel.invoke(dedicationPrompt),
+        this.textModel.invoke(prefacePrompt),
+        this.textModel.invoke(tableOfContentsPrompt),
+      ]);
+  
+      // **Faster String Concatenation**
+      const section = [
+        `Cover Page\n${coverPageResponse.content}`,
+        `Dedication\n${dedicationResponse.content}`,
+        `Preface\n${prefaceResponse.content}`
+      ].join("\n\n"); // Efficient string joining
+  
+      return { section, tableOfContents: tableOfContentsResponse.content };
     } catch (error) {
-      this.logger.error(
-        `Error generating introduction content: ${error.message}`
-      );
+      this.logger.error(`❌ Error generating introduction content: ${error.message}`);
       throw new Error(error.message);
     }
   }
+  
   private async generateDiagram(
     chapterContent: string,
     chapterNumber: number,
@@ -481,67 +438,49 @@ export class BookGenerationService {
     }
   }
 
-  private async endOfBookContent(
-    promptData: BookGenerationDto
-  ): Promise<string> {
+  private async endOfBookContent(promptData: BookGenerationDto): Promise<string> {
     try {
-      const sections: string[] = [];
-
-      // Glossary
+      this.logger.log(`📖 Generating End-of-Book Content for: "${promptData.bookTitle}"`);
+  
+      // Prepare prompts (UNCHANGED)
       const glossaryPrompt = `
         Create a glossary for the book titled "${promptData.bookTitle}". Include definitions of key terms used in the book.
       `;
-      const glossaryResponse = await this.textModel.invoke(glossaryPrompt); // Replace with actual API call or logic
-      const glossary =
-        typeof glossaryResponse === "string"
-          ? glossaryResponse
-          : glossaryResponse?.text || JSON.stringify(glossaryResponse);
-
-      sections.push(` Glossary\n${glossary}\n`);
-
-      // Index
+  
       const indexPrompt = `
         Create an index for the book titled "${promptData.bookTitle}". Include key topics with page numbers.
       `;
-      const indexResponse = await this.textModel.invoke(indexPrompt); // Replace with actual API call or logic
+  
       const prefacePrompt = `
         Write a compelling preface for the book titled "${promptData.bookTitle}".
         Include sections like Overview, Use in Curriculum, Goals, and Acknowledgments.
       `;
-      const prefaceResponse = await this.textModel.invoke(prefacePrompt);
-      const preface =
-        typeof prefaceResponse === "string"
-          ? prefaceResponse
-          : prefaceResponse?.text || JSON.stringify(prefaceResponse);
-
-      sections.push(` Preface\n${preface}\n`);
-      const index =
-        typeof indexResponse === "string"
-          ? indexResponse
-          : indexResponse?.text || JSON.stringify(indexResponse);
-
-      sections.push(` Index\n${index}\n`);
-
-      // References/Bibliography
+  
       const referencesPrompt = `
         Write a bibliography for the book titled "${promptData.bookTitle}". Include any references or inspirations.
       `;
-      const referencesResponse = await this.textModel.invoke(referencesPrompt); // Replace with actual API call or logic
-      const references =
-        typeof referencesResponse === "string"
-          ? referencesResponse
-          : referencesResponse?.text || JSON.stringify(referencesResponse);
-
-      sections.push(` References\n${references}\n`);
-
-      // Combine all sections into a single string
-      const endOfBookContent = sections.join("\n");
-      return endOfBookContent;
+  
+      // **Run AI calls in parallel** for faster execution
+      const [glossaryResponse, indexResponse, prefaceResponse, referencesResponse] = await Promise.all([
+        this.textModel.invoke(glossaryPrompt),
+        this.textModel.invoke(indexPrompt),
+        this.textModel.invoke(prefacePrompt),
+        this.textModel.invoke(referencesPrompt),
+      ]);
+  
+      // **Fast String Concatenation**
+      return [
+        `Glossary\n${glossaryResponse.content}`,
+        `Index\n${indexResponse.content}`,
+        `Preface\n${prefaceResponse.content}`,
+        `References\n${referencesResponse.content}`,
+      ].join("\n\n"); // Efficient joining
     } catch (error) {
-      console.error("Error generating end-of-book content:", error);
+      this.logger.error(`❌ Error generating end-of-book content: ${error.message}`);
       throw new Error("Failed to generate end-of-book content");
     }
   }
+  
 
   private async generateFlowchart(promptText: string): Promise<string> {
     try {
@@ -586,25 +525,25 @@ export class BookGenerationService {
 
   private async createBookContent(promptData: BookGenerationDto) {
     try {
-      const sections: string[] = [];
-
-      // Generate Introduction Content
-      const { section, tableOfContents } =
-        await this.introductionContent(promptData);
-      sections.push(section);
-
-      // Generate End-of-Book Content
-      const endOfBook = await this.endOfBookContent(promptData);
-      sections.push(endOfBook);
-
-      // Combine all sections into a single string
-      const fullBookContent = sections.join("\n\n");
-      return { fullBookContent, tableOfContents };
+      // Run introduction & end-of-book content generation **in parallel**
+      const [introContent, endOfBookContent] = await Promise.all([
+        this.introductionContent(promptData),
+        this.endOfBookContent(promptData),
+      ]);
+  
+      // Combine sections efficiently
+      const fullBookContent = `${introContent.section}\n\n${endOfBookContent}`;
+  
+      return {
+        fullBookContent,
+        tableOfContents: introContent.tableOfContents,
+      };
     } catch (error) {
-      this.logger.error(`Error creating book content: ${error.message}`);
+      this.logger.error(`❌ Error creating book content: ${error.message}`);
       throw new Error(error.message);
     }
   }
+  
   async getAllBooksByUser(user: UserDto): Promise<BookGeneration[]> {
     const query = this.bookGenerationRepository
       .createQueryBuilder("bookGeneration")
@@ -630,30 +569,24 @@ export class BookGenerationService {
     else return await this.bookGenerationRepository.count();
   }
 
-  async generateAndSaveBook(
-    userId: number,
-    promptData: BookGenerationDto
-  ): Promise<BookGeneration> {
+  async generateAndSaveBook(userId: number, promptData: BookGenerationDto): Promise<BookGeneration> {
     try {
       await this.initializeAIModels(); // Ensure API keys are loaded before generating content
-
-      const coverImageUrl = await this.generateBookCover(promptData, "front"); // Front cover
-      const backgroundImageUrl = await this.generateBookCover(
-        promptData,
-        "back"
-      ); // Back cover
-
-      const { fullBookContent, tableOfContents } =
-        await this.createBookContent(promptData);
-      const coverImagePath = await this.generateBookImage(
-        coverImageUrl,
-        promptData
-      ); // Front cover
-      const backgroundImagePath = await this.generateBookImage(
-        backgroundImageUrl,
-        promptData
-      ); // Back cover
-
+  
+      // **Run AI Content & Image Generation in Parallel**
+      const [bookContentResult, coverImageResult, backCoverImageResult] = await Promise.allSettled([
+        this.createBookContent(promptData), // Generate book content
+        this.generateBookCover(promptData, "front"), // Generate front cover (URL)
+        this.generateBookCover(promptData, "back"), // Generate back cover (URL)
+      ]);
+  
+      // **Extract book content**
+      if (bookContentResult.status !== "fulfilled") {
+        throw new Error(`❌ Book content generation failed: ${bookContentResult.reason}`);
+      }
+      const { fullBookContent, tableOfContents } = bookContentResult.value;
+  
+      // **Immediately save book metadata (Images still downloading)**
       const book = new BookGeneration();
       book.userId = userId;
       book.bookTitle = promptData.bookTitle;
@@ -667,23 +600,68 @@ export class BookGenerationService {
       book.language = promptData.language;
       book.additionalContent = promptData.additionalContent;
       book.additionalData = {
-        coverImageUrl: coverImagePath,
+        coverImageUrl: null, // To be updated when image is ready
+        backCoverImageUrl: null, // To be updated when image is ready
         fullContent: fullBookContent,
-        backCoverImageUrl: backgroundImagePath,
         tableOfContents: tableOfContents,
       };
-
+  
+      // **Save book immediately**
       const savedBook = await this.bookGenerationRepository.save(book);
-      this.logger.log(
-        `Book saved successfully for user ${userId}: ${promptData.bookTitle}`
-      );
-
+      this.logger.log(`📖 Book saved successfully for user ${userId}: ${promptData.bookTitle}`);
+  
+      // **Download & Save Images in Background (Non-blocking)**
+      const imageDownloadTasks: Promise<void>[] = [];
+      
+      if (coverImageResult.status === "fulfilled") {
+        imageDownloadTasks.push(
+          this.generateBookImage(coverImageResult.value, promptData)
+            .then(async (coverImagePath) => {
+              // Retrieve the current book record to get `additionalData`
+              const book = await this.bookGenerationRepository.findOne({ where: { id: savedBook.id } });
+              if (!book) return;
+        
+              // Update `additionalData`
+              book.additionalData = { ...book.additionalData, coverImageUrl: coverImagePath };
+        
+              // Save the updated record
+              await this.bookGenerationRepository.update(savedBook.id, { additionalData: book.additionalData });
+            })
+            .catch((error) => this.logger.error(`❌ Failed to save front cover: ${error.message}`))
+        );
+        
+        if (backCoverImageResult.status === "fulfilled") {
+          imageDownloadTasks.push(
+            this.generateBookImage(backCoverImageResult.value, promptData)
+              .then(async (backCoverPath) => {
+                // Retrieve the current book record
+                const book = await this.bookGenerationRepository.findOne({ where: { id: savedBook.id } });
+                if (!book) return;
+        
+                // Update `additionalData`
+                book.additionalData = { ...book.additionalData, backCoverImageUrl: backCoverPath };
+        
+                // Save the updated record
+                await this.bookGenerationRepository.update(savedBook.id, { additionalData: book.additionalData });
+              })
+              .catch((error) => this.logger.error(`❌ Failed to save back cover: ${error.message}`))
+          );
+        }
+        
+      }        
+  
+      // **Process Image Downloads in Background**
+      Promise.allSettled(imageDownloadTasks).then(() => {
+        this.logger.log(`✅ Cover images updated for book ${savedBook.id}`);
+      });
+  
       return savedBook;
     } catch (error) {
-      this.logger.error(`Error generating and saving book: ${error.message}`);
+      this.logger.error(`❌ Error generating and saving book: ${error.message}`);
       throw new Error(error.message);
     }
   }
+  
 
 
   async deleteBookById(id:number){

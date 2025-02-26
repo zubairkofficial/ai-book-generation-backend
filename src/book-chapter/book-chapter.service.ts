@@ -259,169 +259,7 @@ export class BookChapterService {
     }
   }
 
-  // private async ChapterContent(
-  //   promptData: BookChapterGenerationDto,
-  //   bookInfo: BookGeneration,
-  //   onTextUpdate: (text: string) => void
-  // ): Promise<string> {
-  //   try {
-  //     // Initialize memory for conversation context
-  //     const memory = new ConversationSummaryBufferMemory({
-  //       llm: this.textModel, // Uses the model to generate summaries automatically
-  //       memoryKey: "chapter_summary", // Stores summarized chapter details
-  //       returnMessages: true, // Ensures memory retains past summaries
-  //     });
 
-  //     const imageCount = Math.floor(Math.random() * 2) + 2; // Generate 2 or 3 images
-  //     const totalImages = Math.min(+promptData.noOfImages, imageCount);
-  //     const chapterImages: { title: string; url: string }[] = [];
-
-  //     for (let imageIndex = 1; imageIndex <= totalImages; imageIndex++) {
-  //       const imageTitlePrompt = `
-  //         Provide a short but descriptive title for an illustration in Chapter ${promptData.chapterNo} of the book "${bookInfo.bookTitle}".
-  //         Genre: "${bookInfo.genre}"
-  //         Target Audience: "${bookInfo.targetAudience}"
-  //         Language: "${bookInfo.language}"
-  //         Please ensure the title is unique and relevant to the chapter's content.
-  //        `;
-
-  //       const imageTitleResponse =
-  //         await this.textModel.invoke(imageTitlePrompt);
-  //       const imageTitle =
-  //         imageTitleResponse.content?.trim() || `Image ${imageIndex}`;
-
-  //         const imagePrompt = `
-  //         Create an image for Chapter ${promptData.chapterNo} of the book titled "${bookInfo.bookTitle}".
-  //         The image should reflect the following details:
-  //         - Title: "${imageTitle}"
-  //         - Genre: "${bookInfo.genre}"
-  //         - Target Audience: "${bookInfo.targetAudience}"
-  //         - Core Idea: "${bookInfo.ideaCore}"
-  //         Please ensure the title is correctly represented in the image, and avoid including any incorrect words or context that do not fit the theme.
-  //         Only generate the image if the title aligns with the chapter's theme and core idea.
-  //       `;
-
-  //       const requestData = {
-  //         prompt: imagePrompt, // Adjusted prompt based on cover type
-
-  //         // Add other fields as required by the API
-  //       };
-
-  //       const postResponse = await axios.post(
-  //         this.configService.get<string>("BASE_URL_FAL_AI"),
-  //         requestData,
-  //         {
-  //           headers: {
-  //             Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
-  //             "Content-Type": "application/json",
-  //           },
-  //         }
-  //       );
-
-  //       chapterImages.push({
-  //         title: imageTitle,
-  //         url: postResponse.data.response_url,
-  //       });
-  //     }
-
-  //     // Construct the prompt
-  //     const chapterPrompt = `
-  //       You are a master book writer. Your task is to write **Chapter ${promptData.chapterNo}** of the book titled **"${bookInfo.bookTitle}"**.
-
-  //       ## 📖 Book Information:
-  //       - **Genre**: ${bookInfo.genre}
-  //       - **Author**: ${bookInfo.authorName || "A knowledgeable expert"}
-  //       - **Core Idea**: ${bookInfo.ideaCore || "A detailed and insightful book on the subject."}
-  //       - **Target Audience**: ${bookInfo.targetAudience || "Professionals, students, and knowledge seekers."}
-  //       - **Language**: The book is written in ${bookInfo.language || "English"}.
-
-  //       ## 🎯 Writing Style:
-  //       Based on the genre **"${bookInfo.genre}"**, adopt an appropriate writing style.
-  //       - Use a **tone** and **structure** that aligns with the genre.
-  //       - Adapt the complexity and depth based on the **target audience**.
-
-  //       ## 📝 Context Memory (Summarized Previous Chapters):
-  //       ${memory}
-
-  //       ## 📖 Chapter Writing Instructions:
-  //       - Begin with a **strong introduction** that aligns with the book's theme.
-  //       - **Your writing must contain between ${promptData.minWords || 5000} and ${promptData.maxWords || 20000} words**.
-  //       - **DO NOT** generate content below the minimum word count.
-  //       - **DO NOT** exceed the maximum word count.
-
-  //       ## 🔍 Additional Guidance:
-  //       ${promptData.additionalInfo || "Follow the established style, tone, and pacing from previous chapters."}
-
-  //       ---
-  //       ## 📝 Previous Chapter Summary:
-  //       ${memory || "No previous summary available."}
-
-  //       **📝 Begin Chapter ${promptData.chapterNo}:**
-  //     `;
-
-  //     // Stream response using OpenAI API
-  //     const stream = await this.textModel.stream(chapterPrompt);
-  //     let chapterText = "";
-  //     const chunks = [];
-
-  //     for await (const chunk of stream) {
-  //       chunks.push(chunk);
-  //       chapterText += chunk.content;
-  //       onTextUpdate(chunk.content); // Send real-time updates
-  //     }
-
-  //     // Ensure chapter text is not empty
-  //     if (!chapterText || chapterText.trim() === "") {
-  //       throw new Error(
-  //         `Chapter ${promptData.chapterNo} content is empty or undefined`
-  //       );
-  //     }
-  //     let chapterImageInfo = [];
-  //     for (let chapterImage of chapterImages) {
-  //     let formattedImage = "";
-  //       // Save the image to the uploads directory
-  //       const savedImagePath = await this.saveGeneratedImage(
-  //         chapterImage.url,
-  //         chapterImage.title
-  //       );
-  //       chapterImageInfo.push({
-  //         url: savedImagePath,
-  //         title: chapterImage.title,
-  //       });
-  //       formattedImage += `### ${chapterImage.title}\n\n`;
-  //       formattedImage += `![${chapterImage.title}](${savedImagePath})\n\n`;
-
-  //       onTextUpdate(formattedImage);
-  //     }
-
-  //     // Split text into chunks and insert images dynamically
-  //     const chunkSize = Math.ceil(
-  //       chapterText.length / (chapterImageInfo.length + 1)
-  //     );
-  //     const textChunks = chapterText.match(
-  //       new RegExp(`.{1,${chunkSize}}`, "g")
-  //     ) || ["No content generated."];
-
-  //     let formattedChapter = "";
-
-  //     for (let i = 0; i < textChunks.length; i++) {
-  //       formattedChapter += textChunks[i] + "\n\n";
-
-  //       if (chapterImages[i]) {
-  //         formattedChapter += `### ${chapterImages[i].title}\n\n`;
-  //         formattedChapter += `![${chapterImages[i].title}](${chapterImageInfo[i].url})\n\n`;
-  //       }
-  //     }
-
-  //     return formattedChapter;
-  //   } catch (error) {
-  //     console.error(
-  //       "Error generating chapter content with streaming and images:",
-  //       error
-  //     );
-  //     throw new Error(error.message);
-  //   }
-  // }
   private async ChapterContent(
     promptData: BookChapterGenerationDto,
     bookInfo: BookGeneration,
@@ -433,11 +271,26 @@ export class BookChapterService {
         memoryKey: "chapter_summary",
         returnMessages: true,
       });
-      let chapterText = "";
-
+let updatePrompt
       if (promptData.selectedText) {
+if(promptData.instruction){
+   updatePrompt = `
+  You are an expert book writer. Improve the following paragraph of the book "${bookInfo.bookTitle}" while maintaining its context and coherence:
+ 
+ **Original Paragraph:**
+ "${promptData.selectedText}"
+ **Instructions:**
+ "${promptData.instruction}"
+ **Guidelines:**
+ - Enhance the clarity and flow.
+ - Maintain the same context and meaning.
+ - Avoid generating completely new or irrelevant content.
+ - Keep it engaging and refined.
 
-        let updatePrompt = `
+ **Improved Paragraph (do not enclose in quotes):**
+ `;
+}
+        else{ updatePrompt = `
        You are an expert book writer. Improve the following paragraph of the book "${bookInfo.bookTitle}" while maintaining its context and coherence:
       
       **Original Paragraph:**
@@ -449,8 +302,8 @@ export class BookChapterService {
       - Avoid generating completely new or irrelevant content.
       - Keep it engaging and refined.
 
-      **Improved Paragraph:**
-      `;
+      **Improved Paragraph (do not enclose in quotes):**
+      `;}
     
       let updateResponse = await this.textModel.stream(updatePrompt);
       let updatedText = "";
@@ -513,7 +366,7 @@ export class BookChapterService {
       if (!chapterText.trim()) {
         throw new Error(`Chapter ${promptData.chapterNo} content is empty.`);
       }
-    }
+    
 
       if (promptData.noOfImages === 0) {
         console.log("⚡ No images required. Returning chapter without images.");
@@ -592,8 +445,6 @@ export class BookChapterService {
       // Wait for all image requests to complete before proceeding
       await Promise.all(imageRequests);
 
-      // Ensure all URLs are updated before inserting into the chapter
-      console.log("✅ All images generated successfully!", chapterImages);
 
       // Step 4: Return Chapter Text Immediately
       const formattedChapter = this.insertImagesIntoChapter(
@@ -602,6 +453,7 @@ export class BookChapterService {
         chapterImages
       );
       return formattedChapter;
+    }
     } catch (error) {
       console.error("Error generating chapter content:", error);
       throw new Error(error.message);
