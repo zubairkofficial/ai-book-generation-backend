@@ -45,6 +45,37 @@ export class BookChapterGenerationDto {
   @IsNotEmpty()
   chapterName: string;
 
+  @IsString()
+  @IsOptional()
+  selectedText: string;
+
+
+  @IsString()
+  @IsOptional()
+  instruction: string;
+
+
+
+}
+export class BookChapterUpdateDto {
+
+ 
+
+  @ApiProperty({ description: 'Book Chapter No' })
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsNumber()
+  @IsNotEmpty()
+  chapterNo: number;
+
+  @ApiProperty({ description: 'book Generation Id' })
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsNumber()
+  @IsNotEmpty()
+  bookGenerationId: number;
+
+  @IsString()
+  updateContent:string
+
 
 
 }

@@ -1,8 +1,8 @@
-import { Controller, Post, Body, Req, UnauthorizedException, UseGuards, Logger, Param, Res, Sse, InternalServerErrorException } from '@nestjs/common';
+import { Controller, Post, Body, Req, UnauthorizedException, UseGuards, Logger, Param, Res, Sse, InternalServerErrorException, Put } from '@nestjs/common';
 import { BookChapterService } from './book-chapter.service';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/types/request-with-user.interface';
-import { BookChapterGenerationDto } from './dto/book-chapter.dto';
+import { BookChapterGenerationDto, BookChapterUpdateDto } from './dto/book-chapter.dto';
 import { Observable, Subject } from 'rxjs';
 
 @Controller('book-chapter')
@@ -37,6 +37,37 @@ private chapterTextUpdate=new Subject<string>()
        return {
         statusCode:200,
         message: 'Chapter successfully generated and saved.',
+        data: savedChapter,
+      };
+    } catch (error) {
+      this.logger.error(`Error generating and saving chapter for user ID: ${userId}`, error.stack);
+      throw new InternalServerErrorException(error.message);
+    }
+  }
+  @UseGuards(JwtAuthGuard)
+  @Put('update-chapter')
+  async updateChapter(
+    @Body() bookGenerationDto: BookChapterUpdateDto,
+    @Req() request: RequestWithUser,
+  ) {
+    const userId = request.user?.id;
+    this.logger.log(`Generating chapter for user ID: ${userId}`);
+
+    if (!userId) {
+      this.logger.error('Unauthorized: User ID not found in the request.');
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+
+    try {
+      
+      
+      // Generate chapter and stream it via SSE
+      const savedChapter = await this.bookChapterService.updateChapter( bookGenerationDto);
+      this.logger.log(`Chapter successfully generated and saved for user ID: ${userId}`);
+      
+       return {
+        statusCode:200,
+        message: 'Chapter successfully updated.',
         data: savedChapter,
       };
     } catch (error) {

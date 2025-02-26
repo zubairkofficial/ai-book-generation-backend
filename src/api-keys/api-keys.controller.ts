@@ -4,7 +4,7 @@ import { Roles } from 'src/decorators/roles.decorator';
 import { RolesGuard } from 'src/guards/roles.guard';
 import { Role } from 'src/utils/roles.enum';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
-import { CreateApiKeyDto } from './dto/api-key.dto';
+import { CreateApiKeyDto, UpdateApiKeyDto } from './dto/api-key.dto';
 
 @Controller('api-keys')
 @UseGuards(JwtAuthGuard, RolesGuard) // First authenticate, then check role
@@ -19,7 +19,7 @@ export class ApiKeysController {
 
   @Put()
   @Roles(Role.ADMIN)
-  async updateKeys(@Body() input: CreateApiKeyDto) {
+  async updateKeys(@Body() input: UpdateApiKeyDto) {
     return await this.apiKeysService.updateApiKeys(input);
   }
 }

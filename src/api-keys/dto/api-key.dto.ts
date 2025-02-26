@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateApiKeyDto {
   @IsNotEmpty()
@@ -12,6 +12,27 @@ export class CreateApiKeyDto {
   @IsNotEmpty()
   @IsString()
   model: string;
+}
+export class UpdateApiKeyDto {
+  @IsNumber()
+  @IsNotEmpty()
+  id: number;
+
+  @IsNotEmpty()
+  @IsOptional()
+  openai_key: string;
+
+  @IsNotEmpty()
+  @IsOptional()
+  dalle_key: string;
+
+  @IsNotEmpty()
+  @IsOptional()
+  model: string;
+
+  @IsNotEmpty()
+  @IsOptional()
+  fal_ai: string;
 }
 
 

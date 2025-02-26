@@ -2,7 +2,7 @@ import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ApiKey } from './entities/api-key.entity';
-import { CreateApiKeyDto } from './dto/api-key.dto';
+import { CreateApiKeyDto, UpdateApiKeyDto } from './dto/api-key.dto';
 
 @Injectable()
 export class ApiKeysService {
@@ -26,20 +26,18 @@ export class ApiKeysService {
     }
   }
 
-  async updateApiKeys(input:CreateApiKeyDto) {
+  async updateApiKeys(input:UpdateApiKeyDto) {
     try {
-      if (!input.openai_key || !input.dalle_key) {
-        throw new HttpException('Invalid API keys provided', HttpStatus.BAD_REQUEST);
-      }
-
-      let apiKeys = await this.apiKeysRepository.findOne({ where: {} });
+      
+      let apiKeys = await this.apiKeysRepository.findOne({ where: {id:input.id} });
 
       if (!apiKeys) {
-        apiKeys = this.apiKeysRepository.create({ openai_key:input.openai_key,dalle_key:input.dalle_key,model:input.model });
+        apiKeys = this.apiKeysRepository.create({ openai_key:input.openai_key,dalle_key:input.dalle_key,model:input.model,  fal_ai : input.fal_ai });
       } else {
-        apiKeys.openai_key = input.openai_key;
-        apiKeys.dalle_key = input.dalle_key;
-        apiKeys.model = input.model;
+      if(input.openai_key) apiKeys.openai_key = input.openai_key;
+      if(input.dalle_key) apiKeys.dalle_key = input.dalle_key;
+      if(input.model)  apiKeys.model = input.model;
+      if(input.fal_ai)   apiKeys.fal_ai = input.fal_ai;
       }
 
       await this.apiKeysRepository.save(apiKeys);

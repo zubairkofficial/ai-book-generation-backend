@@ -7,7 +7,7 @@ import { Repository } from "typeorm";
 import OpenAI from "openai";
 import * as fs from "fs";
 import * as path from "path";
-import { BookChapterGenerationDto } from "./dto/book-chapter.dto";
+import { BookChapterGenerationDto, BookChapterUpdateDto } from "./dto/book-chapter.dto";
 import { BookGeneration, BookType } from "src/book-generation/entities/book-generation.entity";
 import { BookChapter } from "./entities/book-chapter.entity";
 import { ConversationSummaryBufferMemory } from "langchain/memory";
@@ -433,42 +433,72 @@ export class BookChapterService {
         memoryKey: "chapter_summary",
         returnMessages: true,
       });
+      let chapterText = "";
 
+      if (promptData.selectedText) {
+
+        let updatePrompt = `
+       You are an expert book writer. Improve the following paragraph of the book "${bookInfo.bookTitle}" while maintaining its context and coherence:
+      
+      **Original Paragraph:**
+      "${promptData.selectedText}"
+
+      **Guidelines:**
+      - Enhance the clarity and flow.
+      - Maintain the same context and meaning.
+      - Avoid generating completely new or irrelevant content.
+      - Keep it engaging and refined.
+
+      **Improved Paragraph:**
+      `;
+    
+      let updateResponse = await this.textModel.stream(updatePrompt);
+      let updatedText = "";
+      
+      for await (const chunk of updateResponse) {
+        updatedText += chunk.content;
+        onTextUpdate(chunk.content);
+      }
+    
+     
+    return updatedText;
+      }
+       else {
       // Step 1: Generate the Chapter Text
       const chapterPrompt = `
-You are a master book writer. Your task is to write **Chapter ${promptData.chapterNo}** of the book titled **"${bookInfo.bookTitle}"**.
+           You are a professional author tasked with writing **Chapter ${promptData.chapterNo}: "${promptData.chapterName}"** of the book titled **"${bookInfo.bookTitle}"**.
 
-## 📖 Book Information:
-- **Genre**: ${bookInfo.genre}
-- **Author**: ${bookInfo.authorName || "A knowledgeable expert"}
-- **Core Idea**: ${bookInfo.ideaCore || "A detailed and insightful book on the subject."}
-- **Target Audience**: ${bookInfo.targetAudience || "Professionals, students, and knowledge seekers."}
-- **Language**: The book is written in ${bookInfo.language || "English"}.
-
-## 🎯 Writing Style:
-Based on the genre **"${bookInfo.genre}"**, adopt an appropriate writing style.
-- Use a **tone** and **structure** that aligns with the genre.
-- Adapt the complexity and depth based on the **target audience**.
-
-## 📝 Context Memory (Summarized Previous Chapters):
-${memory}
-
-## 📖 Chapter Writing Instructions:
-- Begin with a **strong introduction** that aligns with the book's theme.
-- **Your writing must contain between ${promptData.minWords || 5000} and ${promptData.maxWords || 20000} words**.
-- **DO NOT** generate content below the minimum word count.
-- **DO NOT** exceed the maximum word count.
-
-## 🔍 Additional Guidance:
-${promptData.additionalInfo || "Follow the established style, tone, and pacing from previous chapters."}
-
----
-## 📝 Previous Chapter Summary:
-${memory || "No previous summary available."}
-
-**📝 Begin Chapter ${promptData.chapterNo}:**
-`;
-
+            ## 📖 Book Information:
+            - **Genre**: ${bookInfo.genre}
+            - **Author**: ${bookInfo.authorName || "A knowledgeable expert"}
+            - **Core Idea**: ${bookInfo.ideaCore || "A detailed and insightful book on the subject."}
+            - **Target Audience**: ${bookInfo.targetAudience || "Professionals, students, and knowledge seekers."}
+            - **Language**: The book is written in ${bookInfo.language || "English"}.
+      
+            ## 🎯 Writing Style:
+            - Clearly structure the content using Markdown:
+            Based on the genre **"${bookInfo.genre}"**, adopt an appropriate writing style.
+            - Use a **tone** and **structure** that aligns with the genre.
+            - Adapt the complexity and depth based on the **target audience**.
+      
+            ## 📝 Context Memory (Summarized Previous Chapters):
+            ${memory}
+      
+            ## 📖 Chapter Writing Instructions:
+            - Begin with a **strong introduction** that aligns with the book's theme.
+            - **Your writing must contain between ${promptData.minWords || 5000} and ${promptData.maxWords || 20000} words**.
+            - **DO NOT** generate content below the minimum word count.
+            - **DO NOT** exceed the maximum word count.
+      
+            ## 🔍 Additional Guidance:
+            ${promptData.additionalInfo || "Follow the established style, tone, and pacing from previous chapters."}
+      
+            ---
+            ## 📝 Previous Chapter Summary:
+            ${memory || "No previous summary available."}
+      
+            **📝 Begin Chapter ${promptData.chapterNo}:**
+          `;
 
       const stream = await this.textModel.stream(chapterPrompt);
       let chapterText = "";
@@ -483,6 +513,7 @@ ${memory || "No previous summary available."}
       if (!chapterText.trim()) {
         throw new Error(`Chapter ${promptData.chapterNo} content is empty.`);
       }
+    }
 
       if (promptData.noOfImages === 0) {
         console.log("⚡ No images required. Returning chapter without images.");
@@ -608,6 +639,7 @@ ${memory || "No previous summary available."}
         bookInfo,
         onTextUpdate
       );
+      if (input.selectedText && input.instruction) {return formattedChapter}
 
       if (bookChapter) {
         // If chapter exists, update it
@@ -637,6 +669,37 @@ if(bookChapter.chapterNo===input.chapterNo){
       // Save (either insert or update)
       const savedChapter = await this.bookChapterRepository.save(bookChapter);
       return savedChapter;
+    } catch (error) {
+      console.error("Error generating book chapter:", error);
+      throw new Error(error.message);
+    }
+  }
+  async updateChapter(
+    input: BookChapterUpdateDto,
+  ) {
+    try {
+      await this.initializeAIModels();
+
+      // Retrieve the book generation info
+      const bookInfo = await this.bookGenerationRepository.findOne({
+        where: { id: input.bookGenerationId },
+      });
+
+      if (!bookInfo) {
+        throw new Error("Book generation record not found.");
+      }
+
+      // Check if chapter already exists for the given bookGenerationId & chapterNo
+      let bookChapter = await this.bookChapterRepository.findOne({
+        where: {
+          bookGeneration: { id: input.bookGenerationId },
+          chapterNo: input.chapterNo,
+        },
+        relations: ["bookGeneration"], // Ensure related data is loaded
+      });
+      bookChapter.chapterInfo=input.updateContent
+      const updateChapter = await this.bookChapterRepository.save(bookChapter);
+      return updateChapter;
     } catch (error) {
       console.error("Error generating book chapter:", error);
       throw new Error(error.message);
