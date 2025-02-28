@@ -289,6 +289,13 @@ if(promptData.instruction){
 
  **Improved Paragraph (do not enclose in quotes):**
  `;
+ const memoryVariables = await memory.loadMemoryVariables({}); // Retrieve memory variables using loadMemoryVariables
+ if (memoryVariables?.history) {
+   updatePrompt += `
+   **Previous Chapter Context:**
+   ${memoryVariables.history}
+   `;
+ }
 }
         else{ updatePrompt = `
        You are an expert book writer. Improve the following paragraph of the book "${bookInfo.bookTitle}" while maintaining its context and coherence:
@@ -313,7 +320,8 @@ if(promptData.instruction){
         onTextUpdate(chunk.content);
       }
     
-     
+      await memory.saveContext({ input: promptData.selectedText }, { output: updatedText });
+    
     return updatedText;
       }
        else {
@@ -370,6 +378,7 @@ if(promptData.instruction){
 
       if (promptData.noOfImages === 0) {
         console.log("⚡ No images required. Returning chapter without images.");
+        await memory.saveContext({ input: `Start of Chapter ${promptData.chapterNo}` }, { output: chapterText });
         return chapterText;
       }
       
@@ -452,6 +461,8 @@ if(promptData.instruction){
         keyPoints,
         chapterImages
       );
+      await memory.saveContext({ input: `Start of Chapter ${promptData.chapterNo}` }, { output: chapterText });
+
       return formattedChapter;
     }
     } catch (error) {

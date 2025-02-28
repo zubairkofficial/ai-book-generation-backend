@@ -344,13 +344,25 @@ export class BookGenerationService {
       `;
   
       const dedicationPrompt = `
-        Write a dedication for the book titled "${promptData.bookTitle}".
-      `;
+      Write a heartfelt and meaningful dedication for the book titled "${promptData.bookTitle}". 
+      Consider the book's central  core idea: "${promptData.bookInformation || "Not specified"}".
+      The dedication should be general enough to resonate with a wide audience but still feel personal and authentic. 
+      It can express gratitude or motivation, depending on the tone of the book.
+    `;
   
-      const prefacePrompt = `
-        Write a compelling preface for the book titled "${promptData.bookTitle}".
-        Include sections like Overview, Use in Curriculum, Goals, and Acknowledgments.
-      `;
+ const prefacePrompt = `
+ Write a compelling preface for the book titled "${promptData.bookTitle}". 
+ The preface should include the following sections:
+ 
+ 1. **Introduction**: Introduce the book’s subject and aim to the readers.
+ 2. **Core Idea**: Briefly explain the central message or theme of the book: "${promptData.bookInformation || "Not specified"}".
+ 3. **Why This Book Matters**: Discuss the significance of the book and how it can impact the readers.
+ 4. **What to Expect**: Give a brief overview of what the readers can expect from the chapters or sections.
+ 5. **Acknowledgments**: If applicable, acknowledge anyone who contributed to the creation of the book or the inspiration behind it.
+
+ The tone should be welcoming, informative, and reflective of the overall content of the book.
+`;
+
   
       const tableOfContentsPrompt = `
         Create a list of unique, engaging chapter titles for a book with ${promptData.numberOfChapters} chapters.
@@ -444,27 +456,31 @@ export class BookGenerationService {
   
       // Prepare prompts (UNCHANGED)
       const glossaryPrompt = `
-        Create a glossary for the book titled "${promptData.bookTitle}". Include definitions of key terms used in the book.
-      `;
+      Create a comprehensive glossary for the book titled "${promptData.bookTitle}". 
+      Include definitions for key terms, concepts, and jargon that are central to the book’s content. 
+      Make sure the definitions are clear and accessible to the reader, reflecting the book’s core theme: "${promptData.bookInformation}".
+      Organize the glossary alphabetically and ensure that each term is explained concisely and accurately.
+    `;
+
+    const indexPrompt = `
+      Create a detailed index for the book titled "${promptData.bookTitle}". 
+      The index should include important topics, concepts, and references that appear in the book. 
+      Ensure that each entry is well-organized, with corresponding page numbers, and reflects the core themes and ideas explored in the book: "${promptData.bookInformation}".
+      The index should help readers easily navigate through the material based on their interests or research needs.
+    `;
   
-      const indexPrompt = `
-        Create an index for the book titled "${promptData.bookTitle}". Include key topics with page numbers.
-      `;
-  
-      const prefacePrompt = `
-        Write a compelling preface for the book titled "${promptData.bookTitle}".
-        Include sections like Overview, Use in Curriculum, Goals, and Acknowledgments.
-      `;
   
       const referencesPrompt = `
-        Write a bibliography for the book titled "${promptData.bookTitle}". Include any references or inspirations.
-      `;
+      Write a comprehensive bibliography for the book titled "${promptData.bookTitle}". 
+      Include references to any studies, articles, books, or other materials that were used or inspired the content of the book. 
+      The references should align with the core idea: "${promptData.bookInformation}" and provide additional reading for those interested in further exploration of the book’s topics.
+      Ensure that the citations are formatted according to a standard citation style (e.g., APA, MLA, Chicago).
+    `;
   
       // **Run AI calls in parallel** for faster execution
-      const [glossaryResponse, indexResponse, prefaceResponse, referencesResponse] = await Promise.all([
+      const [glossaryResponse, indexResponse,  referencesResponse] = await Promise.all([
         this.textModel.invoke(glossaryPrompt),
         this.textModel.invoke(indexPrompt),
-        this.textModel.invoke(prefacePrompt),
         this.textModel.invoke(referencesPrompt),
       ]);
   
@@ -472,7 +488,6 @@ export class BookGenerationService {
       return [
         `Glossary\n${glossaryResponse.content}`,
         `Index\n${indexResponse.content}`,
-        `Preface\n${prefaceResponse.content}`,
         `References\n${referencesResponse.content}`,
       ].join("\n\n"); // Efficient joining
     } catch (error) {
@@ -559,7 +574,11 @@ export class BookGenerationService {
   }
 
   async getBook(id: number) {
-    return await this.bookGenerationRepository.findOne({ where: { id } });
+    try {
+    return this.bookGenerationRepository.findOne({ where: { id } });
+  } catch (error) {
+      throw new Error(error.message);
+  }
   }
   async getAllBooksCount(userId: number | null) {
     if (userId)
@@ -664,6 +683,20 @@ export class BookGenerationService {
   
 
 
+  async getBookById(id: number) {
+    try {
+      // Perform a left join with the BookChapter table
+      const book = await this.bookGenerationRepository.findOne({
+        where: { id },
+        relations: ['bookChapter'], // This ensures the BookChapter is included in the result
+      });
+  
+      return book; // Return the book with chapters
+    } catch (error) {
+      throw new Error(error.message); // Handle any errors that occur
+    }
+  }
+  
   async deleteBookById(id:number){
     try {
 const getBookById=await this.getBook(id)

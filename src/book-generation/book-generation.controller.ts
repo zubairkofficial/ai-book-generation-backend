@@ -16,7 +16,7 @@ import { BookGenerationService } from './book-generation.service';
 import {  BookGenerationDto } from './dto/book-generation.dto';
 import { RequestWithUser } from '../auth/types/request-with-user.interface';
 import { ApiOperation, ApiResponse, ApiBody, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { BookType } from './entities/book-generation.entity';
+import { BookGeneration, BookType } from './entities/book-generation.entity';
 
 @ApiTags('books')
 @ApiBearerAuth('JWT-auth')
@@ -90,6 +90,32 @@ export class BookGenerationController {
       throw new InternalServerErrorException(error.message);
     }
   }
+  @UseGuards(JwtAuthGuard)
+  @Get(':bookId')
+  async getBookById(
+    @Req() request: RequestWithUser,
+    @Param('bookId') bookId: string
+  ) {
+    const user = request.user;
+    this.logger.log(`Fetching book for user ID: ${user.id}`);
+  
+    if (!user) {
+      this.logger.error('Unauthorized: User ID not found in the request.');
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+  
+    try {
+      const getBook = await this.bookGenerationService.getBookById(+bookId);
+      return {
+        message: 'Book successfully retrieved.',
+        data: getBook,
+      };
+    } catch (error) {
+      this.logger.error(`Error retrieving books for user ID: ${user.id}`, error.stack);
+      throw new InternalServerErrorException(error.message);
+    }
+  }
+  
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
