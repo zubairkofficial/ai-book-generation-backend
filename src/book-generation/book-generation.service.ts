@@ -701,7 +701,7 @@ export class BookGenerationService {
       
       if (coverImageResult.status === "fulfilled") {
         imageDownloadTasks.push(
-          this.generateBookImage(coverImageResult.value, promptData)
+          this.generateBookImage(coverImageResult, promptData)
             .then(async (coverImagePath) => {
               // Retrieve the current book record to get `additionalData`
               const book = await this.bookGenerationRepository.findOne({ where: { id: savedBook.id } });
@@ -718,7 +718,7 @@ export class BookGenerationService {
         
         if (backCoverImageResult.status === "fulfilled") {
           imageDownloadTasks.push(
-            this.generateBookImage(backCoverImageResult.value, promptData)
+            this.generateBookImage(backCoverImageResult, promptData)
               .then(async (backCoverPath) => {
                 // Retrieve the current book record
                 const book = await this.bookGenerationRepository.findOne({ where: { id: savedBook.id } });
