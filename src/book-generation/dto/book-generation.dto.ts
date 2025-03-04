@@ -85,6 +85,63 @@ export class UpdateBookDto {
   @IsNotEmpty()
   fullContent: string;
 }
+export class UpdateBookCoverDto {
+  @ApiProperty({ example: 117 })
+  @IsNumber()
+  bookGenerationId?: number;
+
+  @ApiProperty({ description: 'The title of the book' })
+  @IsString()
+  @IsOptional()  // Make this field optional
+  bookTitle?: string;
+
+  @ApiProperty({ description: 'Author name', required: false })
+  @IsString()
+  @IsOptional()  // Make this field optional
+  authorName?: string;
+
+  @ApiProperty({ description: 'A short bio of the author', required: false })
+  @IsString()
+  @IsOptional()  // Make this field optional
+  authorBio?: string;
+
+  @ApiProperty({ description: 'The genre of the book' })
+  @IsString()
+  @IsOptional()  // Make this field optional
+  genre?: string;
+
+  @ApiProperty({ description: 'The main characters in the book' })
+  @IsString()
+  @IsOptional()  // Make this field optional
+  characters?: string;
+
+  @ApiProperty({ description: 'The book information idea in the book' })
+  @IsString()
+  @IsOptional()  // Make this field optional
+  ideaCore?: string;
+
+  @ApiProperty({ description: 'The number of chapters in the book' })
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsNumber()
+  @IsOptional()  // Make this field optional
+  numberOfChapters?: number;
+
+  @ApiProperty({ description: 'The target audience for the book' })
+  @IsString()
+  @IsOptional()  // Make this field optional
+  targetAudience?: string;
+
+  @ApiProperty({ description: 'The language of the book' })
+  @IsString()
+  @IsOptional()  // Make this field optional
+  language?: string;
+
+  @ApiProperty({ description: 'The publisher of the book' })
+  @IsString()
+  @IsOptional()  // Make this field optional
+  publisher?: string;
+}
+
 
 
 export class SearchDto {

@@ -16,7 +16,7 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { BookGenerationService } from './book-generation.service';
-import {  BookGenerationDto, RegenerateImage, UpdateBookDto, UpdateDto } from './dto/book-generation.dto';
+import {  BookGenerationDto, RegenerateImage, UpdateBookCoverDto, UpdateBookDto, UpdateDto } from './dto/book-generation.dto';
 import { RequestWithUser } from '../auth/types/request-with-user.interface';
 import { ApiOperation, ApiResponse, ApiBody, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import {  BookType } from './entities/book-generation.entity';
@@ -81,6 +81,35 @@ export class BookGenerationController {
 
     try {
       const updateBook = await this.bookGenerationService.updateBookGenerate(userId, bookGenerationDto);
+      this.logger.log(`Book successfully generated and saved for user ID: ${userId}`);
+      return {
+        message: 'Book successfully generated and saved.',
+        data: updateBook,
+      };
+    } catch (error) {
+      this.logger.error(`Error generating and saving book for user ID: ${userId}`, error.stack);
+      if (error instanceof UnauthorizedException) {
+        throw error.message;
+      }
+      throw new InternalServerErrorException(error.message);
+    }
+  }
+  @UseGuards(JwtAuthGuard)
+  @Put('update-book-cover')
+  async updateBookGenerateCover(
+    @Body() bookGenerationDto: UpdateBookCoverDto,
+    @Req() request: RequestWithUser
+  ) {
+    const userId = request.user?.id;
+    this.logger.log(`Generating book for user ID: ${userId}`);
+
+    if (!userId) {
+      this.logger.error('Unauthorized: User ID not found in the request.');
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+
+    try {
+      const updateBook = await this.bookGenerationService.updateBookGenerateCover(userId, bookGenerationDto);
       this.logger.log(`Book successfully generated and saved for user ID: ${userId}`);
       return {
         message: 'Book successfully generated and saved.',

@@ -11,7 +11,7 @@ import * as path from "path";
 import { ApiKey } from "src/api-keys/entities/api-key.entity";
 import { exec } from "child_process";
 import mermaid from "mermaid";
-import { BookGenerationDto, RegenerateImage, SearchDto, UpdateBookDto, UpdateDto } from "./dto/book-generation.dto";
+import { BookGenerationDto, RegenerateImage, SearchDto, UpdateBookCoverDto, UpdateBookDto, UpdateDto } from "./dto/book-generation.dto";
 import { allowedSizes } from "src/common";
 import { UserDto } from "src/auth/types/request-with-user.interface";
 import axios from "axios";
@@ -822,6 +822,29 @@ export class BookGenerationService {
     return {
       message: 'Book image updated successfully',
       imagePath: relativePath,
+    };
+  }
+  async updateBookGenerateCover(user,input: UpdateBookCoverDto) {
+    const book = await this.bookGenerationRepository.findOne({ where: { id: input.bookGenerationId } });
+
+    if (!book) {
+      throw new NotFoundException(`Book with ID ${input.bookGenerationId} not found`);
+    }
+
+   if(input.authorName)book.authorName = input.authorName;
+   if(input.bookTitle)book.bookTitle = input.bookTitle;
+   if(input.authorBio)book.authorBio = input.authorBio;
+   if(input.genre)book.genre = input.genre;
+   if(input.characters)book.characters = input.characters;
+   if(input.ideaCore)book.ideaCore = input.ideaCore;
+   if(input.numberOfChapters)book.numberOfChapters = input.numberOfChapters;
+   if(input.targetAudience)book.targetAudience = input.targetAudience;
+   if(input.language)book.language = input.language;
+   
+  await this.bookGenerationRepository.save(book);
+
+    return {
+      message: 'Book image updated successfully',
     };
   }
   async regenerateBookImage(input: RegenerateImage) {
