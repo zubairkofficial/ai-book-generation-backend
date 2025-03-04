@@ -1,7 +1,7 @@
 import { IsString, IsNumber, IsNotEmpty, IsOptional, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-
+import { Express } from 'express';
 export class BookGenerationDto {
  
  
@@ -74,6 +74,19 @@ export class BookGenerationDto {
   // isDiagram: boolean;
 }
 
+export class UpdateBookDto {
+  @ApiProperty({ example: 117 })
+  @IsNumber()
+  @IsNotEmpty()
+  bookGenerationId: number;
+
+  @ApiProperty({ description: 'The book information additional Data' })
+  @IsString()
+  @IsNotEmpty()
+  fullContent: string;
+}
+
+
 export class SearchDto {
 
 
@@ -116,4 +129,36 @@ export class SearchDto {
   @IsBoolean()
   @IsOptional()
   isDiagram?: boolean;
+}
+export class UpdateDto {
+  @ApiProperty({ example: 117 })
+  @IsNumber()
+  @IsNotEmpty()
+  bookId: number;
+
+  @ApiProperty({ example: 'cover' })
+  @IsString()
+  @IsNotEmpty()
+  imageType: string;
+
+  @ApiProperty({ type: 'string', format: 'binary' })
+  @IsNotEmpty()
+  image: Buffer;
+}
+export class RegenerateImage {
+  @ApiProperty({ example: 117 })
+  @IsNumber()
+  @IsNotEmpty()
+  bookId: number;
+
+  @ApiProperty({ example: 'cover' })
+  @IsString()
+  @IsNotEmpty()
+  imageType: string;
+
+  @IsString()
+  @IsNotEmpty()
+  additionalContent: string;
+
+ 
 }

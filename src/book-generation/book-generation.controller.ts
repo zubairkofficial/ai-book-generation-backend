@@ -9,14 +9,18 @@ import {
   Logger,
   Get,
   Delete,
-  Param
+  Param,
+  Put,
+  UseInterceptors,
+  UploadedFile
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { BookGenerationService } from './book-generation.service';
-import {  BookGenerationDto } from './dto/book-generation.dto';
+import {  BookGenerationDto, RegenerateImage, UpdateBookDto, UpdateDto } from './dto/book-generation.dto';
 import { RequestWithUser } from '../auth/types/request-with-user.interface';
 import { ApiOperation, ApiResponse, ApiBody, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { BookGeneration, BookType } from './entities/book-generation.entity';
+import {  BookType } from './entities/book-generation.entity';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('books')
 @ApiBearerAuth('JWT-auth')
@@ -61,6 +65,35 @@ export class BookGenerationController {
       throw new InternalServerErrorException(error.message);
     }
   }
+  @UseGuards(JwtAuthGuard)
+  @Put('update-book-generated')
+  async updateBookGenerate(
+    @Body() bookGenerationDto: UpdateBookDto,
+    @Req() request: RequestWithUser
+  ) {
+    const userId = request.user?.id;
+    this.logger.log(`Generating book for user ID: ${userId}`);
+
+    if (!userId) {
+      this.logger.error('Unauthorized: User ID not found in the request.');
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+
+    try {
+      const updateBook = await this.bookGenerationService.updateBookGenerate(userId, bookGenerationDto);
+      this.logger.log(`Book successfully generated and saved for user ID: ${userId}`);
+      return {
+        message: 'Book successfully generated and saved.',
+        data: updateBook,
+      };
+    } catch (error) {
+      this.logger.error(`Error generating and saving book for user ID: ${userId}`, error.stack);
+      if (error instanceof UnauthorizedException) {
+        throw error.message;
+      }
+      throw new InternalServerErrorException(error.message);
+    }
+  }
 
  
 
@@ -90,6 +123,7 @@ export class BookGenerationController {
       throw new InternalServerErrorException(error.message);
     }
   }
+
   @UseGuards(JwtAuthGuard)
   @Get(':bookId')
   async getBookById(
@@ -112,6 +146,59 @@ export class BookGenerationController {
       };
     } catch (error) {
       this.logger.error(`Error retrieving books for user ID: ${user.id}`, error.stack);
+      throw new InternalServerErrorException(error.message);
+    }
+  }
+  
+  @UseGuards(JwtAuthGuard)
+  @Put('update-image')
+  @UseInterceptors(FileInterceptor('image')) // Handling file upload
+  async updateBookImage(
+    @Req() request: RequestWithUser,
+    @UploadedFile() image: Express.Multer.File,
+    @Body() input: Omit<UpdateDto, 'image'>,
+  ) {
+    const user = request.user;
+  
+    if (!user) {
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+  
+    try {
+      const updateBookImage = await this.bookGenerationService.updateBookImage({
+        ...input,
+        image: image.buffer,  // Converting file to buffer
+      });
+      return {
+        message: 'Book successfully updated.',
+        data: updateBookImage,
+      };
+    } catch (error) {
+      throw new InternalServerErrorException(error.message);
+    }
+  }
+  @UseGuards(JwtAuthGuard)
+  @Put('regenerate-image')
+  async regenerateBookImage(
+    @Req() request: RequestWithUser,
+   
+    @Body() input:RegenerateImage,
+  ) {
+    const user = request.user;
+  
+    if (!user) {
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+  
+    try {
+      const updateBookImage = await this.bookGenerationService.regenerateBookImage(
+        input  // Converting file to buffer
+      );
+      return {
+        message: 'Book successfully updated.',
+        data: updateBookImage,
+      };
+    } catch (error) {
       throw new InternalServerErrorException(error.message);
     }
   }

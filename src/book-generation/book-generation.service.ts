@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException, Logger } from "@nestjs/common";
+import { Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { ChatOpenAI, OpenAI as LangchainOpenAI } from "@langchain/openai"; // For text generation
@@ -11,7 +11,7 @@ import * as path from "path";
 import { ApiKey } from "src/api-keys/entities/api-key.entity";
 import { exec } from "child_process";
 import mermaid from "mermaid";
-import { BookGenerationDto, SearchDto } from "./dto/book-generation.dto";
+import { BookGenerationDto, RegenerateImage, SearchDto, UpdateBookDto, UpdateDto } from "./dto/book-generation.dto";
 import { allowedSizes } from "src/common";
 import { UserDto } from "src/auth/types/request-with-user.interface";
 import axios from "axios";
@@ -254,6 +254,73 @@ export class BookGenerationService {
     }
   }
   
+  private async regenerateBookCover(promptData: BookGenerationDto, coverType: "front" | "back"): Promise<string> {
+    try {
+      const maxRetries = 5;
+      const delayMs = 3000;
+  
+      let coverPrompt = coverType === "front"
+        ? `Design a visually striking and professional front cover for "${promptData.bookTitle}".`
+        : `Generate a professional back cover for "${promptData.bookTitle}".`;
+  
+      if (promptData.bookInformation) {
+        coverPrompt += ` The book explores the following theme: ${promptData.bookInformation}.`;
+      }
+      if (promptData.additionalContent) {
+        coverPrompt += ` Additional notes for the cover: ${promptData.additionalContent}.`;
+      }
+  
+      const requestData = {
+        prompt: coverPrompt,
+        num_images: 1,
+        enable_safety_checker: true,
+        safety_tolerance: "2",
+        output_format: "jpeg",
+        aspect_ratio: "9:16",
+        raw: false,
+      };
+  
+      let responseUrl: string | null = null;
+  
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const postResponse = await axios.post(
+            this.configService.get<string>("BASE_URL_FAL_AI"),
+            requestData,
+            {
+              headers: {
+                Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
+                "Content-Type": "application/json",
+              },
+            }
+          );
+  
+          if (postResponse.data && postResponse.data.response_url) {
+            responseUrl = postResponse.data.response_url;
+            break;
+          } else {
+            this.logger.warn(`⚠️ No response URL in API response. Attempt ${attempt}`);
+          }
+        } catch (error) {
+          if (error.response) {
+            this.logger.warn(`⚠️ API error (Attempt ${attempt}): ${JSON.stringify(error.response.data)}`);
+          } else {
+            this.logger.warn(`⚠️ Request failed (Attempt ${attempt}): ${error.message}`);
+          }
+  
+          if (attempt < maxRetries) await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+      }
+  
+      if (!responseUrl) throw new Error("❌ Failed to generate book cover after retries.");
+      return responseUrl;
+    } catch (error) {
+      this.logger.error(`❌ Error generating book cover: ${error.message}`);
+      throw new Error(error.message);
+    }
+  }
+  
+
   private async generateBookCover(promptData: BookGenerationDto, coverType: "front" | "back"): Promise<string> {
     try {
       const maxRetries = 5; // Retry up to 5 times
@@ -680,6 +747,28 @@ export class BookGenerationService {
       throw new Error(error.message);
     }
   }
+  async updateBookGenerate(userId: number, input: UpdateBookDto): Promise<BookGeneration> {
+    try {
+      
+      const book=await this.getBookById(input.bookGenerationId)
+      // **Immediately save book metadata (Images still downloading)**
+      book.userId = userId;
+      book.additionalData = {
+        fullContent: input.fullContent,
+        coverImageUrl:book.additionalData.coverImageUrl,
+        tableOfContents:book.additionalData.tableOfContents,
+        backCoverImageUrl:book.additionalData.backCoverImageUrl
+      };
+  
+      
+             
+     return  this.bookGenerationRepository.save(book);
+     
+    } catch (error) {
+      this.logger.error(`❌ Error generating and saving book: ${error.message}`);
+      throw new Error(error.message);
+    }
+  }
   
 
 
@@ -695,6 +784,101 @@ export class BookGenerationService {
     } catch (error) {
       throw new Error(error.message); // Handle any errors that occur
     }
+  }
+  async updateBookImage(input: UpdateDto): Promise<{ message: string; imagePath: string }> {
+    const book = await this.bookGenerationRepository.findOne({ where: { id: input.bookId } });
+
+    if (!book) {
+      throw new NotFoundException(`Book with ID ${input.bookId} not found`);
+    }
+
+    // Define image storage path
+    const uploadsDir = path.join(__dirname, '..', '..', 'uploads/covers');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    const fileName = `${input.bookId}_${input.imageType}${path.extname(book.bookTitle)}`;
+    const relativePath = `/covers/${fileName}`; // This will be stored in DB
+    const absolutePath = path.join(uploadsDir, fileName);
+
+    const bufferData = Buffer.from(input.image.buffer);
+
+    // Save file to disk
+    fs.writeFileSync(absolutePath, bufferData);
+  
+    // Update only with relative path
+    if (!book.additionalData) {
+      book.additionalData = {}; // Ensure additionalData exists
+    }
+  
+    if (input.imageType === 'cover') {
+      book.additionalData.coverImageUrl = relativePath;
+    } else {
+      book.additionalData.backCoverImageUrl = relativePath;
+    }
+  
+    await this.bookGenerationRepository.save(book);
+
+    return {
+      message: 'Book image updated successfully',
+      imagePath: relativePath,
+    };
+  }
+  async regenerateBookImage(input: RegenerateImage) {
+    await this.initializeAIModels(); // Ensure API keys are loaded before generating content
+  
+    const getBook = await this.bookGenerationRepository.findOne({ where: { id: input.bookId } });
+
+    if (!getBook) {
+      throw new NotFoundException(`Book with ID ${input.bookId} not found`);
+    }
+    const promptData = {
+      bookTitle: getBook.bookTitle,
+      authorName: getBook.authorName,
+      authorBio: getBook.authorBio,
+      genre: getBook.genre || '',  // Fallback to an empty string if missing
+      characters: getBook.characters,
+      bookInformation: getBook.ideaCore,
+      numberOfChapters: getBook.numberOfChapters || 0,  // Default to 0 if missing
+      targetAudience: getBook.targetAudience,
+      language: getBook.language,
+      additionalContent: input.additionalContent,
+    };
+    let imageUrl
+ if(input.imageType=='cover') imageUrl= await this.regenerateBookCover(promptData,"front")
+  else imageUrl= await this.regenerateBookCover(promptData,"back")
+ if (input.imageType === 'cover') {
+    this.generateBookImage(imageUrl, promptData)
+  .then(async (backCoverPath) => {
+    // Retrieve the current book record
+    const book = await this.bookGenerationRepository.findOne({ where: { id: getBook.id } });
+    if (!book) return;
+
+    // Update `additionalData`
+    book.additionalData = { ...book.additionalData, coverImageUrl: backCoverPath };
+
+    // Save the updated record
+    await this.bookGenerationRepository.update(book.id, { additionalData: book.additionalData });
+  })
+  .catch((error) => this.logger.error(`❌ Failed to save back cover: ${error.message}`))
+} else {
+  this.generateBookImage(imageUrl, promptData)
+  .then(async (backCoverPath) => {
+    // Retrieve the current book record
+    const book = await this.bookGenerationRepository.findOne({ where: { id: getBook.id } });
+    if (!book) return;
+
+    // Update `additionalData`
+    book.additionalData = { ...book.additionalData, backCoverImageUrl: backCoverPath };
+
+    // Save the updated record
+    await this.bookGenerationRepository.update(book.id, { additionalData: book.additionalData });
+  })
+  .catch((error) => this.logger.error(`❌ Failed to save back cover: ${error.message}`))
+
+  ;
+}
+    
   }
   
   async deleteBookById(id:number){
