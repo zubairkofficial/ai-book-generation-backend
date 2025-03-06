@@ -54,6 +54,12 @@ export class BookGeneration extends BaseEntity {
     fullContent?: string;
     backCoverImageUrl?: string;
     tableOfContents?: string;
+    coverPageResponse?: string,
+    dedication?: string,
+    preface?: string,
+    references?: string,
+    index?: string,
+    glossary?: string,
   };
 
 

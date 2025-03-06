@@ -1,4 +1,9 @@
-import { Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { ChatOpenAI, OpenAI as LangchainOpenAI } from "@langchain/openai"; // For text generation
@@ -11,7 +16,14 @@ import * as path from "path";
 import { ApiKey } from "src/api-keys/entities/api-key.entity";
 import { exec } from "child_process";
 import mermaid from "mermaid";
-import { BookGenerationDto, RegenerateImage, SearchDto, UpdateBookCoverDto, UpdateBookDto, UpdateDto } from "./dto/book-generation.dto";
+import {
+  BookGenerationDto,
+  RegenerateImage,
+  SearchDto,
+  UpdateBookCoverDto,
+  UpdateBookDto,
+  UpdateDto,
+} from "./dto/book-generation.dto";
 import { allowedSizes } from "src/common";
 import { UserDto } from "src/auth/types/request-with-user.interface";
 import axios from "axios";
@@ -206,15 +218,13 @@ export class BookGenerationService {
     }
   }
 
- 
-
   private async generateBookImage(responseUrl, promptData): Promise<string> {
     try {
       const maxRetries = 12;
       const delayMs = 10000; // 10 seconds between retries
-  
+
       let imageUrl: string | null = null;
-  
+
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           const getResponse = await axios.get(responseUrl, {
@@ -223,53 +233,64 @@ export class BookGenerationService {
               "Content-Type": "application/json",
             },
           });
-  
+
           if (getResponse.data.images?.length > 0) {
             imageUrl = getResponse.data.images[0].url;
             break;
           }
         } catch (error) {
-          this.logger.warn(`⏳ Image not ready (Attempt ${attempt}/${maxRetries})`);
+          this.logger.warn(
+            `⏳ Image not ready (Attempt ${attempt}/${maxRetries})`
+          );
         }
-  
+
         await new Promise((resolve) => setTimeout(resolve, delayMs)); // Wait before retrying
       }
-  
-      if (!imageUrl) throw new Error("❌ Image generation failed after retries.");
-  
+
+      if (!imageUrl)
+        throw new Error("❌ Image generation failed after retries.");
+
       // Download & Save Image
-      const imageResponse = await axios.get(imageUrl, { responseType: "arraybuffer" });
-  
-      const sanitizedFileName = promptData.bookTitle.replace(/[^a-z0-9]/gi, "_").toLowerCase();
+      const imageResponse = await axios.get(imageUrl, {
+        responseType: "arraybuffer",
+      });
+
+      const sanitizedFileName = promptData.bookTitle
+        .replace(/[^a-z0-9]/gi, "_")
+        .toLowerCase();
       const fullFileName = `${sanitizedFileName}_${Date.now()}.png`;
       const imagePath = path.join(this.uploadsDir, "covers", fullFileName);
-  
+
       fs.mkdirSync(path.dirname(imagePath), { recursive: true });
       fs.writeFileSync(imagePath, imageResponse.data);
-  
+
       return `covers/${fullFileName}`;
     } catch (error) {
       this.logger.error(`❌ Error downloading book image: ${error.message}`);
       throw new Error(error.message);
     }
   }
-  
-  private async regenerateBookCover(promptData: BookGenerationDto, coverType: "front" | "back"): Promise<string> {
+
+  private async regenerateBookCover(
+    promptData: BookGenerationDto,
+    coverType: "front" | "back"
+  ): Promise<string> {
     try {
       const maxRetries = 5;
       const delayMs = 3000;
-  
-      let coverPrompt = coverType === "front"
-        ? `Design a visually striking and professional front cover for "${promptData.bookTitle}".`
-        : `Generate a professional back cover for "${promptData.bookTitle}".`;
-  
+
+      let coverPrompt =
+        coverType === "front"
+          ? `Design a visually striking and professional front cover for "${promptData.bookTitle}".`
+          : `Generate a professional back cover for "${promptData.bookTitle}".`;
+
       if (promptData.bookInformation) {
         coverPrompt += ` The book explores the following theme: ${promptData.bookInformation}.`;
       }
       if (promptData.additionalContent) {
         coverPrompt += ` Additional notes for the cover: ${promptData.additionalContent}.`;
       }
-  
+
       const requestData = {
         prompt: coverPrompt,
         num_images: 1,
@@ -279,9 +300,9 @@ export class BookGenerationService {
         aspect_ratio: "9:16",
         raw: false,
       };
-  
+
       let responseUrl: string | null = null;
-  
+
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           const postResponse = await axios.post(
@@ -294,43 +315,53 @@ export class BookGenerationService {
               },
             }
           );
-  
+
           if (postResponse.data && postResponse.data.response_url) {
             responseUrl = postResponse.data.response_url;
             break;
           } else {
-            this.logger.warn(`⚠️ No response URL in API response. Attempt ${attempt}`);
+            this.logger.warn(
+              `⚠️ No response URL in API response. Attempt ${attempt}`
+            );
           }
         } catch (error) {
           if (error.response) {
-            this.logger.warn(`⚠️ API error (Attempt ${attempt}): ${JSON.stringify(error.response.data)}`);
+            this.logger.warn(
+              `⚠️ API error (Attempt ${attempt}): ${JSON.stringify(error.response.data)}`
+            );
           } else {
-            this.logger.warn(`⚠️ Request failed (Attempt ${attempt}): ${error.message}`);
+            this.logger.warn(
+              `⚠️ Request failed (Attempt ${attempt}): ${error.message}`
+            );
           }
-  
-          if (attempt < maxRetries) await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+          if (attempt < maxRetries)
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
         }
       }
-  
-      if (!responseUrl) throw new Error("❌ Failed to generate book cover after retries.");
+
+      if (!responseUrl)
+        throw new Error("❌ Failed to generate book cover after retries.");
       return responseUrl;
     } catch (error) {
       this.logger.error(`❌ Error generating book cover: ${error.message}`);
       throw new Error(error.message);
     }
   }
-  
 
-  private async generateBookCover(promptData: BookGenerationDto, coverType: "front" | "back"): Promise<string> {
+  private async generateBookCover(
+    promptData: BookGenerationDto,
+    coverType: "front" | "back"
+  ): Promise<string> {
     try {
       const maxRetries = 5; // Retry up to 5 times
       const delayMs = 3000; // Wait 3 seconds between retries
-  
+
       const coverPrompt =
         coverType === "front"
           ? `Design a visually striking and professional front cover for "${promptData.bookTitle}".`
           : `Generate a professional back cover for "${promptData.bookTitle}".`;
-  
+
       const requestData = {
         prompt: coverPrompt,
         num_images: 1,
@@ -340,9 +371,9 @@ export class BookGenerationService {
         aspect_ratio: "9:16",
         raw: false,
       };
-  
+
       let responseUrl: string | null = null;
-  
+
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           const postResponse = await axios.post(
@@ -355,26 +386,27 @@ export class BookGenerationService {
               },
             }
           );
-  
+
           responseUrl = postResponse.data.response_url;
           if (responseUrl) break; // ✅ Stop retrying if successful
         } catch (error) {
-          this.logger.warn(`⚠️ Attempt ${attempt}/${maxRetries} failed: ${error.message}`);
-          if (attempt < maxRetries) await new Promise((resolve) => setTimeout(resolve, delayMs));
+          this.logger.warn(
+            `⚠️ Attempt ${attempt}/${maxRetries} failed: ${error.message}`
+          );
+          if (attempt < maxRetries)
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
         }
       }
-  
-      if (!responseUrl) throw new Error("❌ Failed to generate book cover after retries.");
-      
+
+      if (!responseUrl)
+        throw new Error("❌ Failed to generate book cover after retries.");
+
       return responseUrl;
     } catch (error) {
       this.logger.error(`❌ Error generating book cover: ${error.message}`);
       throw new Error(error.message);
     }
   }
-  
-  
-
 
   private getDefaultStyling() {
     return {
@@ -397,8 +429,10 @@ export class BookGenerationService {
 
   private async introductionContent(promptData: BookGenerationDto) {
     try {
-      this.logger.log(`📖 Generating Introduction Content for: "${promptData.bookTitle}"`);
-  
+      this.logger.log(
+        `📖 Generating Introduction Content for: "${promptData.bookTitle}"`
+      );
+
       // Prepare all prompts (UNCHANGED)
       const coverPagePrompt = `
         Create a professional Cover Page with the following details:
@@ -409,15 +443,15 @@ export class BookGenerationService {
         - Language: ${promptData.language || "English"}
         - CoreIdea: ${promptData.bookInformation}
       `;
-  
+
       const dedicationPrompt = `
       Write a heartfelt and meaningful dedication for the book titled "${promptData.bookTitle}". 
       Consider the book's central  core idea: "${promptData.bookInformation || "Not specified"}".
       The dedication should be general enough to resonate with a wide audience but still feel personal and authentic. 
       It can express gratitude or motivation, depending on the tone of the book.
     `;
-  
- const prefacePrompt = `
+
+      const prefacePrompt = `
  Write a compelling preface for the book titled "${promptData.bookTitle}". 
  The preface should include the following sections:
  
@@ -430,7 +464,6 @@ export class BookGenerationService {
  The tone should be welcoming, informative, and reflective of the overall content of the book.
 `;
 
-  
       const tableOfContentsPrompt = `
         Create a list of unique, engaging chapter titles for a book with ${promptData.numberOfChapters} chapters.
         Each title should reflect the theme of the book and evoke curiosity.
@@ -450,29 +483,34 @@ export class BookGenerationService {
   
         Continue for all chapters, ensuring each title is creative and fitting for the respective chapter's content.
       `;
-  
+
       // **Run all AI calls in parallel** (Faster Execution)
-      const [coverPageResponse, dedicationResponse, prefaceResponse, tableOfContentsResponse] = await Promise.all([
+      const [
+        coverPageResponse,
+        dedication,
+        preface,
+        tableOfContentsResponse,
+      ] = await Promise.all([
         this.textModel.invoke(coverPagePrompt),
         this.textModel.invoke(dedicationPrompt),
         this.textModel.invoke(prefacePrompt),
         this.textModel.invoke(tableOfContentsPrompt),
       ]);
-  
-      // **Faster String Concatenation**
-      const section = [
-        `Cover Page\n${coverPageResponse.content}`,
-        `Dedication\n${dedicationResponse.content}`,
-        `Preface\n${prefaceResponse.content}`
-      ].join("\n\n"); // Efficient string joining
-  
-      return { section, tableOfContents: tableOfContentsResponse.content };
+
+      return {
+        coverPageResponse: coverPageResponse.content,
+        dedication: dedication.content,
+        preface: preface.content,
+        tableOfContents: tableOfContentsResponse.content,
+      };
     } catch (error) {
-      this.logger.error(`❌ Error generating introduction content: ${error.message}`);
+      this.logger.error(
+        `❌ Error generating introduction content: ${error.message}`
+      );
       throw new Error(error.message);
     }
   }
-  
+
   private async generateDiagram(
     chapterContent: string,
     chapterNumber: number,
@@ -517,10 +555,14 @@ export class BookGenerationService {
     }
   }
 
-  private async endOfBookContent(promptData: BookGenerationDto): Promise<string> {
+  private async endOfBookContent(
+    promptData: BookGenerationDto
+  ) {
     try {
-      this.logger.log(`📖 Generating End-of-Book Content for: "${promptData.bookTitle}"`);
-  
+      this.logger.log(
+        `📖 Generating End-of-Book Content for: "${promptData.bookTitle}"`
+      );
+
       // Prepare prompts (UNCHANGED)
       const glossaryPrompt = `
       Create a comprehensive glossary for the book titled "${promptData.bookTitle}". 
@@ -529,40 +571,42 @@ export class BookGenerationService {
       Organize the glossary alphabetically and ensure that each term is explained concisely and accurately.
     `;
 
-    const indexPrompt = `
+      const indexPrompt = `
       Create a detailed index for the book titled "${promptData.bookTitle}". 
       The index should include important topics, concepts, and references that appear in the book. 
       Ensure that each entry is well-organized, with corresponding page numbers, and reflects the core themes and ideas explored in the book: "${promptData.bookInformation}".
       The index should help readers easily navigate through the material based on their interests or research needs.
     `;
-  
-  
+
       const referencesPrompt = `
       Write a comprehensive bibliography for the book titled "${promptData.bookTitle}". 
       Include references to any studies, articles, books, or other materials that were used or inspired the content of the book. 
       The references should align with the core idea: "${promptData.bookInformation}" and provide additional reading for those interested in further exploration of the book’s topics.
       Ensure that the citations are formatted according to a standard citation style (e.g., APA, MLA, Chicago).
     `;
-  
+
       // **Run AI calls in parallel** for faster execution
-      const [glossaryResponse, indexResponse,  referencesResponse] = await Promise.all([
-        this.textModel.invoke(glossaryPrompt),
-        this.textModel.invoke(indexPrompt),
-        this.textModel.invoke(referencesPrompt),
-      ]);
-  
+      const [glossaryResponse, indexResponse, referencesResponse] =
+        await Promise.all([
+          this.textModel.invoke(glossaryPrompt),
+          this.textModel.invoke(indexPrompt),
+          this.textModel.invoke(referencesPrompt),
+        ]);
+
       // **Fast String Concatenation**
-      return [
-        `Glossary\n${glossaryResponse.content}`,
-        `Index\n${indexResponse.content}`,
-        `References\n${referencesResponse.content}`,
-      ].join("\n\n"); // Efficient joining
+      return {
+        glossary: glossaryResponse.content,
+        index: indexResponse.content,
+        references: referencesResponse.content,
+      };
+      // Efficient joining
     } catch (error) {
-      this.logger.error(`❌ Error generating end-of-book content: ${error.message}`);
+      this.logger.error(
+        `❌ Error generating end-of-book content: ${error.message}`
+      );
       throw new Error("Failed to generate end-of-book content");
     }
   }
-  
 
   private async generateFlowchart(promptText: string): Promise<string> {
     try {
@@ -612,20 +656,17 @@ export class BookGenerationService {
         this.introductionContent(promptData),
         this.endOfBookContent(promptData),
       ]);
-  
-      // Combine sections efficiently
-      const fullBookContent = `${introContent.section}\n\n${endOfBookContent}`;
-  
+
       return {
-        fullBookContent,
-        tableOfContents: introContent.tableOfContents,
+        ...introContent,
+        ...endOfBookContent,
       };
     } catch (error) {
       this.logger.error(`❌ Error creating book content: ${error.message}`);
       throw new Error(error.message);
     }
   }
-  
+
   async getAllBooksByUser(user: UserDto): Promise<BookGeneration[]> {
     const query = this.bookGenerationRepository
       .createQueryBuilder("bookGeneration")
@@ -642,10 +683,10 @@ export class BookGenerationService {
 
   async getBook(id: number) {
     try {
-    return this.bookGenerationRepository.findOne({ where: { id } });
-  } catch (error) {
+      return this.bookGenerationRepository.findOne({ where: { id } });
+    } catch (error) {
       throw new Error(error.message);
-  }
+    }
   }
   async getAllBooksCount(userId: number | null) {
     if (userId)
@@ -655,23 +696,37 @@ export class BookGenerationService {
     else return await this.bookGenerationRepository.count();
   }
 
-  async generateAndSaveBook(userId: number, promptData: BookGenerationDto): Promise<BookGeneration> {
+  async generateAndSaveBook(
+    userId: number,
+    promptData: BookGenerationDto
+  ): Promise<BookGeneration> {
     try {
       await this.initializeAIModels(); // Ensure API keys are loaded before generating content
-  
+
       // **Run AI Content & Image Generation in Parallel**
-      const [bookContentResult, coverImageResult, backCoverImageResult] = await Promise.allSettled([
-        this.createBookContent(promptData), // Generate book content
-        this.generateBookCover(promptData, "front"), // Generate front cover (URL)
-        this.generateBookCover(promptData, "back"), // Generate back cover (URL)
-      ]);
-  
+      const [bookContentResult, coverImageResult, backCoverImageResult] =
+        await Promise.allSettled([
+          this.createBookContent(promptData), // Generate book content
+          this.generateBookCover(promptData, "front"), // Generate front cover (URL)
+          this.generateBookCover(promptData, "back"), // Generate back cover (URL)
+        ]);
+
       // **Extract book content**
       if (bookContentResult.status !== "fulfilled") {
-        throw new Error(`❌ Book content generation failed: ${bookContentResult.reason}`);
+        throw new Error(
+          `❌ Book content generation failed: ${bookContentResult.reason}`
+        );
       }
-      const { fullBookContent, tableOfContents } = bookContentResult.value;
-  
+      const {
+        coverPageResponse,
+        dedication,
+        preface,
+        tableOfContents,
+        references,
+        index,
+        glossary,
+      } = bookContentResult.value;
+
       // **Immediately save book metadata (Images still downloading)**
       const book = new BookGeneration();
       book.userId = userId;
@@ -688,112 +743,151 @@ export class BookGenerationService {
       book.additionalData = {
         coverImageUrl: null, // To be updated when image is ready
         backCoverImageUrl: null, // To be updated when image is ready
-        fullContent: fullBookContent,
+        coverPageResponse: coverPageResponse,
+        dedication: dedication,
+        preface: preface,
+        references: references,
+        index: index,
+        glossary: glossary,
         tableOfContents: tableOfContents,
       };
-  
+
       // **Save book immediately**
       const savedBook = await this.bookGenerationRepository.save(book);
-      this.logger.log(`📖 Book saved successfully for user ${userId}: ${promptData.bookTitle}`);
-  
+      this.logger.log(
+        `📖 Book saved successfully for user ${userId}: ${promptData.bookTitle}`
+      );
+
       // **Download & Save Images in Background (Non-blocking)**
       const imageDownloadTasks: Promise<void>[] = [];
-      
+
       if (coverImageResult.status === "fulfilled") {
         imageDownloadTasks.push(
           this.generateBookImage(coverImageResult.value, promptData)
             .then(async (coverImagePath) => {
               // Retrieve the current book record to get `additionalData`
-              const book = await this.bookGenerationRepository.findOne({ where: { id: savedBook.id } });
+              const book = await this.bookGenerationRepository.findOne({
+                where: { id: savedBook.id },
+              });
               if (!book) return;
-        
+
               // Update `additionalData`
-              book.additionalData = { ...book.additionalData, coverImageUrl: coverImagePath };
-        
+              book.additionalData = {
+                ...book.additionalData,
+                coverImageUrl: coverImagePath,
+              };
+
               // Save the updated record
-              await this.bookGenerationRepository.update(savedBook.id, { additionalData: book.additionalData });
+              await this.bookGenerationRepository.update(savedBook.id, {
+                additionalData: book.additionalData,
+              });
             })
-            .catch((error) => this.logger.error(`❌ Failed to save front cover: ${error.message}`))
+            .catch((error) =>
+              this.logger.error(
+                `❌ Failed to save front cover: ${error.message}`
+              )
+            )
         );
-        
+
         if (backCoverImageResult.status === "fulfilled") {
           imageDownloadTasks.push(
             this.generateBookImage(backCoverImageResult.value, promptData)
               .then(async (backCoverPath) => {
                 // Retrieve the current book record
-                const book = await this.bookGenerationRepository.findOne({ where: { id: savedBook.id } });
+                const book = await this.bookGenerationRepository.findOne({
+                  where: { id: savedBook.id },
+                });
                 if (!book) return;
-        
+
                 // Update `additionalData`
-                book.additionalData = { ...book.additionalData, backCoverImageUrl: backCoverPath };
-        
+                book.additionalData = {
+                  ...book.additionalData,
+                  backCoverImageUrl: backCoverPath,
+                };
+
                 // Save the updated record
-                await this.bookGenerationRepository.update(savedBook.id, { additionalData: book.additionalData });
+                await this.bookGenerationRepository.update(savedBook.id, {
+                  additionalData: book.additionalData,
+                });
               })
-              .catch((error) => this.logger.error(`❌ Failed to save back cover: ${error.message}`))
+              .catch((error) =>
+                this.logger.error(
+                  `❌ Failed to save back cover: ${error.message}`
+                )
+              )
           );
         }
-        
-      }        
-  
+      }
+
       // **Process Image Downloads in Background**
       Promise.allSettled(imageDownloadTasks).then(() => {
         this.logger.log(`✅ Cover images updated for book ${savedBook.id}`);
       });
-  
+
       return savedBook;
     } catch (error) {
-      this.logger.error(`❌ Error generating and saving book: ${error.message}`);
+      this.logger.error(
+        `❌ Error generating and saving book: ${error.message}`
+      );
       throw new Error(error.message);
     }
   }
-  async updateBookGenerate(userId: number, input: UpdateBookDto): Promise<BookGeneration> {
+  async updateBookGenerate(
+    userId: number,
+    input: UpdateBookDto
+  ): Promise<BookGeneration> {
     try {
-      
-      const book=await this.getBookById(input.bookGenerationId)
+      const book = await this.getBookById(input.bookGenerationId);
       // **Immediately save book metadata (Images still downloading)**
       book.userId = userId;
       book.additionalData = {
-        fullContent: input.fullContent,
-        coverImageUrl:book.additionalData.coverImageUrl,
-        tableOfContents:book.additionalData.tableOfContents,
-        backCoverImageUrl:book.additionalData.backCoverImageUrl
+          
+         coverPageResponse:input.coverPageResponse??book.additionalData.coverPageResponse,
+          dedication:input.dedication??book.additionalData.dedication,
+          preface:input.preface??book.additionalData.preface,
+          references:input.references??book.additionalData.references,
+          index:input.index??book.additionalData.index,
+          glossary:input.glossary??book.additionalData.glossary,
+        coverImageUrl: book.additionalData.coverImageUrl,
+        tableOfContents:input.tableOfContents?? book.additionalData.tableOfContents,
+        backCoverImageUrl: book.additionalData.backCoverImageUrl,
       };
-  
-      
-             
-     return  this.bookGenerationRepository.save(book);
-     
+
+      return this.bookGenerationRepository.save(book);
     } catch (error) {
-      this.logger.error(`❌ Error generating and saving book: ${error.message}`);
+      this.logger.error(
+        `❌ Error generating and saving book: ${error.message}`
+      );
       throw new Error(error.message);
     }
   }
-  
-
 
   async getBookById(id: number) {
     try {
       // Perform a left join with the BookChapter table
       const book = await this.bookGenerationRepository.findOne({
         where: { id },
-        relations: ['bookChapter'], // This ensures the BookChapter is included in the result
+        relations: ["bookChapter"], // This ensures the BookChapter is included in the result
       });
-  
+
       return book; // Return the book with chapters
     } catch (error) {
       throw new Error(error.message); // Handle any errors that occur
     }
   }
-  async updateBookImage(input: UpdateDto): Promise<{ message: string; imagePath: string }> {
-    const book = await this.bookGenerationRepository.findOne({ where: { id: input.bookId } });
+  async updateBookImage(
+    input: UpdateDto
+  ): Promise<{ message: string; imagePath: string }> {
+    const book = await this.bookGenerationRepository.findOne({
+      where: { id: input.bookId },
+    });
 
     if (!book) {
       throw new NotFoundException(`Book with ID ${input.bookId} not found`);
     }
 
     // Define image storage path
-    const uploadsDir = path.join(__dirname, '..', '..', 'uploads/covers');
+    const uploadsDir = path.join(__dirname, "..", "..", "uploads/covers");
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
@@ -805,52 +899,59 @@ export class BookGenerationService {
 
     // Save file to disk
     fs.writeFileSync(absolutePath, bufferData);
-  
+
     // Update only with relative path
     if (!book.additionalData) {
       book.additionalData = {}; // Ensure additionalData exists
     }
-  
-    if (input.imageType === 'cover') {
+
+    if (input.imageType === "cover") {
       book.additionalData.coverImageUrl = relativePath;
     } else {
       book.additionalData.backCoverImageUrl = relativePath;
     }
-  
+
     await this.bookGenerationRepository.save(book);
 
     return {
-      message: 'Book image updated successfully',
+      message: "Book image updated successfully",
       imagePath: relativePath,
     };
   }
-  async updateBookGenerateCover(user,input: UpdateBookCoverDto) {
-    const book = await this.bookGenerationRepository.findOne({ where: { id: input.bookGenerationId } });
+  async updateBookGenerateCover(user, input: UpdateBookCoverDto) {
+    const book = await this.bookGenerationRepository.findOne({
+      where: { id: input.bookGenerationId },
+    });
 
     if (!book) {
-      throw new NotFoundException(`Book with ID ${input.bookGenerationId} not found`);
+      throw new NotFoundException(
+        `Book with ID ${input.bookGenerationId} not found`
+      );
     }
 
-   if(input.authorName)book.authorName = input.authorName;
-   if(input.bookTitle)book.bookTitle = input.bookTitle;
-   if(input.authorBio)book.authorBio = input.authorBio;
-   if(input.genre)book.genre = input.genre;
-   if(input.characters)book.characters = input.characters;
-   if(input.ideaCore)book.ideaCore = input.ideaCore;
-   if(input.numberOfChapters)book.numberOfChapters = input.numberOfChapters;
-   if(input.targetAudience)book.targetAudience = input.targetAudience;
-   if(input.language)book.language = input.language;
-   
-  await this.bookGenerationRepository.save(book);
+    if (input.authorName) book.authorName = input.authorName;
+    if (input.bookTitle) book.bookTitle = input.bookTitle;
+    if (input.authorBio) book.authorBio = input.authorBio;
+    if (input.genre) book.genre = input.genre;
+    if (input.characters) book.characters = input.characters;
+    if (input.ideaCore) book.ideaCore = input.ideaCore;
+    if (input.numberOfChapters) book.numberOfChapters = input.numberOfChapters;
+    if (input.targetAudience) book.targetAudience = input.targetAudience;
+    if (input.language) book.language = input.language;
+
+    await this.bookGenerationRepository.save(book);
 
     return {
-      message: 'Book image updated successfully',
+      message: "Book image updated successfully",
     };
   }
+
   async regenerateBookImage(input: RegenerateImage) {
     await this.initializeAIModels(); // Ensure API keys are loaded before generating content
-  
-    const getBook = await this.bookGenerationRepository.findOne({ where: { id: input.bookId } });
+
+    const getBook = await this.bookGenerationRepository.findOne({
+      where: { id: input.bookId },
+    });
 
     if (!getBook) {
       throw new NotFoundException(`Book with ID ${input.bookId} not found`);
@@ -859,58 +960,74 @@ export class BookGenerationService {
       bookTitle: getBook.bookTitle,
       authorName: getBook.authorName,
       authorBio: getBook.authorBio,
-      genre: getBook.genre || '',  // Fallback to an empty string if missing
+      genre: getBook.genre || "", // Fallback to an empty string if missing
       characters: getBook.characters,
       bookInformation: getBook.ideaCore,
-      numberOfChapters: getBook.numberOfChapters || 0,  // Default to 0 if missing
+      numberOfChapters: getBook.numberOfChapters || 0, // Default to 0 if missing
       targetAudience: getBook.targetAudience,
       language: getBook.language,
       additionalContent: input.additionalContent,
     };
-    let imageUrl
- if(input.imageType=='cover') imageUrl= await this.regenerateBookCover(promptData,"front")
-  else imageUrl= await this.regenerateBookCover(promptData,"back")
- if (input.imageType === 'cover') {
-    this.generateBookImage(imageUrl, promptData)
-  .then(async (backCoverPath) => {
-    // Retrieve the current book record
-    const book = await this.bookGenerationRepository.findOne({ where: { id: getBook.id } });
-    if (!book) return;
+    let imageUrl;
+    if (input.imageType == "cover")
+      imageUrl = await this.regenerateBookCover(promptData, "front");
+    else imageUrl = await this.regenerateBookCover(promptData, "back");
+    if (input.imageType === "cover") {
+      this.generateBookImage(imageUrl, promptData)
+        .then(async (backCoverPath) => {
+          // Retrieve the current book record
+          const book = await this.bookGenerationRepository.findOne({
+            where: { id: getBook.id },
+          });
+          if (!book) return;
 
-    // Update `additionalData`
-    book.additionalData = { ...book.additionalData, coverImageUrl: backCoverPath };
+          // Update `additionalData`
+          book.additionalData = {
+            ...book.additionalData,
+            coverImageUrl: backCoverPath,
+          };
 
-    // Save the updated record
-    await this.bookGenerationRepository.update(book.id, { additionalData: book.additionalData });
-  })
-  .catch((error) => this.logger.error(`❌ Failed to save back cover: ${error.message}`))
-} else {
-  this.generateBookImage(imageUrl, promptData)
-  .then(async (backCoverPath) => {
-    // Retrieve the current book record
-    const book = await this.bookGenerationRepository.findOne({ where: { id: getBook.id } });
-    if (!book) return;
+          // Save the updated record
+          await this.bookGenerationRepository.update(book.id, {
+            additionalData: book.additionalData,
+          });
+        })
+        .catch((error) =>
+          this.logger.error(`❌ Failed to save back cover: ${error.message}`)
+        );
+    } else {
+      this.generateBookImage(imageUrl, promptData)
+        .then(async (backCoverPath) => {
+          // Retrieve the current book record
+          const book = await this.bookGenerationRepository.findOne({
+            where: { id: getBook.id },
+          });
+          if (!book) return;
 
-    // Update `additionalData`
-    book.additionalData = { ...book.additionalData, backCoverImageUrl: backCoverPath };
+          // Update `additionalData`
+          book.additionalData = {
+            ...book.additionalData,
+            backCoverImageUrl: backCoverPath,
+          };
 
-    // Save the updated record
-    await this.bookGenerationRepository.update(book.id, { additionalData: book.additionalData });
-  })
-  .catch((error) => this.logger.error(`❌ Failed to save back cover: ${error.message}`))
-
-  ;
-}
-    
+          // Save the updated record
+          await this.bookGenerationRepository.update(book.id, {
+            additionalData: book.additionalData,
+          });
+        })
+        .catch((error) =>
+          this.logger.error(`❌ Failed to save back cover: ${error.message}`)
+        );
+    }
   }
-  
-  async deleteBookById(id:number){
+
+  async deleteBookById(id: number) {
     try {
-const getBookById=await this.getBook(id)
-return this.bookGenerationRepository.remove(getBookById)
-} catch (error) {
+      const getBookById = await this.getBook(id);
+      return this.bookGenerationRepository.remove(getBookById);
+    } catch (error) {
       throw new Error(error.message);
-}
+    }
   }
   async getBooksByType(type: string, user: UserInterface) {
     try {
@@ -918,21 +1035,24 @@ return this.bookGenerationRepository.remove(getBookById)
         .createQueryBuilder("bookGeneration")
         .leftJoinAndSelect("bookGeneration.bookChapter", "bookChapter")
         .where("bookGeneration.type = :type", { type });
-  
+
       // Apply user-based filtering if the user is not an admin
-      if (user.role !== 'admin') {
+      if (user.role !== "admin") {
         query.andWhere("bookGeneration.userId = :userId", { userId: user.id });
       }
-  
+
       // Execute the query and return the result
       return await query.getMany();
     } catch (error) {
       // Enhanced error handling
-      this.logger.error(`Error retrieving books of type '${type}' for user ID: ${user.id}`, error.stack);
+      this.logger.error(
+        `Error retrieving books of type '${type}' for user ID: ${user.id}`,
+        error.stack
+      );
       throw new InternalServerErrorException(error.message);
     }
   }
-  
+
   async searchBookQuery(userId: number, search: SearchDto) {
     try {
       // Prepare the query filter based on the provided search parameters

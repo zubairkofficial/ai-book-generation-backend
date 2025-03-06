@@ -80,10 +80,88 @@ export class UpdateBookDto {
   @IsNotEmpty()
   bookGenerationId: number;
 
-  @ApiProperty({ description: 'The book information additional Data' })
+  @ApiProperty({
+    example: 'some-image-url.png',
+    required: false,
+  })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  fullContent: string;
+  coverImageUrl?: string;
+
+  @ApiProperty({
+    example: 'some-back-cover-url.png',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  backCoverImageUrl?: string;
+
+  @ApiProperty({
+    example: 'Some table of contents text',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  tableOfContents?: string;
+
+  @ApiProperty({
+    example: 'Cover page content goes here',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  coverPageResponse?: string;
+
+  @ApiProperty({
+    example: 'Dedication content goes here',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  dedication?: string;
+
+  @ApiProperty({
+    example: 'Preface content goes here',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  preface?: string;
+
+  @ApiProperty({
+    example: 'Some references content',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  references?: string;
+
+  @ApiProperty({
+    example: 'Some index content',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  index?: string;
+
+  @ApiProperty({
+    example: 'Some glossary content',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  glossary?: string;
+
+  @ApiProperty({
+    example: 'Full content of the book goes here',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  fullContent?: string;
+
+
+ 
 }
 export class UpdateBookCoverDto {
   @ApiProperty({ example: 117 })
