@@ -23,5 +23,8 @@ export class BookChapter extends BaseEntity {
   @Column('jsonb', { nullable: true })
   chapterInfo?:  string;
   
+  @Column('text', { nullable: true })
+  chapterSummary?: string; // Store summary as plain text or JSON based on your use case
+
 
 }

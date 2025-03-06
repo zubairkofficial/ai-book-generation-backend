@@ -86,22 +86,7 @@ export class BookChapterService {
     }
   }
 
-  private async invokeWithSimulatedStreaming(
-    prompt: string,
-    onToken: (token: string) => void
-  ): Promise<string> {
-    const response = await this.textModel.invoke(prompt);
-    const content = response.content;
-    if (!content) {
-      throw new Error("No content returned");
-    }
-    const lines = content.split("\n");
-    for (const line of lines) {
-      onToken(line + "\n");
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    return content;
-  }
+ 
 
   private async saveGeneratedImage(
     imageUrl: string,
@@ -259,7 +244,40 @@ export class BookChapterService {
     }
   }
 
-
+  
+  private async generateChapterSummary(chapterText: string): Promise<string> {
+    try {
+      if (!chapterText || chapterText.trim().length === 0) {
+        throw new Error("Chapter text is empty or invalid.");
+      }
+  
+      // Create the prompt for summarization
+      const prompt = `
+        Summarize the following chapter content into a concise and engaging summary:
+        
+        Chapter Text:
+        ${chapterText}
+        
+        Provide a summary that is no more than 3-4 sentences long, highlighting the main points of the chapter.
+      `;
+  
+      // Use the model from this.textModel dynamically
+      const response = await this.textModel.invoke(prompt);
+  
+      // Log the response for debugging
+      this.logger.log("OpenAI API Response:", JSON.stringify(response, null, 2));
+  
+      // Extract and return the generated summary
+      return response.content;
+    } catch (error) {
+      // Log detailed error information
+      this.logger.error(`Error generating chapter summary: ${error.message}`, error.stack);
+      throw new Error(`Failed to generate chapter summary: ${error.message}`);
+    }
+  }
+  
+  
+  
   private async ChapterContent(
     promptData: BookChapterGenerationDto,
     bookInfo: BookGeneration,
@@ -502,6 +520,9 @@ if(promptData.instruction){
         bookInfo,
         onTextUpdate
       );
+
+      const chapterSummary =await this.generateChapterSummary(formattedChapter);
+
       if (input.selectedText && input.instruction) {return formattedChapter}
 
       if (bookChapter) {
@@ -509,6 +530,7 @@ if(promptData.instruction){
         bookChapter.chapterInfo = formattedChapter;
         bookChapter.maxWords = input.maxWords;
         bookChapter.minWords = input.minWords;
+        bookChapter.chapterSummary = chapterSummary;
       } else {
         // If chapter does not exist, create a new record
         bookChapter = new BookChapter();
@@ -517,6 +539,7 @@ if(promptData.instruction){
         bookChapter.chapterInfo = formattedChapter;
         bookChapter.maxWords = input.maxWords;
         bookChapter.minWords = input.minWords;
+        bookChapter.chapterSummary = chapterSummary;
       }
 if(bookInfo.numberOfChapters===input.chapterNo){
   const updatedBookGeneration = {
