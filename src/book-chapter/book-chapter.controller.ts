@@ -2,14 +2,28 @@ import { Controller, Post, Body, Req, UnauthorizedException, UseGuards, Logger, 
 import { BookChapterService } from './book-chapter.service';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/types/request-with-user.interface';
-import { BookChapterGenerationDto, BookChapterUpdateDto } from './dto/book-chapter.dto';
+import { BookChapterGenerationDto, BookChapterUpdateDto, SlideGenerationDto } from './dto/book-chapter.dto';
 import { Observable, Subject } from 'rxjs';
 
 @Controller('book-chapter')
 export class BookChapterController {
   private readonly logger = new Logger(BookChapterController.name);
-private chapterTextUpdate=new Subject<string>()
+  
+  // Maps to store user-specific subjects
+  private chapterTextUpdates = new Map<number, Subject<string>>();
+  private summaryTextUpdates = new Map<number, Subject<string>>();
+  private slideTextUpdates = new Map<number, Subject<string>>();
+
   constructor(private readonly bookChapterService: BookChapterService) {}
+
+  // Helper to get or create a Subject for a specific user
+  private getUserSubject(userId: number, subjectMap: Map<number, Subject<string>>): Subject<string> {
+    if (!subjectMap.has(userId)) {
+      subjectMap.set(userId, new Subject<string>());
+      this.logger.log(`Created new subject for user ID: ${userId}`);
+    }
+    return subjectMap.get(userId);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Post('chapter/create')
@@ -26,16 +40,21 @@ private chapterTextUpdate=new Subject<string>()
     }
 
     try {
-      
+      // Get user-specific subject
+      const userSubject = this.getUserSubject(userId, this.chapterTextUpdates);
       
       // Generate chapter and stream it via SSE
-      const savedChapter = await this.bookChapterService.generateChapterOfBook( bookGenerationDto,(text:string)=>{
-        this.chapterTextUpdate.next(text);
-      });
+      const savedChapter = await this.bookChapterService.generateChapterOfBook(
+        bookGenerationDto,
+        (text: string) => {
+          userSubject.next(text);
+        }
+      );
+      
       this.logger.log(`Chapter successfully generated and saved for user ID: ${userId}`);
       
-       return {
-        statusCode:200,
+      return {
+        statusCode: 200,
         message: 'Chapter successfully generated and saved.',
         data: savedChapter,
       };
@@ -44,6 +63,7 @@ private chapterTextUpdate=new Subject<string>()
       throw new InternalServerErrorException(error.message);
     }
   }
+
   @UseGuards(JwtAuthGuard)
   @Put('update-chapter')
   async updateChapter(
@@ -51,7 +71,7 @@ private chapterTextUpdate=new Subject<string>()
     @Req() request: RequestWithUser,
   ) {
     const userId = request.user?.id;
-    this.logger.log(`Generating chapter for user ID: ${userId}`);
+    this.logger.log(`Updating chapter for user ID: ${userId}`);
 
     if (!userId) {
       this.logger.error('Unauthorized: User ID not found in the request.');
@@ -59,36 +79,182 @@ private chapterTextUpdate=new Subject<string>()
     }
 
     try {
-      
-      
       // Generate chapter and stream it via SSE
-      const savedChapter = await this.bookChapterService.updateChapter( bookGenerationDto);
-      this.logger.log(`Chapter successfully generated and saved for user ID: ${userId}`);
+      const savedChapter = await this.bookChapterService.updateChapter(bookGenerationDto);
+      this.logger.log(`Chapter successfully updated for user ID: ${userId}`);
       
-       return {
-        statusCode:200,
+      return {
+        statusCode: 200,
         message: 'Chapter successfully updated.',
         data: savedChapter,
       };
     } catch (error) {
-      this.logger.error(`Error generating and saving chapter for user ID: ${userId}`, error.stack);
+      this.logger.error(`Error updating chapter for user ID: ${userId}`, error.stack);
       throw new InternalServerErrorException(error.message);
     }
   }
+
+  @UseGuards(JwtAuthGuard)
   @Sse('chapter-stream')
-   streamChapter():Observable<{data:{text:string}}>{
-return new Observable((observer)=>{
-const subscribe=this.chapterTextUpdate.subscribe({
-  next(data){observer.next({
-    data:{text:data}
-  })},
-  error(err){observer.error(err)},
-  complete(){observer.complete()}
- 
-})
-return ()=>subscribe.unsubscribe()
-})
+  streamChapter(@Req() request: RequestWithUser): Observable<{data:{text:string}}> {
+    const userId = request.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+    
+    // Create a subject if it doesn't exist yet
+    const userSubject = this.getUserSubject(userId, this.chapterTextUpdates);
+    
+    return new Observable((observer) => {
+      const subscription = userSubject.subscribe({
+        next(data) {
+          observer.next({
+            data: {text: data}
+          });
+        },
+        error(err) { observer.error(err); },
+        complete() { observer.complete(); }
+      });
+      
+      // Clean up on unsubscribe
+      return () => {
+        subscription.unsubscribe();
+        // Optional: remove the subject if no more listeners
+        // this.chapterTextUpdates.delete(userId);
+      };
+    });
   }
 
-  
+  @UseGuards(JwtAuthGuard)
+  @Post('summary')
+  async generateChapterSummary(
+    @Body() summaryRequest: { bookId: number, chapterIds: number[] },
+    @Req() request: RequestWithUser,
+  ) {
+    const userId = request.user?.id;
+    this.logger.log(`Generating chapter summaries for user ID: ${userId}, bookId: ${summaryRequest.bookId}`);
+
+    if (!userId) {
+      this.logger.error('Unauthorized: User ID not found in the request.');
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+
+    try {
+      // Get user-specific subject
+      const userSubject = this.getUserSubject(userId, this.summaryTextUpdates);
+      
+      await this.bookChapterService.generateChapterSummaries(
+        summaryRequest.bookId,
+        summaryRequest.chapterIds,
+        (text: string) => {
+          userSubject.next(text);
+        }
+      );
+      
+      return {
+        statusCode: 200,
+        message: 'Chapter summaries generation started.',
+      };
+    } catch (error) {
+      this.logger.error(`Error generating chapter summaries for user ID: ${userId}`, error.stack);
+      throw new InternalServerErrorException(error.message);
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Sse('summary-stream')
+  streamSummary(@Req() request: RequestWithUser): Observable<{data:{text:string}}> {
+    const userId = request.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+    
+    // Create a subject if it doesn't exist yet
+    const userSubject = this.getUserSubject(userId, this.summaryTextUpdates);
+    
+    return new Observable((observer) => {
+      const subscription = userSubject.subscribe({
+        next(data) {
+          observer.next({
+            data: {text: data}
+          });
+        },
+        error(err) { observer.error(err); },
+        complete() { observer.complete(); }
+      });
+      
+      return () => {
+        subscription.unsubscribe();
+        // Optional: remove the subject if no more listeners
+        // this.summaryTextUpdates.delete(userId);
+      };
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('presentation-slides')
+  async generateChapterSlides(
+    @Body() slideRequest: { bookId: number, chapterIds: number[], numberOfSlides: number },
+    @Req() request: RequestWithUser,
+  ) {
+    const userId = request.user?.id;
+    this.logger.log(`Generating chapter slides for user ID: ${userId}, bookId: ${slideRequest.bookId}`);
+
+    if (!userId) {
+      this.logger.error('Unauthorized: User ID not found in the request.');
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+
+    try {
+      // Get user-specific subject
+      const userSubject = this.getUserSubject(userId, this.slideTextUpdates);
+      
+      await this.bookChapterService.generateChapterSlides(
+        slideRequest.bookId,
+        slideRequest.chapterIds,
+        slideRequest.numberOfSlides,
+        (text: string) => {
+          userSubject.next(text);
+        }
+      );
+      
+      return {
+        statusCode: 200,
+        message: 'Chapter slides generation started.',
+      };
+    } catch (error) {
+      this.logger.error(`Error generating chapter slides for user ID: ${userId}`, error.stack);
+      throw new InternalServerErrorException(error.message);
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Sse('slides-stream')
+  streamSlides(@Req() request: RequestWithUser): Observable<{data:{text:string}}> {
+    const userId = request.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+    
+    // Create a subject if it doesn't exist yet
+    const userSubject = this.getUserSubject(userId, this.slideTextUpdates);
+    
+    return new Observable((observer) => {
+      const subscription = userSubject.subscribe({
+        next(data) {
+          observer.next({
+            data: {text: data}
+          });
+        },
+        error(err) { observer.error(err); },
+        complete() { observer.complete(); }
+      });
+      
+      return () => {
+        subscription.unsubscribe();
+        // Optional: remove the subject if no more listeners
+        // this.slideTextUpdates.delete(userId);
+      };
+    });
+  }
 }

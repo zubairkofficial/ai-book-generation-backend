@@ -281,6 +281,7 @@ export class BookChapterService {
   private async ChapterContent(
     promptData: BookChapterGenerationDto,
     bookInfo: BookGeneration,
+    bookChapter: boolean,
     onTextUpdate: (text: string) => void
   ): Promise<string> {
     try {
@@ -289,211 +290,217 @@ export class BookChapterService {
         memoryKey: "chapter_summary",
         returnMessages: true,
       });
-let updatePrompt
+  
+      let updatePrompt;
+  
+      // Step 1: If 'bookChapter' is true, clear only the current chapter memory for the full chapter generation,
+      // but do not clear memory if only a paragraph is being regenerated.
+      if (bookChapter && !promptData.selectedText) {
+        // Clear the context for the full chapter only if the full chapter is being generated.
+        await memory.saveContext({ input: `Start of Chapter ${promptData.chapterNo}` }, { output: '' });
+        console.log(`Memory cleared for Chapter ${promptData.chapterNo}`);
+      }
+  
+      // Step 2: Regenerate paragraph (if 'selectedText' is present) with or without instruction
       if (promptData.selectedText) {
-if(promptData.instruction){
-   updatePrompt = `
-  You are an expert book writer. Improve the following paragraph of the book "${bookInfo.bookTitle}" while maintaining its context and coherence:
- 
- **Original Paragraph:**
- "${promptData.selectedText}"
- **Instructions:**
- "${promptData.instruction}"
- **Guidelines:**
- - Enhance the clarity and flow.
- - Maintain the same context and meaning.
- - Avoid generating completely new or irrelevant content.
- - Keep it engaging and refined.
-
- **Improved Paragraph (do not enclose in quotes):**
- `;
- const memoryVariables = await memory.loadMemoryVariables({}); // Retrieve memory variables using loadMemoryVariables
- if (memoryVariables?.history) {
-   updatePrompt += `
-   **Previous Chapter Context:**
-   ${memoryVariables.history}
-   `;
- }
-}
-        else{ updatePrompt = `
-       You are an expert book writer. Improve the following paragraph of the book "${bookInfo.bookTitle}" while maintaining its context and coherence:
+        if (promptData.instruction) {
+          updatePrompt = `
+            You are an expert book writer. Improve the following paragraph of the book "${bookInfo.bookTitle}" while maintaining its context and coherence:
       
-      **Original Paragraph:**
-      "${promptData.selectedText}"
-
-      **Guidelines:**
-      - Enhance the clarity and flow.
-      - Maintain the same context and meaning.
-      - Avoid generating completely new or irrelevant content.
-      - Keep it engaging and refined.
-
-      **Improved Paragraph (do not enclose in quotes):**
-      `;}
-    
-      let updateResponse = await this.textModel.stream(updatePrompt);
-      let updatedText = "";
+            **Original Paragraph:**
+            "${promptData.selectedText}"
+            **Instructions:**
+            "${promptData.instruction}"
+            **Guidelines:**
+            - Enhance the clarity and flow.
+            - Maintain the same context and meaning.
+            - Avoid generating completely new or irrelevant content.
+            - Keep it engaging and refined.
       
-      for await (const chunk of updateResponse) {
-        updatedText += chunk.content;
-        onTextUpdate(chunk.content);
-      }
-    
-      await memory.saveContext({ input: promptData.selectedText }, { output: updatedText });
-    
-    return updatedText;
-      }
-       else {
-      // Step 1: Generate the Chapter Text
-      const chapterPrompt = `
-           You are a professional author tasked with writing **Chapter ${promptData.chapterNo}: "${promptData.chapterName}"** of the book titled **"${bookInfo.bookTitle}"**.
-
-            ## 📖 Book Information:
-            - **Genre**: ${bookInfo.genre}
-            - **Author**: ${bookInfo.authorName || "A knowledgeable expert"}
-            - **Core Idea**: ${bookInfo.ideaCore || "A detailed and insightful book on the subject."}
-            - **Target Audience**: ${bookInfo.targetAudience || "Professionals, students, and knowledge seekers."}
-            - **Language**: The book is written in ${bookInfo.language || "English"}.
-      
-            ## 🎯 Writing Style:
-            - Clearly structure the content using Markdown:
-            Based on the genre **"${bookInfo.genre}"**, adopt an appropriate writing style.
-            - Use a **tone** and **structure** that aligns with the genre.
-            - Adapt the complexity and depth based on the **target audience**.
-      
-            ## 📝 Context Memory (Summarized Previous Chapters):
-            ${memory}
-      
-            ## 📖 Chapter Writing Instructions:
-            - Begin with a **strong introduction** that aligns with the book's theme.
-            - **Your writing must contain between ${promptData.minWords || 5000} and ${promptData.maxWords || 20000} words**.
-            - **DO NOT** generate content below the minimum word count.
-            - **DO NOT** exceed the maximum word count.
-      
-            ## 🔍 Additional Guidance:
-            ${promptData.additionalInfo || "Follow the established style, tone, and pacing from previous chapters."}
-      
-            ---
-            ## 📝 Previous Chapter Summary:
-            ${memory || "No previous summary available."}
-      
-            **📝 Begin Chapter ${promptData.chapterNo}:**
+            **Improved Paragraph (do not enclose in quotes):**
           `;
-
-      const stream = await this.textModel.stream(chapterPrompt);
-      let chapterText = "";
-      const chunks = [];
-
-      for await (const chunk of stream) {
-        chunks.push(chunk);
-        chapterText += chunk.content;
-        onTextUpdate(chunk.content);
-      }
-
-      if (!chapterText.trim()) {
-        throw new Error(`Chapter ${promptData.chapterNo} content is empty.`);
-      }
-    
-
-      if (promptData.noOfImages === 0) {
-        console.log("⚡ No images required. Returning chapter without images.");
-        await memory.saveContext({ input: `Start of Chapter ${promptData.chapterNo}` }, { output: chapterText });
-        return chapterText;
-      }
+          const memoryVariables = await memory.loadMemoryVariables({});
+          if (memoryVariables?.history) {
+            updatePrompt += `
+              **Previous Chapter Context:**
+              ${memoryVariables.history}
+            `;
+          }
+        } else {
+          updatePrompt = `
+            You are an expert book writer. Improve the following paragraph of the book "${bookInfo.bookTitle}" while maintaining its context and coherence:
       
-      // Step 2: Extract Key Points
-      const keyPointPrompt = `
-  Extract exactly ${promptData.noOfImages} key points directly from the following chapter text.
-  Each key point must be an exact phrase or sentence from the text and should highlight an important concept or event.
-  Do not rephrase, summarize, or add new information.
-
-  Chapter Text:
-  ${chapterText}
-`;
-
-      const keyPointResponse = await this.textModel.invoke(keyPointPrompt);
-      const keyPoints = keyPointResponse.content
-        ?.split("\n")
-        .filter((point) => point.trim() !== "");
-
-      if (!keyPoints || keyPoints.length !== promptData.noOfImages) {
-        throw new Error(
-          `Failed to extract exactly ${promptData.noOfImages} key points.`
-        );
-      }
-
-      const chapterImages: { title: string; url: string | null }[] =
-        keyPoints.map((keyPoint) => ({ title: keyPoint, url: null }));
-
-      // Step 3: Trigger Image Generation in Background
-      const imageRequests = keyPoints.map(async (keyPoint, index) => {
-        const imagePrompt = `
-        Create a high-quality illustration for:
-        - **Chapter Number**: ${promptData.chapterNo}
-        - **Book Title**: "${bookInfo.bookTitle}"
-        - **Key Theme / Focus**: "${keyPoint}"
-        - **Genre**: "${bookInfo.genre}"
-        - **Target Audience**: "${bookInfo.targetAudience}"
-        - **Core Concept**: "${bookInfo.ideaCore}"
+            **Original Paragraph:**
+            "${promptData.selectedText}"
       
-        The illustration should visually capture the essence of the key point, aligning with the book's theme, tone, and intended audience. Ensure the style matches the genre, making it compelling and engaging.
-      `;
-
-        const requestData = { prompt: imagePrompt };
-        try {
-          const postResponse = await axios.post(
-            this.configService.get<string>("BASE_URL_FAL_AI"),
-            requestData,
-            {
-              headers: {
-                Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
-                "Content-Type": "application/json",
-              },
-            }
-          );
-
-          const imageResponseUrl = postResponse.data.response_url;
-
-          // Ensure pollImageGeneration is awaited
-          await this.pollImageGeneration(
-            imageResponseUrl,
-            bookInfo.bookTitle,
-            keyPoint,
-            index,
-            chapterImages
-          );
-        } catch (error) {
-          console.error(
-            `Error triggering image generation for key point: "${keyPoint}"`,
-            error
-          );
+            **Guidelines:**
+            - Enhance the clarity and flow.
+            - Maintain the same context and meaning.
+            - Avoid generating completely new or irrelevant content.
+            - Keep it engaging and refined.
+      
+            **Improved Paragraph (do not enclose in quotes):**
+          `;
         }
-      });
-
-      // Wait for all image requests to complete before proceeding
-      await Promise.all(imageRequests);
-
-
-      // Step 4: Return Chapter Text Immediately
-      const formattedChapter = this.insertImagesIntoChapter(
-        chapterText,
-        keyPoints,
-        chapterImages
-      );
-      await memory.saveContext({ input: `Start of Chapter ${promptData.chapterNo}` }, { output: chapterText });
-
-      return formattedChapter;
-    }
+  
+        let updateResponse = await this.textModel.stream(updatePrompt);
+        let updatedText = "";
+  
+        for await (const chunk of updateResponse) {
+          updatedText += chunk.content;
+          onTextUpdate(chunk.content);
+        }
+  
+        // Save the updated context for this paragraph only, not clearing the whole chapter.
+        await memory.saveContext(
+          { input: promptData.selectedText },
+          { output: updatedText }
+        );
+  
+        return updatedText;
+      } else {
+        // Step 3: Generate the full chapter text with context from previous chapters
+        const chapterPrompt = `
+          You are a professional author tasked with writing **Chapter ${promptData.chapterNo}: "${promptData.chapterName}"** of the book titled **"${bookInfo.bookTitle}"**.
+    
+          ## 📖 Book Information:
+          - **Genre**: ${bookInfo.genre}
+          - **Author**: ${bookInfo.authorName || "A knowledgeable expert"}
+          - **Core Idea**: ${bookInfo.ideaCore || "A detailed and insightful book on the subject."}
+          - **Target Audience**: ${bookInfo.targetAudience || "Professionals, students, and knowledge seekers."}
+          - **Language**: The book is written in ${bookInfo.language || "English"}.
+    
+          ## 🎯 Writing Style:
+          - Clearly structure the content using Markdown:
+          Based on the genre **"${bookInfo.genre}"**, adopt an appropriate writing style.
+          - Use a **tone** and **structure** that aligns with the genre.
+          - Adapt the complexity and depth based on the **target audience**.
+    
+          ## 📝 Context Memory (Summarized Previous Chapters):
+          ${memory}
+    
+          ## 📖 Chapter Writing Instructions:
+          - Begin with a **strong introduction** that aligns with the book's theme.
+          - **Your writing must contain between ${promptData.minWords || 5000} and ${promptData.maxWords || 20000} words**.
+          - **DO NOT** generate content below the minimum word count.
+          - **DO NOT** exceed the maximum word count.
+    
+          ## 🔍 Additional Guidance:
+          ${promptData.additionalInfo || "Follow the established style, tone, and pacing from previous chapters."}
+    
+          ---
+          ## 📝 Previous Chapter Summary:
+          ${memory || "No previous summary available."}
+    
+          **📝 Begin Chapter ${promptData.chapterNo}:**
+        `;
+  
+        const stream = await this.textModel.stream(chapterPrompt);
+        let chapterText = "";
+        const chunks = [];
+  
+        for await (const chunk of stream) {
+          chunks.push(chunk);
+          chapterText += chunk.content;
+          onTextUpdate(chunk.content);
+        }
+  
+        if (!chapterText.trim()) {
+          throw new Error(`Chapter ${promptData.chapterNo} content is empty.`);
+        }
+  
+        // Step 4: Extract Key Points (Image generation logic remains unchanged)
+  
+        const keyPointPrompt = `
+          Extract exactly ${promptData.noOfImages} key points directly from the following chapter text.
+          Each key point must be an exact phrase or sentence from the text and should highlight an important concept or event.
+          Do not rephrase, summarize, or add new information.
+    
+          Chapter Text:
+          ${chapterText}
+        `;
+  
+        const keyPointResponse = await this.textModel.invoke(keyPointPrompt);
+        const keyPoints = keyPointResponse.content
+          ?.split("\n")
+          .filter((point) => point.trim() !== "");
+  
+        if (!keyPoints || keyPoints.length !== promptData.noOfImages) {
+          throw new Error(`Failed to extract exactly ${promptData.noOfImages} key points.`);
+        }
+  
+        const chapterImages: { title: string; url: string | null }[] =
+          keyPoints.map((keyPoint) => ({ title: keyPoint, url: null }));
+  
+        // Trigger image generation (this step remains unchanged)
+        const imageRequests = keyPoints.map(async (keyPoint, index) => {
+          const imagePrompt = `
+          Create a high-quality illustration for:
+          - **Chapter Number**: ${promptData.chapterNo}
+          - **Book Title**: "${bookInfo.bookTitle}"
+          - **Key Theme / Focus**: "${keyPoint}"
+          - **Genre**: "${bookInfo.genre}"
+          - **Target Audience**: "${bookInfo.targetAudience}"
+          - **Core Concept**: "${bookInfo.ideaCore}"
+    
+          The illustration should visually capture the essence of the key point, aligning with the book's theme, tone, and intended audience. Ensure the style matches the genre, making it compelling and engaging.
+        `;
+    
+          const requestData = { prompt: imagePrompt };
+          try {
+            const postResponse = await axios.post(
+              this.configService.get<string>("BASE_URL_FAL_AI"),
+              requestData,
+              {
+                headers: {
+                  Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
+                  "Content-Type": "application/json",
+                },
+              }
+            );
+    
+            const imageResponseUrl = postResponse.data.response_url;
+    
+            await this.pollImageGeneration(
+              imageResponseUrl,
+              bookInfo.bookTitle,
+              keyPoint,
+              index,
+              chapterImages
+            );
+          } catch (error) {
+            console.error(`Error triggering image generation for key point: "${keyPoint}"`, error);
+          }
+        });
+  
+        // Wait for all image requests to complete
+        await Promise.all(imageRequests);
+  
+        // Step 5: Return Chapter Text Immediately (no changes here)
+        const formattedChapter = this.insertImagesIntoChapter(
+          chapterText,
+          keyPoints,
+          chapterImages
+        );
+        await memory.saveContext({ input: `Start of Chapter ${promptData.chapterNo}` }, { output: chapterText });
+  
+        return formattedChapter;
+      }
     } catch (error) {
       console.error("Error generating chapter content:", error);
       throw new Error(error.message);
     }
   }
+  
+  
 
   async generateChapterOfBook(
     input: BookChapterGenerationDto,
     onTextUpdate: (text: string) => void
   ) {
     try {
+      let chapterSummaryResponse
+      
       await this.initializeAIModels();
 
       // Retrieve the book generation info
@@ -518,10 +525,11 @@ if(promptData.instruction){
       const formattedChapter = await this.ChapterContent(
         input,
         bookInfo,
+        !!bookChapter,
         onTextUpdate
       );
 
-      const chapterSummary =await this.generateChapterSummary(formattedChapter);
+    if(!input.selectedText)   chapterSummaryResponse =await this.generateChapterSummary(formattedChapter);
 
       if (input.selectedText && input.instruction) {return formattedChapter}
 
@@ -530,7 +538,7 @@ if(promptData.instruction){
         bookChapter.chapterInfo = formattedChapter;
         bookChapter.maxWords = input.maxWords;
         bookChapter.minWords = input.minWords;
-        bookChapter.chapterSummary = chapterSummary;
+        bookChapter.chapterSummary = chapterSummaryResponse;
       } else {
         // If chapter does not exist, create a new record
         bookChapter = new BookChapter();
@@ -539,7 +547,7 @@ if(promptData.instruction){
         bookChapter.chapterInfo = formattedChapter;
         bookChapter.maxWords = input.maxWords;
         bookChapter.minWords = input.minWords;
-        bookChapter.chapterSummary = chapterSummary;
+        bookChapter.chapterSummary = chapterSummaryResponse;
       }
 if(bookInfo.numberOfChapters===input.chapterNo){
   const updatedBookGeneration = {
@@ -594,5 +602,174 @@ if(bookInfo.numberOfChapters===input.chapterNo){
 
   async getBook(id: number) {
     return await this.bookGenerationRepository.findOne({ where: { id } });
+  }
+
+  async generateChapterSummaries(
+    bookId: number,
+    chapterIds: number[],
+    onTextUpdate: (text: string) => void
+  ) {
+    try {
+      await this.initializeAIModels();
+      
+      // Validate book exists
+      const bookInfo = await this.bookGenerationRepository.findOne({
+        where: { id: bookId },
+      });
+
+      if (!bookInfo) {
+        throw new Error(`Book generation record not found for id: ${bookId}`);
+      }
+      
+      // First, fetch all chapters to sort them properly
+      const chapters = await Promise.all(
+        chapterIds.map(chapterId => 
+          this.bookChapterRepository.findOne({
+            where: { id: chapterId, bookGeneration: { id: bookId } },
+          })
+        )
+      );
+      
+      // Filter out any nulls and sort by chapter number
+      const validChapters = chapters
+        .filter(chapter => chapter !== null)
+        .sort((a, b) => (a.chapterNo || 0) - (b.chapterNo || 0));
+      
+      if (validChapters.length === 0) {
+        onTextUpdate(`No valid chapters found for the provided chapter IDs.`);
+        return;
+      }
+      
+      // Start with book information
+      onTextUpdate(`# Summary for "${bookInfo.bookTitle}"\n\n`);
+      onTextUpdate(`Generating summaries for ${validChapters.length} chapters...\n\n`);
+      
+      // Process each chapter sequentially
+      for (let i = 0; i < validChapters.length; i++) {
+        const chapter = validChapters[i];
+        
+        try {
+          // Progress indicator
+          onTextUpdate(`## Chapter ${chapter.chapterNo} (${i + 1}/${validChapters.length})\n\n`);
+          
+          // Get the chapter content
+          const chapterText = chapter.chapterInfo;
+          
+          // Generate the summary
+          const summaryPrompt = `
+            You are creating a concise, engaging summary for Chapter ${chapter.chapterNo} of "${bookInfo.bookTitle}".
+            
+            Chapter ${chapter.chapterNo} Content:
+            ${chapterText}
+            
+            Instructions:
+            1. Write exactly 3-4 well-crafted sentences that capture the essence of this chapter
+            2. Include the most significant plot points, character developments, or key concepts
+            3. Use vivid, engaging language that captures the tone of the original text
+            4. Make the summary flow naturally from sentence to sentence
+            
+            Your summary must begin with "Chapter ${chapter.chapterNo}:" and then proceed with your 3-4 sentence summary.
+            Do not use bullet points or include any other text beyond the summary itself.
+          `;
+          
+          onTextUpdate(`*Generating summary...*\n\n`);
+          
+          // Stream the summary generation
+          const stream = await this.textModel.stream(summaryPrompt);
+          
+          for await (const chunk of stream) {
+            onTextUpdate(chunk.content);
+          }
+          
+          onTextUpdate(`\n\n---\n\n`);
+        } catch (error) {
+          onTextUpdate(`\n\n⚠️ **Error generating summary for Chapter ${chapter.chapterNo}**: ${error.message}\n\n---\n\n`);
+          this.logger.error(`Error generating summary for Chapter ${chapter.chapterNo}:`, error);
+        }
+      }
+      
+      onTextUpdate(`\n\n# All summaries completed!\n\n`);
+    } catch (error) {
+      this.logger.error(`Error in generateChapterSummaries:`, error);
+      throw new Error(`Failed to generate chapter summaries: ${error.message}`);
+    }
+  }
+
+  async generateChapterSlides(
+    bookId: number,
+    chapterIds: number[],
+    numberOfSlides: number,
+    onTextUpdate: (text: string) => void
+  ) {
+    try {
+      await this.initializeAIModels();
+      
+      // Validate book exists
+      const bookInfo = await this.bookGenerationRepository.findOne({
+        where: { id: bookId },
+      });
+
+      if (!bookInfo) {
+        throw new Error(`Book generation record not found for id: ${bookId}`);
+      }
+      
+      // Process each chapter one by one
+      for (const chapterId of chapterIds) {
+        try {
+          // Find the chapter
+          const chapter = await this.bookChapterRepository.findOne({
+            where: { id: chapterId, bookGeneration: { id: bookId } },
+          });
+          
+          if (!chapter) {
+            onTextUpdate(`Chapter ID ${chapterId} not found for this book. Skipping.`);
+            continue;
+          }
+          
+          // Get the chapter content
+          const chapterText = chapter.chapterInfo;
+          
+          // Generate the slides
+          onTextUpdate(`\n\n## Generating slides for Chapter ${chapter.chapterNo}...\n\n`);
+          
+          const slidePrompt = `
+            Create exactly ${numberOfSlides} presentation slides for the following chapter content:
+            
+            Chapter Text:
+            ${chapterText}
+            
+            Requirements:
+            - Create exactly ${numberOfSlides} slides
+            - Each slide should have a clear title and bullet points
+            - Keep content concise and focused
+            - Use markdown format for slides
+            - Format each slide as:
+              # Slide Title
+              - Bullet point 1
+              - Bullet point 2
+              - Bullet point 3
+            
+            Generate ${numberOfSlides} slides now:
+          `;
+          
+          // Stream the slides generation
+          const stream = await this.textModel.stream(slidePrompt);
+          
+          for await (const chunk of stream) {
+            onTextUpdate(chunk.content);
+          }
+          
+          onTextUpdate(`\n\n## Slides for Chapter ${chapter.chapterNo} completed\n\n`);
+        } catch (error) {
+          onTextUpdate(`\n\nError generating slides for Chapter ID ${chapterId}: ${error.message}\n\n`);
+          this.logger.error(`Error generating slides for Chapter ID ${chapterId}:`, error);
+        }
+      }
+      
+      onTextUpdate(`\n\n## All slides completed\n\n`);
+    } catch (error) {
+      this.logger.error(`Error in generateChapterSlides:`, error);
+      throw new Error(`Failed to generate chapter slides: ${error.message}`);
+    }
   }
 }
