@@ -408,7 +408,9 @@ export class BookChapterService {
         if (!chapterText.trim()) {
           throw new Error(`Chapter ${promptData.chapterNo} content is empty.`);
         }
-  
+  if(promptData.noOfImages===0){
+    return chapterText
+  }
         // Step 4: Extract Key Points (Image generation logic remains unchanged)
   
         const keyPointPrompt = `

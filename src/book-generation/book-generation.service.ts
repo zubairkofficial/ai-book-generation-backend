@@ -452,17 +452,39 @@ export class BookGenerationService {
     `;
 
       const prefacePrompt = `
- Write a compelling preface for the book titled "${promptData.bookTitle}". 
- The preface should include the following sections:
- 
- 1. **Introduction**: Introduce the book’s subject and aim to the readers.
- 2. **Core Idea**: Briefly explain the central message or theme of the book: "${promptData.bookInformation || "Not specified"}".
- 3. **Why This Book Matters**: Discuss the significance of the book and how it can impact the readers.
- 4. **What to Expect**: Give a brief overview of what the readers can expect from the chapters or sections.
- 5. **Acknowledgments**: If applicable, acknowledge anyone who contributed to the creation of the book or the inspiration behind it.
+      Create an engaging preface for a book titled "${promptData.bookTitle}".
+      
+      The preface should:
+      - Be written from the author's perspective
+      - Explain why the book was written
+      - Acknowledge those who helped in the creation of the book
+      - Set expectations for what the reader will find
+      - Keep the tone professional but warm
+      - Be approximately 250-350 words
+      
+      Book details:
+      - Title: "${promptData.bookTitle}"
+      - Language: ${promptData.language || "English"}
+      - Core Idea: ${promptData.bookInformation}
+    `;
 
- The tone should be welcoming, informative, and reflective of the overall content of the book.
-`;
+      const introductionPrompt = `
+      Create a compelling introduction for a book titled "${promptData.bookTitle}".
+      
+      The introduction should:
+      - Provide context for the subject matter
+      - Outline the main themes or arguments of the book
+      - Explain the book's structure and how chapters build on each other
+      - Engage the reader and build interest in the content
+      - End with a smooth transition to Chapter 1
+      - Be approximately 400-500 words
+      
+      Book details:
+      - Title: "${promptData.bookTitle}"
+      - Language: ${promptData.language || "English"}
+      - Core Idea: ${promptData.bookInformation}
+      - Number of Chapters: ${promptData.numberOfChapters}
+    `;
 
       const tableOfContentsPrompt = `
         Create a list of unique, engaging chapter titles for a book with ${promptData.numberOfChapters} chapters.
@@ -489,11 +511,13 @@ export class BookGenerationService {
         coverPageResponse,
         dedication,
         preface,
+        introduction,
         tableOfContentsResponse,
       ] = await Promise.all([
         this.textModel.invoke(coverPagePrompt),
         this.textModel.invoke(dedicationPrompt),
         this.textModel.invoke(prefacePrompt),
+        this.textModel.invoke(introductionPrompt),
         this.textModel.invoke(tableOfContentsPrompt),
       ]);
 
@@ -501,6 +525,7 @@ export class BookGenerationService {
         coverPageResponse: coverPageResponse.content,
         dedication: dedication.content,
         preface: preface.content,
+        introduction: introduction.content,
         tableOfContents: tableOfContentsResponse.content,
       };
     } catch (error) {
@@ -566,8 +591,8 @@ export class BookGenerationService {
       // Prepare prompts (UNCHANGED)
       const glossaryPrompt = `
       Create a comprehensive glossary for the book titled "${promptData.bookTitle}". 
-      Include definitions for key terms, concepts, and jargon that are central to the book’s content. 
-      Make sure the definitions are clear and accessible to the reader, reflecting the book’s core theme: "${promptData.bookInformation}".
+      Include definitions for key terms, concepts, and jargon that are central to the book's content. 
+      Make sure the definitions are clear and accessible to the reader, reflecting the book's core theme: "${promptData.bookInformation}".
       Organize the glossary alphabetically and ensure that each term is explained concisely and accurately.
     `;
 
@@ -581,7 +606,7 @@ export class BookGenerationService {
       const referencesPrompt = `
       Write a comprehensive bibliography for the book titled "${promptData.bookTitle}". 
       Include references to any studies, articles, books, or other materials that were used or inspired the content of the book. 
-      The references should align with the core idea: "${promptData.bookInformation}" and provide additional reading for those interested in further exploration of the book’s topics.
+      The references should align with the core idea: "${promptData.bookInformation}" and provide additional reading for those interested in further exploration of the book's topics.
       Ensure that the citations are formatted according to a standard citation style (e.g., APA, MLA, Chicago).
     `;
 
@@ -721,6 +746,7 @@ export class BookGenerationService {
         coverPageResponse,
         dedication,
         preface,
+        introduction,
         tableOfContents,
         references,
         index,
@@ -746,6 +772,7 @@ export class BookGenerationService {
         coverPageResponse: coverPageResponse,
         dedication: dedication,
         preface: preface,
+        introduction: introduction,
         references: references,
         index: index,
         glossary: glossary,
@@ -845,6 +872,7 @@ export class BookGenerationService {
          coverPageResponse:input.coverPageResponse??book.additionalData.coverPageResponse,
           dedication:input.dedication??book.additionalData.dedication,
           preface:input.preface??book.additionalData.preface,
+          introduction:input.introduction??book.additionalData.introduction,
           references:input.references??book.additionalData.references,
           index:input.index??book.additionalData.index,
           glossary:input.glossary??book.additionalData.glossary,

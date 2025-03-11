@@ -129,6 +129,14 @@ export class UpdateBookDto {
   preface?: string;
 
   @ApiProperty({
+    example: 'Introduction content for the book',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  introduction?: string;
+
+  @ApiProperty({
     example: 'Some references content',
     required: false,
   })
