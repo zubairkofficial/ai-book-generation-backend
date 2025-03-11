@@ -451,31 +451,35 @@ export class BookGenerationService {
       It can express gratitude or motivation, depending on the tone of the book.
     `;
 
-      const prefacePrompt = `
-      Create an engaging preface for a book titled "${promptData.bookTitle}".
-      
-      The preface should:
-      - Be written from the author's perspective
-      - Explain why the book was written
-      - Acknowledge those who helped in the creation of the book
-      - Set expectations for what the reader will find
-      - Keep the tone professional but warm
-      - Be approximately 250-350 words
-      
-      Book details:
-      - Title: "${promptData.bookTitle}"
-      - Language: ${promptData.language || "English"}
-      - Core Idea: ${promptData.bookInformation}
-    `;
+    const prefacePrompt = `
+    Create a preface for the book titled "${promptData.bookTitle}".
+    
+    Structure the preface with exactly these four sections using markdown headings:
+    
+    ## Core Idea
+    Clearly explain the main concept of the book and its purpose.
+    
+    ## Why It Matters
+    Describe why this topic is important, relevant, and timely for readers.
+    
+    ## What to Expect
+    Outline what readers will gain from the book and how it's structured.
+    
+    ## Acknowledgments
+    Thank those who contributed to or supported the creation of the book.
+    
+    Book details:
+    - Title: "${promptData.bookTitle}"
+    - Language: ${promptData.language || "English"}
+    - Core Idea: ${promptData.bookInformation}
+    
+    Important: Format each section title exactly as shown above, with '##' preceding each heading.
+    Keep the preface concise, engaging, and professional while maintaining these exact section headings.
+  `;
 
       const introductionPrompt = `
       Write an introduction for the book "${promptData.bookTitle}".
       
-      The introduction should:
-      - Introduce the main subject of the book
-      - Explain why this topic is important
-      - Briefly outline what readers will learn
-      - Provide context for understanding the chapters that follow
       
       Book details:
       - Title: "${promptData.bookTitle}"

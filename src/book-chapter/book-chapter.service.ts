@@ -374,8 +374,11 @@ export class BookChapterService {
           - Clearly structure the content using Markdown:
           Based on the genre **"${bookInfo.genre}"**, adopt an appropriate writing style.
           - Use a **tone** and **structure** that aligns with the genre.
-          - Adapt the complexity and depth based on the **target audience**.
-    
+  - Adapt the complexity and depth based on the **target audience**.
+  - Organize the content with clear section headings (# Heading) and subheadings (## Subheading) throughout the chapter.
+  - Each major concept, theme, or section should have its own heading.
+  - Use headings to create a logical flow and hierarchy of information.
+
           ## 📝 Context Memory (Summarized Previous Chapters):
           ${memory}
     
@@ -384,7 +387,8 @@ export class BookChapterService {
           - **Your writing must contain between ${promptData.minWords || 5000} and ${promptData.maxWords || 20000} words**.
           - **DO NOT** generate content below the minimum word count.
           - **DO NOT** exceed the maximum word count.
-    
+     - **IMPORTANT**: Structure the chapter with appropriate headings and subheadings that guide the reader through the content.
+
           ## 🔍 Additional Guidance:
           ${promptData.additionalInfo || "Follow the established style, tone, and pacing from previous chapters."}
     
