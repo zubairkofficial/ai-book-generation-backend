@@ -554,6 +554,7 @@ export class BookChapterService {
         bookChapter.maxWords = input.maxWords;
         bookChapter.minWords = input.minWords;
         bookChapter.chapterSummary = chapterSummaryResponse;
+        bookChapter.chapterName = input.chapterName;
       }
 if(bookInfo.numberOfChapters===input.chapterNo){
   const updatedBookGeneration = {
