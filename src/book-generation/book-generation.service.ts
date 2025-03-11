@@ -469,21 +469,19 @@ export class BookGenerationService {
     `;
 
       const introductionPrompt = `
-      Create a compelling introduction for a book titled "${promptData.bookTitle}".
+      Write an introduction for the book "${promptData.bookTitle}".
       
       The introduction should:
-      - Provide context for the subject matter
-      - Outline the main themes or arguments of the book
-      - Explain the book's structure and how chapters build on each other
-      - Engage the reader and build interest in the content
-      - End with a smooth transition to Chapter 1
-      - Be approximately 400-500 words
+      - Introduce the main subject of the book
+      - Explain why this topic is important
+      - Briefly outline what readers will learn
+      - Provide context for understanding the chapters that follow
       
       Book details:
       - Title: "${promptData.bookTitle}"
-      - Language: ${promptData.language || "English"}
       - Core Idea: ${promptData.bookInformation}
-      - Number of Chapters: ${promptData.numberOfChapters}
+      
+      Write only the introduction text, with no additional formatting or styling.
     `;
 
       const tableOfContentsPrompt = `
