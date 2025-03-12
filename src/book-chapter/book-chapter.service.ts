@@ -7,8 +7,15 @@ import { Repository } from "typeorm";
 import OpenAI from "openai";
 import * as fs from "fs";
 import * as path from "path";
-import { BookChapterGenerationDto, BookChapterUpdateDto } from "./dto/book-chapter.dto";
-import { BookGeneration, BookType } from "src/book-generation/entities/book-generation.entity";
+import {
+  BookChapterDto,
+  BookChapterGenerationDto,
+  BookChapterUpdateDto,
+} from "./dto/book-chapter.dto";
+import {
+  BookGeneration,
+  BookType,
+} from "src/book-generation/entities/book-generation.entity";
 import { BookChapter } from "./entities/book-chapter.entity";
 import { ConversationSummaryBufferMemory } from "langchain/memory";
 import axios from "axios";
@@ -85,8 +92,6 @@ export class BookChapterService {
       throw new Error("Failed to initialize AI models.");
     }
   }
-
- 
 
   private async saveGeneratedImage(
     imageUrl: string,
@@ -244,13 +249,12 @@ export class BookChapterService {
     }
   }
 
-  
   private async generateChapterSummary(chapterText: string): Promise<string> {
     try {
       if (!chapterText || chapterText.trim().length === 0) {
         throw new Error("Chapter text is empty or invalid.");
       }
-  
+
       // Create the prompt for summarization
       const prompt = `
         Summarize the following chapter content into a concise and engaging summary:
@@ -260,24 +264,28 @@ export class BookChapterService {
         
         Provide a summary that is no more than 3-4 sentences long, highlighting the main points of the chapter.
       `;
-  
+
       // Use the model from this.textModel dynamically
       const response = await this.textModel.invoke(prompt);
-  
+
       // Log the response for debugging
-      this.logger.log("OpenAI API Response:", JSON.stringify(response, null, 2));
-  
+      this.logger.log(
+        "OpenAI API Response:",
+        JSON.stringify(response, null, 2)
+      );
+
       // Extract and return the generated summary
       return response.content;
     } catch (error) {
       // Log detailed error information
-      this.logger.error(`Error generating chapter summary: ${error.message}`, error.stack);
+      this.logger.error(
+        `Error generating chapter summary: ${error.message}`,
+        error.stack
+      );
       throw new Error(`Failed to generate chapter summary: ${error.message}`);
     }
   }
-  
-  
-  
+
   private async ChapterContent(
     promptData: BookChapterGenerationDto,
     bookInfo: BookGeneration,
@@ -290,17 +298,20 @@ export class BookChapterService {
         memoryKey: "chapter_summary",
         returnMessages: true,
       });
-  
+
       let updatePrompt;
-  
+
       // Step 1: If 'bookChapter' is true, clear only the current chapter memory for the full chapter generation,
       // but do not clear memory if only a paragraph is being regenerated.
       if (bookChapter && !promptData.selectedText) {
         // Clear the context for the full chapter only if the full chapter is being generated.
-        await memory.saveContext({ input: `Start of Chapter ${promptData.chapterNo}` }, { output: '' });
+        await memory.saveContext(
+          { input: `Start of Chapter ${promptData.chapterNo}` },
+          { output: "" }
+        );
         console.log(`Memory cleared for Chapter ${promptData.chapterNo}`);
       }
-  
+
       // Step 2: Regenerate paragraph (if 'selectedText' is present) with or without instruction
       if (promptData.selectedText) {
         if (promptData.instruction) {
@@ -342,21 +353,21 @@ export class BookChapterService {
             **Improved Paragraph (do not enclose in quotes):**
           `;
         }
-  
+
         let updateResponse = await this.textModel.stream(updatePrompt);
         let updatedText = "";
-  
+
         for await (const chunk of updateResponse) {
           updatedText += chunk.content;
           onTextUpdate(chunk.content);
         }
-  
+
         // Save the updated context for this paragraph only, not clearing the whole chapter.
         await memory.saveContext(
           { input: promptData.selectedText },
           { output: updatedText }
         );
-  
+
         return updatedText;
       } else {
         // Step 3: Generate the full chapter text with context from previous chapters
@@ -398,25 +409,25 @@ export class BookChapterService {
     
           **📝 Begin Chapter ${promptData.chapterNo}:**
         `;
-  
+
         const stream = await this.textModel.stream(chapterPrompt);
         let chapterText = "";
         const chunks = [];
-  
+
         for await (const chunk of stream) {
           chunks.push(chunk);
           chapterText += chunk.content;
           onTextUpdate(chunk.content);
         }
-  
+
         if (!chapterText.trim()) {
           throw new Error(`Chapter ${promptData.chapterNo} content is empty.`);
         }
-  if(promptData.noOfImages===0){
-    return chapterText
-  }
+        if (promptData.noOfImages === 0) {
+          return chapterText;
+        }
         // Step 4: Extract Key Points (Image generation logic remains unchanged)
-  
+
         const keyPointPrompt = `
           Extract exactly ${promptData.noOfImages} key points directly from the following chapter text.
           Each key point must be an exact phrase or sentence from the text and should highlight an important concept or event.
@@ -425,19 +436,21 @@ export class BookChapterService {
           Chapter Text:
           ${chapterText}
         `;
-  
+
         const keyPointResponse = await this.textModel.invoke(keyPointPrompt);
         const keyPoints = keyPointResponse.content
           ?.split("\n")
           .filter((point) => point.trim() !== "");
-  
+
         if (!keyPoints || keyPoints.length !== promptData.noOfImages) {
-          throw new Error(`Failed to extract exactly ${promptData.noOfImages} key points.`);
+          throw new Error(
+            `Failed to extract exactly ${promptData.noOfImages} key points.`
+          );
         }
-  
+
         const chapterImages: { title: string; url: string | null }[] =
           keyPoints.map((keyPoint) => ({ title: keyPoint, url: null }));
-  
+
         // Trigger image generation (this step remains unchanged)
         const imageRequests = keyPoints.map(async (keyPoint, index) => {
           const imagePrompt = `
@@ -451,7 +464,7 @@ export class BookChapterService {
     
           The illustration should visually capture the essence of the key point, aligning with the book's theme, tone, and intended audience. Ensure the style matches the genre, making it compelling and engaging.
         `;
-    
+
           const requestData = { prompt: imagePrompt };
           try {
             const postResponse = await axios.post(
@@ -464,9 +477,9 @@ export class BookChapterService {
                 },
               }
             );
-    
+
             const imageResponseUrl = postResponse.data.response_url;
-    
+
             await this.pollImageGeneration(
               imageResponseUrl,
               bookInfo.bookTitle,
@@ -475,21 +488,27 @@ export class BookChapterService {
               chapterImages
             );
           } catch (error) {
-            console.error(`Error triggering image generation for key point: "${keyPoint}"`, error);
+            console.error(
+              `Error triggering image generation for key point: "${keyPoint}"`,
+              error
+            );
           }
         });
-  
+
         // Wait for all image requests to complete
         await Promise.all(imageRequests);
-  
+
         // Step 5: Return Chapter Text Immediately (no changes here)
         const formattedChapter = this.insertImagesIntoChapter(
           chapterText,
           keyPoints,
           chapterImages
         );
-        await memory.saveContext({ input: `Start of Chapter ${promptData.chapterNo}` }, { output: chapterText });
-  
+        await memory.saveContext(
+          { input: `Start of Chapter ${promptData.chapterNo}` },
+          { output: chapterText }
+        );
+
         return formattedChapter;
       }
     } catch (error) {
@@ -497,16 +516,14 @@ export class BookChapterService {
       throw new Error(error.message);
     }
   }
-  
-  
 
   async generateChapterOfBook(
     input: BookChapterGenerationDto,
     onTextUpdate: (text: string) => void
   ) {
     try {
-      let chapterSummaryResponse
-      
+      let chapterSummaryResponse;
+
       await this.initializeAIModels();
 
       // Retrieve the book generation info
@@ -535,9 +552,13 @@ export class BookChapterService {
         onTextUpdate
       );
 
-    if(!input.selectedText)   chapterSummaryResponse =await this.generateChapterSummary(formattedChapter);
+      if (!input.selectedText)
+        chapterSummaryResponse =
+          await this.generateChapterSummary(formattedChapter);
 
-      if (input.selectedText && input.instruction) {return formattedChapter}
+      if (input.selectedText && input.instruction) {
+        return formattedChapter;
+      }
 
       if (bookChapter) {
         // If chapter exists, update it
@@ -556,17 +577,17 @@ export class BookChapterService {
         bookChapter.chapterSummary = chapterSummaryResponse;
         bookChapter.chapterName = input.chapterName;
       }
-if(bookInfo.numberOfChapters===input.chapterNo){
-  const updatedBookGeneration = {
-    ...bookChapter.bookGeneration,
-    type: BookType.COMPLETE
-  };
-  
-   await this.bookGenerationRepository.update(
-    { id: bookChapter.bookGeneration.id }, // Search condition
-    updatedBookGeneration                   // Fields to update
-  );
-}
+      if (bookInfo.numberOfChapters === input.chapterNo) {
+        const updatedBookGeneration = {
+          ...bookChapter.bookGeneration,
+          type: BookType.COMPLETE,
+        };
+
+        await this.bookGenerationRepository.update(
+          { id: bookChapter.bookGeneration.id }, // Search condition
+          updatedBookGeneration // Fields to update
+        );
+      }
       // Save (either insert or update)
       const savedChapter = await this.bookChapterRepository.save(bookChapter);
       return savedChapter;
@@ -575,9 +596,7 @@ if(bookInfo.numberOfChapters===input.chapterNo){
       throw new Error(error.message);
     }
   }
-  async updateChapter(
-    input: BookChapterUpdateDto,
-  ) {
+  async updateChapter(input: BookChapterUpdateDto) {
     try {
       await this.initializeAIModels();
 
@@ -598,7 +617,7 @@ if(bookInfo.numberOfChapters===input.chapterNo){
         },
         relations: ["bookGeneration"], // Ensure related data is loaded
       });
-      bookChapter.chapterInfo=input.updateContent
+      bookChapter.chapterInfo = input.updateContent;
       const updateChapter = await this.bookChapterRepository.save(bookChapter);
       return updateChapter;
     } catch (error) {
@@ -612,95 +631,125 @@ if(bookInfo.numberOfChapters===input.chapterNo){
   }
 
   async generateChapterSummaries(
-    bookId: number,
-    chapterIds: number[],
+    summaryRequest: BookChapterDto,
     onTextUpdate: (text: string) => void
   ) {
     try {
       await this.initializeAIModels();
-      
+  
       // Validate book exists
       const bookInfo = await this.bookGenerationRepository.findOne({
-        where: { id: bookId },
+        where: { id: summaryRequest.bookId },
       });
-
+  
       if (!bookInfo) {
-        throw new Error(`Book generation record not found for id: ${bookId}`);
+        throw new Error(
+          `Book generation record not found for id: ${summaryRequest.bookId}`
+        );
       }
-      
+  
       // First, fetch all chapters to sort them properly
       const chapters = await Promise.all(
-        chapterIds.map(chapterId => 
+        summaryRequest.chapterIds.map((chapterId) =>
           this.bookChapterRepository.findOne({
-            where: { id: chapterId, bookGeneration: { id: bookId } },
+            where: {
+              id: chapterId,
+              bookGeneration: { id: summaryRequest.bookId },
+            },
           })
         )
       );
-      
+  
       // Filter out any nulls and sort by chapter number
       const validChapters = chapters
-        .filter(chapter => chapter !== null)
+        .filter((chapter) => chapter !== null)
         .sort((a, b) => (a.chapterNo || 0) - (b.chapterNo || 0));
-      
+  
       if (validChapters.length === 0) {
         onTextUpdate(`No valid chapters found for the provided chapter IDs.`);
         return;
       }
+  
+      // If isCombined is true, combine all chapter contents into one string
+      if (summaryRequest.isCombined) {
+        let combinedText = "";
+        for (const chapter of validChapters) {
+          combinedText += `${chapter.chapterInfo}\n\n`;
+        }
+  
+        // Generate the summary for all combined chapters
+        const summaryPrompt = `
+          You are creating a concise, engaging summary for the entire book "${bookInfo.bookTitle}".
+    
+          Combined Content of All Chapters:
+          ${combinedText}
+    
+          Instructions:
+          1. Write exactly ${summaryRequest.noOfWords} words well-crafted sentences that capture the essence of the entire book.
+          2. Include the most significant plot points, character developments, or key concepts.
+          3. Use vivid, engaging language that captures the tone of the original text.
+          4. Make the summary flow naturally from sentence to sentence.
+    
+          Proceed with your ${summaryRequest.noOfWords} words sentence summary.
+          Do not use bullet points or include any other text beyond the summary itself.
+        `;
+  
+        // Stream the summary generation
+        const stream = await this.textModel.stream(summaryPrompt);
+  
+        let finalSummary = "";
+        for await (const chunk of stream) {
+          finalSummary += chunk.content;
+          onTextUpdate(chunk.content);
+        }
+  
+  
+      } else {
+        // If isCombined is false, generate chapter-wise summaries
+        for (const chapter of validChapters) {
+          try {
+            // Get the chapter content
+            const chapterText = chapter.chapterInfo;
+  
+            // Generate the chapter summary
+            const chapterSummaryPrompt = `
+              You are creating a concise, engaging summary 
+              Chapter Content:
+              ${chapterText}
       
-      // Start with book information
-      onTextUpdate(`# Summary for "${bookInfo.bookTitle}"\n\n`);
-      onTextUpdate(`Generating summaries for ${validChapters.length} chapters...\n\n`);
+              Instructions:
+              1. Write exactly ${summaryRequest.noOfWords} words well-crafted sentences that capture the essence of this chapter.
+              2. Include the most significant plot points, character developments, or key concepts from this chapter.
+              3. Use vivid, engaging language that captures the tone of the original text.
+              4. Make the summary flow naturally from sentence to sentence.
       
-      // Process each chapter sequentially
-      for (let i = 0; i < validChapters.length; i++) {
-        const chapter = validChapters[i];
-        
-        try {
-          // Progress indicator
-          onTextUpdate(`## Chapter ${chapter.chapterNo} (${i + 1}/${validChapters.length})\n\n`);
-          
-          // Get the chapter content
-          const chapterText = chapter.chapterInfo;
-          
-          // Generate the summary
-          const summaryPrompt = `
-            You are creating a concise, engaging summary for Chapter ${chapter.chapterNo} of "${bookInfo.bookTitle}".
-            
-            Chapter ${chapter.chapterNo} Content:
-            ${chapterText}
-            
-            Instructions:
-            1. Write exactly 3-4 well-crafted sentences that capture the essence of this chapter
-            2. Include the most significant plot points, character developments, or key concepts
-            3. Use vivid, engaging language that captures the tone of the original text
-            4. Make the summary flow naturally from sentence to sentence
-            
-            Your summary must begin with "Chapter ${chapter.chapterNo}:" and then proceed with your 3-4 sentence summary.
-            Do not use bullet points or include any other text beyond the summary itself.
-          `;
-          
-          onTextUpdate(`*Generating summary...*\n\n`);
-          
-          // Stream the summary generation
-          const stream = await this.textModel.stream(summaryPrompt);
-          
-          for await (const chunk of stream) {
-            onTextUpdate(chunk.content);
+              Proceed with your ${summaryRequest.noOfWords} words sentence summary for this chapter.
+              Do not use bullet points or include any other text beyond the summary itself.
+              Do not include chapter name and chapter number
+            `;
+  
+            // Stream the chapter summary generation
+            const stream = await this.textModel.invoke(chapterSummaryPrompt);
+   onTextUpdate(stream.content)
+            // let chapterSummary = "";
+            // for await (const chunk of stream) {
+            //   chapterSummary += chunk.content;
+            //   onTextUpdate(chunk.content);
+            // }
+  
+  
+          } catch (error) {
+            onTextUpdate(`Error generating summary for Chapter ${chapter.chapterNo}: ${error.message}`);
+            this.logger.error(`Error generating chapter summary for Chapter ${chapter.chapterNo}:`, error);
           }
-          
-          onTextUpdate(`\n\n---\n\n`);
-        } catch (error) {
-          onTextUpdate(`\n\n⚠️ **Error generating summary for Chapter ${chapter.chapterNo}**: ${error.message}\n\n---\n\n`);
-          this.logger.error(`Error generating summary for Chapter ${chapter.chapterNo}:`, error);
         }
       }
-      
-      onTextUpdate(`\n\n# All summaries completed!\n\n`);
     } catch (error) {
       this.logger.error(`Error in generateChapterSummaries:`, error);
       throw new Error(`Failed to generate chapter summaries: ${error.message}`);
     }
   }
+  
 
   async generateChapterSlides(
     bookId: number,
@@ -710,7 +759,7 @@ if(bookInfo.numberOfChapters===input.chapterNo){
   ) {
     try {
       await this.initializeAIModels();
-      
+
       // Validate book exists
       const bookInfo = await this.bookGenerationRepository.findOne({
         where: { id: bookId },
@@ -719,7 +768,7 @@ if(bookInfo.numberOfChapters===input.chapterNo){
       if (!bookInfo) {
         throw new Error(`Book generation record not found for id: ${bookId}`);
       }
-      
+
       // Process each chapter one by one
       for (const chapterId of chapterIds) {
         try {
@@ -727,24 +776,25 @@ if(bookInfo.numberOfChapters===input.chapterNo){
           const chapter = await this.bookChapterRepository.findOne({
             where: { id: chapterId, bookGeneration: { id: bookId } },
           });
-          
+
           if (!chapter) {
-            onTextUpdate(`Chapter ID ${chapterId} not found for this book. Skipping.`);
+            onTextUpdate(
+              `Chapter ID ${chapterId} not found for this book. Skipping.`
+            );
             continue;
           }
-          
+
           // Get the chapter content
           const chapterText = chapter.chapterInfo;
-          
+
           // Generate the slides
-          onTextUpdate(`\n\n## Generating slides for Chapter ${chapter.chapterNo}...\n\n`);
-          
+
           const slidePrompt = `
             Create exactly ${numberOfSlides} presentation slides for the following chapter content:
             
             Chapter Text:
             ${chapterText}
-            
+  
             Requirements:
             - Create exactly ${numberOfSlides} slides
             - Each slide should have a clear title and bullet points
@@ -758,21 +808,21 @@ if(bookInfo.numberOfChapters===input.chapterNo){
             
             Generate ${numberOfSlides} slides now:
           `;
-          
+
           // Stream the slides generation
-          const stream = await this.textModel.stream(slidePrompt);
-          
-          for await (const chunk of stream) {
-            onTextUpdate(chunk.content);
-          }
-          
-          onTextUpdate(`\n\n## Slides for Chapter ${chapter.chapterNo} completed\n\n`);
+          const stream = await this.textModel.invoke(slidePrompt);
+          return stream.content;
         } catch (error) {
-          onTextUpdate(`\n\nError generating slides for Chapter ID ${chapterId}: ${error.message}\n\n`);
-          this.logger.error(`Error generating slides for Chapter ID ${chapterId}:`, error);
+          onTextUpdate(
+            `\n\nError generating slides for Chapter ID ${chapterId}: ${error.message}\n\n`
+          );
+          this.logger.error(
+            `Error generating slides for Chapter ID ${chapterId}:`,
+            error
+          );
         }
       }
-      
+
       onTextUpdate(`\n\n## All slides completed\n\n`);
     } catch (error) {
       this.logger.error(`Error in generateChapterSlides:`, error);

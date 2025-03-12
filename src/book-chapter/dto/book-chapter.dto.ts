@@ -1,6 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
-import { IsNumber, IsNotEmpty, IsString, IsOptional, IsBoolean } from "class-validator";
+import { IsNumber, IsNotEmpty, IsString, IsOptional,  IsArray, IsBoolean } from "class-validator";
 
 export class BookChapterGenerationDto {
 
@@ -55,6 +55,7 @@ export class BookChapterGenerationDto {
   instruction: string;
 
 }
+
 export class BookChapterUpdateDto {
 
  
@@ -74,6 +75,26 @@ export class BookChapterUpdateDto {
   @IsString()
   updateContent:string
 
+
+
+}
+export class BookChapterDto {
+
+ 
+
+  @IsNumber()
+  @IsNotEmpty()
+  bookId: number;
+
+  @IsArray()
+  chapterIds:number[]
+
+  @IsNumber()
+  noOfWords:number
+
+
+  @IsBoolean()
+  isCombined:boolean
 
 
 }

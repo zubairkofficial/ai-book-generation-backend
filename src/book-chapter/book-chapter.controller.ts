@@ -2,7 +2,7 @@ import { Controller, Post, Body, Req, UnauthorizedException, UseGuards, Logger, 
 import { BookChapterService } from './book-chapter.service';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/types/request-with-user.interface';
-import { BookChapterGenerationDto, BookChapterUpdateDto, SlideGenerationDto } from './dto/book-chapter.dto';
+import { BookChapterDto, BookChapterGenerationDto, BookChapterUpdateDto, SlideGenerationDto } from './dto/book-chapter.dto';
 import { Observable, Subject } from 'rxjs';
 
 @Controller('book-chapter')
@@ -128,7 +128,7 @@ export class BookChapterController {
   @UseGuards(JwtAuthGuard)
   @Post('summary')
   async generateChapterSummary(
-    @Body() summaryRequest: { bookId: number, chapterIds: number[] },
+    @Body() summaryRequest: BookChapterDto,
     @Req() request: RequestWithUser,
   ) {
     const userId = request.user?.id;
@@ -144,8 +144,7 @@ export class BookChapterController {
       const userSubject = this.getUserSubject(userId, this.summaryTextUpdates);
       
       await this.bookChapterService.generateChapterSummaries(
-        summaryRequest.bookId,
-        summaryRequest.chapterIds,
+        summaryRequest,
         (text: string) => {
           userSubject.next(text);
         }
@@ -199,17 +198,16 @@ export class BookChapterController {
   ) {
     const userId = request.user?.id;
     this.logger.log(`Generating chapter slides for user ID: ${userId}, bookId: ${slideRequest.bookId}`);
-
+  
     if (!userId) {
       this.logger.error('Unauthorized: User ID not found in the request.');
       throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
     }
-
+  
     try {
       // Get user-specific subject
       const userSubject = this.getUserSubject(userId, this.slideTextUpdates);
-      
-      await this.bookChapterService.generateChapterSlides(
+      const slides = await this.bookChapterService.generateChapterSlides(
         slideRequest.bookId,
         slideRequest.chapterIds,
         slideRequest.numberOfSlides,
@@ -217,39 +215,50 @@ export class BookChapterController {
           userSubject.next(text);
         }
       );
-      
+  
+      // Signal the stream to finish by sending a done message
+      userSubject.next('done');  // Send the done signal to the stream
+  
       return {
         statusCode: 200,
         message: 'Chapter slides generation started.',
+        slides: slides,  // Add the complete slides object
       };
     } catch (error) {
       this.logger.error(`Error generating chapter slides for user ID: ${userId}`, error.stack);
       throw new InternalServerErrorException(error.message);
     }
   }
-
+  
   @UseGuards(JwtAuthGuard)
   @Sse('slides-stream')
-  streamSlides(@Req() request: RequestWithUser): Observable<{data:{text:string}}> {
+  streamSlides(@Req() request: RequestWithUser): Observable<{ data: { text: string } }> {
     const userId = request.user?.id;
     if (!userId) {
       throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
     }
-    
+  
     // Create a subject if it doesn't exist yet
     const userSubject = this.getUserSubject(userId, this.slideTextUpdates);
-    
+  
     return new Observable((observer) => {
       const subscription = userSubject.subscribe({
         next(data) {
-          observer.next({
-            data: {text: data}
-          });
+          if (data === 'done') {
+            observer.next({
+              data: { text: 'All slides completed.' },  // Send a "done" message
+            });
+            observer.complete();  // End the event stream
+          } else {
+            observer.next({
+              data: { text: data },  // Send the slide text
+            });
+          }
         },
         error(err) { observer.error(err); },
         complete() { observer.complete(); }
       });
-      
+  
       return () => {
         subscription.unsubscribe();
         // Optional: remove the subject if no more listeners
@@ -257,4 +266,5 @@ export class BookChapterController {
       };
     });
   }
+  
 }
