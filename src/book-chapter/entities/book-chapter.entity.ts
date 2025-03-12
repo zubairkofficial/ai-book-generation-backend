@@ -1,6 +1,7 @@
+import { Bgr } from 'src/bgr/entities/bgr.entity';
 import { BookGeneration } from 'src/book-generation/entities/book-generation.entity';
 import { BaseEntity } from 'src/common/entities/base.entity';
-import { Entity, Column,  ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, Column,  ManyToOne, JoinColumn, OneToOne } from 'typeorm';
 
 
 
@@ -28,6 +29,9 @@ export class BookChapter extends BaseEntity {
   
   @Column('text', { nullable: true })
   chapterName?: string; // Store summary as plain text or JSON based on your use case
+  
+  @OneToOne(() => Bgr, (bgr) => bgr.chapter, { onDelete: "CASCADE" })
+  bgr: Bgr;
 
 
 }

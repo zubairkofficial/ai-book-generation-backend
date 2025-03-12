@@ -679,14 +679,14 @@ export class BookGenerationService {
   private async createBookContent(promptData: BookGenerationDto) {
     try {
       // Run introduction & end-of-book content generation **in parallel**
-      const [introContent, endOfBookContent] = await Promise.all([
+      const [introContent] = await Promise.all([
         this.introductionContent(promptData),
-        this.endOfBookContent(promptData),
+        // this.endOfBookContent(promptData),
       ]);
 
       return {
         ...introContent,
-        ...endOfBookContent,
+        // ...endOfBookContent,
       };
     } catch (error) {
       this.logger.error(`❌ Error creating book content: ${error.message}`);
@@ -750,9 +750,9 @@ export class BookGenerationService {
         preface,
         introduction,
         tableOfContents,
-        references,
-        index,
-        glossary,
+        // references,
+        // index,
+        // glossary,
       } = bookContentResult.value;
 
       // **Immediately save book metadata (Images still downloading)**
@@ -775,9 +775,9 @@ export class BookGenerationService {
         dedication: dedication,
         preface: preface,
         introduction: introduction,
-        references: references,
-        index: index,
-        glossary: glossary,
+        references: "",
+        index: "",
+        glossary: "",
         tableOfContents: tableOfContents,
       };
 

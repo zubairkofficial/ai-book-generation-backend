@@ -10,6 +10,7 @@ import { ApiKeysModule } from './api-keys/api-keys.module';
 import { BookChapterModule } from './book-chapter/book-chapter.module';
 import { StatsModule } from './stats/stats.module';
 import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
+import { BgrModule } from './bgr/bgr.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
     BookChapterModule,
     StatsModule,
     AiAssistantModule,
+    BgrModule,
   ],
 })
 export class AppModule {}
