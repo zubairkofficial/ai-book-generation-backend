@@ -750,9 +750,7 @@ export class BookGenerationService {
         preface,
         introduction,
         tableOfContents,
-        // references,
-        // index,
-        // glossary,
+       
       } = bookContentResult.value;
 
       // **Immediately save book metadata (Images still downloading)**
@@ -775,9 +773,6 @@ export class BookGenerationService {
         dedication: dedication,
         preface: preface,
         introduction: introduction,
-        references: "",
-        index: "",
-        glossary: "",
         tableOfContents: tableOfContents,
       };
 

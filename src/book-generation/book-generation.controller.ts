@@ -254,8 +254,9 @@ export class BookGenerationController {
       throw new InternalServerErrorException(error.message);
     }
   }
+  
   @UseGuards(JwtAuthGuard)
-  @Get(':type')
+  @Get('search/:type')
   async getBooksByType(@Req() request: RequestWithUser,@Param('type') type:string) {
     const user = request.user;
     const bookType=type=='draft'?BookType.INCOMPLETE:BookType.COMPLETE

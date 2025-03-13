@@ -5,14 +5,16 @@ import { Entity, Column, ManyToOne, JoinColumn, OneToOne } from "typeorm";
 
 @Entity()
 export class Bgr extends BaseEntity {
-  @Column({ type: "varchar", length: 100, nullable: true })
+  
+  @Column({ type: "text", nullable: true })
   glossary: string;
-
-  @Column({ type: "varchar", length: 100, nullable: true })
+  
+  @Column({ type: "text", nullable: true })
   index: string;
-
-  @Column({ type: "varchar", length: 100, nullable: true })
+  
+  @Column({ type: "text", nullable: true })
   refrence: string;
+  
 
   // One-to-One relationship with BookChapter
   @OneToOne(() => BookChapter, (bookChapter) => bookChapter.bgr, {

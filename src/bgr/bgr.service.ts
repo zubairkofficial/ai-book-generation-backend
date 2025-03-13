@@ -1,26 +1,32 @@
+// src/bgr/bgr.service.ts
 import { Injectable } from '@nestjs/common';
-import { CreateBgrDto } from './dto/create-bgr.dto';
-import { UpdateBgrDto } from './dto/update-bgr.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Bgr } from './entities/bgr.entity';
+import { BookChapter } from 'src/book-chapter/entities/book-chapter.entity';
+import { BookGeneration } from 'src/book-generation/entities/book-generation.entity';
 
 @Injectable()
 export class BgrService {
-  create(createBgrDto: CreateBgrDto) {
-    return 'This action adds a new bgr';
-  }
+  constructor(
+    @InjectRepository(Bgr)
+    private bgrRepository: Repository<Bgr>,
+  ) {}
 
-  findAll() {
-    return `This action returns all bgr`;
-  }
+  // Method to create a Bgr entity
+  async createBgr( glossary: string[], references: string[], index: string[], savedChapter: BookChapter, bookInfo: BookGeneration): Promise<Bgr> {
+    // Create a new Bgr instance
+    const bgr = new Bgr();
+    bgr.glossary = glossary.join("\n"); // Store glossary as a string
+    bgr.refrence = references.join("\n"); // Store references as a string
+    bgr.index = index.join("\n"); // Store index as a string
+    bgr.chapter = savedChapter; // Link the chapter to Bgr
+    bgr.bookGeneration = bookInfo; // Link the bookGeneration to Bgr
 
-  findOne(id: number) {
-    return `This action returns a #${id} bgr`;
-  }
+    // Save the Bgr entity
+    const savedBgr = await this.bgrRepository.save(bgr);
 
-  update(id: number, updateBgrDto: UpdateBgrDto) {
-    return `This action updates a #${id} bgr`;
-  }
-
-  remove(id: number) {
-    return `This action removes a #${id} bgr`;
+    // Return the saved Bgr
+    return savedBgr;
   }
 }

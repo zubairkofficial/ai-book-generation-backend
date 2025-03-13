@@ -8,11 +8,13 @@ import { BookGeneration } from 'src/book-generation/entities/book-generation.ent
 import { BookChapter } from 'src/book-chapter/entities/book-chapter.entity';
 import { EventsChain } from 'src/common/function/chapter-plot-chain';
 import { ApiKey } from 'src/api-keys/entities/api-key.entity';
+import { BgrModule } from 'src/bgr/bgr.module';
 
 @Module({
   imports: [
     // Register all entities for which you need repositories.
     TypeOrmModule.forFeature([BookGeneration, BookChapter, ApiKey]),
+    BgrModule
   ],
   controllers: [BookChapterController],
   providers: [BookChapterService, EventsChain],

@@ -20,6 +20,7 @@ import { BookChapter } from "./entities/book-chapter.entity";
 import { ConversationSummaryBufferMemory } from "langchain/memory";
 import axios from "axios";
 import { get as levenshtein } from "fast-levenshtein";
+import { BgrService } from "src/bgr/bgr.service";
 
 @Injectable()
 export class BookChapterService {
@@ -38,7 +39,9 @@ export class BookChapterService {
     private bookChapterRepository: Repository<BookChapter>,
 
     @InjectRepository(ApiKey)
-    private apiKeyRepository: Repository<ApiKey>
+    private apiKeyRepository: Repository<ApiKey>,
+
+    private readonly bgrService: BgrService
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
   }
@@ -517,6 +520,86 @@ export class BookChapterService {
     }
   }
 
+  private async generateChapterGlossary(chapterText: string): Promise<string[]> {
+    try {
+      // Extract key terms or phrases using natural language processing (NLP)
+      const glossaryPrompt = `
+        Extract key terms or phrases from the following chapter text and provide definitions or descriptions for each term:
+        
+        Chapter Text:
+        ${chapterText}
+  
+        The glossary should include important terms, proper names, or any specific terminology used within the chapter. 
+        Provide definitions or descriptions that make the terms easily understandable to the reader.
+        Chapter number and chapter name not showing 
+      `;
+  
+      // Use the model to extract glossary items
+      const glossaryResponse = await this.textModel.invoke(glossaryPrompt);
+      const glossaryItems = glossaryResponse.content?.split("\n").filter((item) => item.trim());
+  
+      return glossaryItems || [];
+    } catch (error) {
+      console.error("Error generating glossary:", error);
+      throw new Error("Failed to generate glossary.");
+    }
+  }
+
+  
+  private async generateChapterReferences(chapterText: string): Promise<string[]> {
+    try {
+      // Extract references from the chapter text (look for book titles, authors, etc.)
+      const referencesPrompt = `
+        Extract all references from the following chapter text. 
+        These can include books, articles, authors, or any other references to external sources.
+        
+        Chapter Text:
+        ${chapterText}
+  
+        Provide a list of references in a standard citation format.
+        
+      `;
+  
+      // Use the model to extract references
+      const referencesResponse = await this.textModel.invoke(referencesPrompt);
+      const references = referencesResponse.content?.split("\n").filter((reference) => reference.trim());
+  
+      return references || [];
+    } catch (error) {
+      console.error("Error generating references:", error);
+      throw new Error("Failed to generate references.");
+    }
+  }
+
+  
+  private async generateChapterIndex(chapterText: string): Promise<string[]> {
+    try {
+      // Extract key concepts for the index
+      const indexPrompt = `
+        Generate an index for the following chapter. Include terms, concepts, or names that are important for the reader.
+        Include the virtual page numbers where each term or concept is first mentioned. 
+  
+        Chapter Text:
+        ${chapterText}
+  
+        The index should be a list of terms or concepts with their corresponding virtual page numbers.
+      `;
+  
+      // Use the model to generate the index
+      const indexResponse = await this.textModel.invoke(indexPrompt);
+      const indexItems = indexResponse.content?.split("\n").filter((item) => item.trim());
+  
+      return indexItems || [];
+    } catch (error) {
+      console.error("Error generating index:", error);
+      throw new Error("Failed to generate index.");
+    }
+  }
+
+ 
+  
+  
+
   async generateChapterOfBook(
     input: BookChapterGenerationDto,
     onTextUpdate: (text: string) => void
@@ -590,6 +673,20 @@ export class BookChapterService {
       }
       // Save (either insert or update)
       const savedChapter = await this.bookChapterRepository.save(bookChapter);
+      const [glossary, references, index] = await Promise.all([
+        this.generateChapterGlossary(formattedChapter),
+        this.generateChapterReferences(formattedChapter),
+        this.generateChapterIndex(formattedChapter),
+      ]);
+  
+      // Step 10: Create the Bgr entity and store glossary, references, and index
+      const savedBgr = await this.bgrService.createBgr(
+        glossary,
+        references,
+        index,
+        savedChapter,
+        bookInfo
+      );
       return savedChapter;
     } catch (error) {
       console.error("Error generating book chapter:", error);
