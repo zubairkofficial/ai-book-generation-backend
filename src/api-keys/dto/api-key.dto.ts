@@ -22,9 +22,7 @@ export class UpdateApiKeyDto {
   @IsOptional()
   openai_key: string;
 
-  @IsNotEmpty()
-  @IsOptional()
-  dalle_key: string;
+  
 
   @IsNotEmpty()
   @IsOptional()

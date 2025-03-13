@@ -32,10 +32,9 @@ export class ApiKeysService {
       let apiKeys = await this.apiKeysRepository.findOne({ where: {id:input.id} });
 
       if (!apiKeys) {
-        apiKeys = this.apiKeysRepository.create({ openai_key:input.openai_key,dalle_key:input.dalle_key,model:input.model,  fal_ai : input.fal_ai });
+        apiKeys = this.apiKeysRepository.create({ openai_key:input.openai_key,model:input.model,  fal_ai : input.fal_ai });
       } else {
       if(input.openai_key) apiKeys.openai_key = input.openai_key;
-      if(input.dalle_key) apiKeys.dalle_key = input.dalle_key;
       if(input.model)  apiKeys.model = input.model;
       if(input.fal_ai)   apiKeys.fal_ai = input.fal_ai;
       }

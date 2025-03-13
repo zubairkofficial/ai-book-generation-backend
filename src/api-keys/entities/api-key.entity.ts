@@ -9,8 +9,6 @@ export class ApiKey extends BaseEntity {
   @Column()
   openai_key: string;
 
-  @Column()
-  dalle_key: string;
 
   @Column({nullable:true})
   fal_ai: string;
