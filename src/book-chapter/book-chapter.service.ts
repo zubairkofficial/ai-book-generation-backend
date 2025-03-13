@@ -635,11 +635,11 @@ export class BookChapterService {
         onTextUpdate
       );
 
-      if (!input.selectedText)
+      if (!input.selectedText){
         chapterSummaryResponse =
           await this.generateChapterSummary(formattedChapter);
-
-      if (input.selectedText && input.instruction) {
+}
+      if (input.selectedText || input.instruction) {
         return formattedChapter;
       }
 
@@ -680,6 +680,8 @@ export class BookChapterService {
       ]);
   
       // Step 10: Create the Bgr entity and store glossary, references, and index
+      const bgr = await this.bgrService.getBgrOne(savedChapter.id, bookInfo.id)
+      if(!bgr){
       const savedBgr = await this.bgrService.createBgr(
         glossary,
         references,
@@ -687,6 +689,16 @@ export class BookChapterService {
         savedChapter,
         bookInfo
       );
+      }else{
+        const savedBgr = await this.bgrService.updateBgr(
+          bgr.id,
+          glossary,
+          references,
+          index,
+          savedChapter,
+          bookInfo
+        );
+      }
       return savedChapter;
     } catch (error) {
       console.error("Error generating book chapter:", error);

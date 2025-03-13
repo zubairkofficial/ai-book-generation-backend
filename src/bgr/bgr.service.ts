@@ -35,4 +35,31 @@ export class BgrService {
     throw new Error(error.message);
   }
   }
+  async updateBgr(id: number, glossary: string[], references: string[], index: string[], savedChapter: BookChapter, bookInfo: BookGeneration): Promise<Bgr> {
+    try {
+      const bgr = await this.getBgrOne(savedChapter.id, bookInfo.id);
+      if(!bgr){
+        throw new Error("Bgr not found");
+      }
+      bgr.glossary = glossary.join("\n");
+      bgr.refrence = references.join("\n");
+      bgr.index = index.join("\n");
+      bgr.chapter = savedChapter;
+      bgr.bookGeneration = bookInfo;
+      const updatedBgr = await this.bgrRepository.save(bgr);
+      return updatedBgr;
+    } catch (error) {
+      throw new Error(error.message);
+    }
+  }
+  async getBgrOne(chapterId: number, bookId: number): Promise<Bgr | undefined> {
+    return this.bgrRepository.findOne(
+     {
+      where:{
+        chapter: {id: chapterId},
+        bookGeneration: {id: bookId}
+      }
+     }
+    );
+  }
 }

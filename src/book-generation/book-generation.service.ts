@@ -435,21 +435,21 @@ export class BookGenerationService {
 
       // Prepare all prompts (UNCHANGED)
       const coverPagePrompt = `
-        Create a professional Cover Page with the following details:
-        - Title: "${promptData.bookTitle}"
-        - Author: "${promptData.authorName || "Anonymous"}"
-        - Publisher: ${promptData.authorName || "AiBookPublisher"}
-        - AuthorBio: ${promptData.authorBio || "Writer"}
-        - Language: ${promptData.language || "English"}
-        - CoreIdea: ${promptData.bookInformation}
-      `;
-
-      const dedicationPrompt = `
-      Write a heartfelt and meaningful dedication for the book titled "${promptData.bookTitle}". 
-      Consider the book's central  core idea: "${promptData.bookInformation || "Not specified"}".
-      The dedication should be general enough to resonate with a wide audience but still feel personal and authentic. 
-      It can express gratitude or motivation, depending on the tone of the book.
+      Create a professional book Cover Page with the following details:
+      - Title: "${promptData.bookTitle}"
+      - Author: "${promptData.authorName || "Anonymous"}"
+      - Publisher: ${promptData.authorName || "AiBookPublisher"}
+      - AuthorBio: ${promptData.authorBio || "Writer"}
+      - Language: ${promptData.language || "English"}
+      - CoreIdea: ${promptData.bookInformation}
     `;
+
+    const dedicationPrompt = `
+    Write a heartfelt and meaningful dedication for the book titled "${promptData.bookTitle}". 
+    Consider the book's central  core idea: "${promptData.bookInformation || "Not specified"}".
+    The dedication should be general enough to resonate with a wide audience but still feel personal and authentic. 
+    It can express gratitude or motivation, depending on the tone of the book ${promptData.authorName} && ${promptData.authorBio}.
+  `;
 
     const prefacePrompt = `
     Create a preface for the book titled "${promptData.bookTitle}".
@@ -731,11 +731,10 @@ export class BookGenerationService {
       await this.initializeAIModels(); // Ensure API keys are loaded before generating content
 
       // **Run AI Content & Image Generation in Parallel**
-      const [bookContentResult, coverImageResult, backCoverImageResult] =
+      const [bookContentResult, coverImageResult] =
         await Promise.allSettled([
           this.createBookContent(promptData), // Generate book content
           this.generateBookCover(promptData, "front"), // Generate front cover (URL)
-          this.generateBookCover(promptData, "back"), // Generate back cover (URL)
         ]);
 
       // **Extract book content**
@@ -768,7 +767,6 @@ export class BookGenerationService {
       book.additionalContent = promptData.additionalContent;
       book.additionalData = {
         coverImageUrl: null, // To be updated when image is ready
-        backCoverImageUrl: null, // To be updated when image is ready
         coverPageResponse: coverPageResponse,
         dedication: dedication,
         preface: preface,
@@ -813,34 +811,34 @@ export class BookGenerationService {
             )
         );
 
-        if (backCoverImageResult.status === "fulfilled") {
-          imageDownloadTasks.push(
-            this.generateBookImage(backCoverImageResult.value, promptData)
-              .then(async (backCoverPath) => {
-                // Retrieve the current book record
-                const book = await this.bookGenerationRepository.findOne({
-                  where: { id: savedBook.id },
-                });
-                if (!book) return;
+        // if (backCoverImageResult.status === "fulfilled") {
+        //   imageDownloadTasks.push(
+        //     this.generateBookImage(backCoverImageResult.value, promptData)
+        //       .then(async (backCoverPath) => {
+        //         // Retrieve the current book record
+        //         const book = await this.bookGenerationRepository.findOne({
+        //           where: { id: savedBook.id },
+        //         });
+        //         if (!book) return;
 
-                // Update `additionalData`
-                book.additionalData = {
-                  ...book.additionalData,
-                  backCoverImageUrl: backCoverPath,
-                };
+        //         // Update `additionalData`
+        //         book.additionalData = {
+        //           ...book.additionalData,
+        //           backCoverImageUrl: backCoverPath,
+        //         };
 
-                // Save the updated record
-                await this.bookGenerationRepository.update(savedBook.id, {
-                  additionalData: book.additionalData,
-                });
-              })
-              .catch((error) =>
-                this.logger.error(
-                  `❌ Failed to save back cover: ${error.message}`
-                )
-              )
-          );
-        }
+        //         // Save the updated record
+        //         await this.bookGenerationRepository.update(savedBook.id, {
+        //           additionalData: book.additionalData,
+        //         });
+        //       })
+        //       .catch((error) =>
+        //         this.logger.error(
+        //           `❌ Failed to save back cover: ${error.message}`
+        //         )
+        //       )
+        //   );
+        // }
       }
 
       // **Process Image Downloads in Background**
@@ -892,7 +890,7 @@ export class BookGenerationService {
       // Perform a left join with the BookChapter table
       const book = await this.bookGenerationRepository.findOne({
         where: { id },
-        relations: ["bookChapter"], // This ensures the BookChapter is included in the result
+        relations: ["bookChapter","bookChapter.bgr"], // This ensures the BookChapter is included in the result
       });
 
       return book; // Return the book with chapters
