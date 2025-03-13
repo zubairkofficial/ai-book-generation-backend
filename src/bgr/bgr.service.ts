@@ -15,6 +15,9 @@ export class BgrService {
 
   // Method to create a Bgr entity
   async createBgr( glossary: string[], references: string[], index: string[], savedChapter: BookChapter, bookInfo: BookGeneration): Promise<Bgr> {
+    try {
+      
+    
     // Create a new Bgr instance
     const bgr = new Bgr();
     bgr.glossary = glossary.join("\n"); // Store glossary as a string
@@ -28,5 +31,8 @@ export class BgrService {
 
     // Return the saved Bgr
     return savedBgr;
+  } catch (error) {
+    throw new Error(error.message);
+  }
   }
 }
