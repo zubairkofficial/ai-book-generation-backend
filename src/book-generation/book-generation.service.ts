@@ -28,6 +28,7 @@ import { allowedSizes } from "src/common";
 import { UserDto } from "src/auth/types/request-with-user.interface";
 import axios from "axios";
 import { UserInterface } from "src/users/dto/users.dto";
+import { UsersService } from "src/users/users.service";
 
 @Injectable()
 export class BookGenerationService {
@@ -42,7 +43,8 @@ export class BookGenerationService {
     @InjectRepository(BookGeneration)
     private bookGenerationRepository: Repository<BookGeneration>,
     @InjectRepository(ApiKey)
-    private apiKeyRepository: Repository<ApiKey>
+    private apiKeyRepository: Repository<ApiKey>,
+    private readonly userService: UsersService
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
   }
@@ -716,7 +718,7 @@ export class BookGenerationService {
   async getAllBooksCount(userId: number | null) {
     if (userId)
       return await this.bookGenerationRepository.count({
-        where: { userId: userId },
+        where: { user: { id: userId } },
       });
     else return await this.bookGenerationRepository.count();
   }
@@ -728,6 +730,10 @@ export class BookGenerationService {
     try {
       await this.initializeAIModels(); // Ensure API keys are loaded before generating content
 
+      const user=await this.userService.getProfile(userId)
+      if(!user){
+        throw new NotFoundException('user not exist')
+      }
       // **Run AI Content & Image Generation in Parallel**
       const [bookContentResult, coverImageResult] = await Promise.allSettled([
         this.createBookContent(promptData), // Generate book content
@@ -750,7 +756,7 @@ export class BookGenerationService {
 
       // **Immediately save book metadata (Images still downloading)**
       const book = new BookGeneration();
-      book.userId = userId;
+      book.user = user;
       book.bookTitle = promptData.bookTitle;
       book.authorName = promptData.authorName;
       book.authorBio = promptData.authorBio;
@@ -856,8 +862,12 @@ export class BookGenerationService {
   ): Promise<BookGeneration> {
     try {
       const book = await this.getBookById(input.bookGenerationId);
+      const user=await this.userService.getProfile(userId)
+      if(!user){
+        throw new NotFoundException('user not exist')
+      }
       // **Immediately save book metadata (Images still downloading)**
-      book.userId = userId;
+      book.user = user;
       book.additionalData = {
         coverPageResponse:
           input.coverPageResponse ?? book.additionalData.coverPageResponse,
@@ -870,7 +880,7 @@ export class BookGenerationService {
           input.tableOfContents ?? book.additionalData.tableOfContents,
         backCoverImageUrl: book.additionalData.backCoverImageUrl,
       };
-      if (input.references) book.reference = input.references;
+      if (input.references) book.references = input.references;
       if (input.index) book.index = input.index;
       if (input.glossary) book.glossary = input.glossary;
 
@@ -950,7 +960,7 @@ export class BookGenerationService {
       // Update book entity
       book.glossary = combinedGlossary;
       book.index = combinedIndex;
-      book.reference = combinedReferences;
+      book.references = combinedReferences;
 
       await this.bookGenerationRepository.save(book);
       return book;

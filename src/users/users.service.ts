@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
@@ -45,9 +45,6 @@ async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<User> {
     console.log('Email to find:', email); 
     const user = await this.userRepository.findOne({ where: { email } });
     
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
     return user;
   }
 
@@ -71,4 +68,21 @@ async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<User> {
   async markEmailAsVerified(id: number): Promise<void> {
     await this.userRepository.update(id, { isEmailVerified: true });
   }
+  async getUserWithBookInfo(): Promise<any> {
+   try {
+    
+    const usersWithBookCount = await this.userRepository
+    .createQueryBuilder('user')
+    .leftJoin('user.bookGenerations', 'bookGeneration') // Join bookGenerations
+    .addSelect('COUNT(bookGeneration.id)', 'bookCount') // Count bookGenerations
+    .groupBy('user.id') // Group by user id to get the count per user
+    .getRawMany(); // Fetch raw data without full entities
+
+  return usersWithBookCount;
+  } catch (error) {
+    throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+       
+  }
+  }
+  
 }

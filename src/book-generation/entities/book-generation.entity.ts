@@ -1,6 +1,7 @@
 import { BookChapter } from 'src/book-chapter/entities/book-chapter.entity';
 import { BaseEntity } from 'src/common/entities/base.entity';
-import { Entity, Column,  OneToMany } from 'typeorm';
+import { User } from 'src/users/entities/user.entity';
+import { Entity, Column,  OneToMany, JoinColumn, ManyToOne } from 'typeorm';
 
 export enum BookType {
   COMPLETE = 'complete',
@@ -9,8 +10,12 @@ export enum BookType {
 @Entity()
 export class BookGeneration extends BaseEntity {
 
-  @Column()
-  userId: number;
+    @ManyToOne(() => User, (user) => user.bookGenerations)
+   @JoinColumn({ name: 'userId' })
+  user: User;
+
+  // @Column()
+  // userId: number;
 
   @Column()
   bookTitle: string;
@@ -79,5 +84,5 @@ export class BookGeneration extends BaseEntity {
   index: string;
   
   @Column({ type: "text", nullable: true })
-  reference: string;
+  references: string;
 }

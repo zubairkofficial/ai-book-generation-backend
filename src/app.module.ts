@@ -11,6 +11,7 @@ import { BookChapterModule } from './book-chapter/book-chapter.module';
 import { StatsModule } from './stats/stats.module';
 import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
 import { BgrModule } from './bgr/bgr.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { BgrModule } from './bgr/bgr.module';
     StatsModule,
     AiAssistantModule,
     BgrModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule {}
