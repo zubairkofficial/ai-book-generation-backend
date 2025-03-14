@@ -58,9 +58,7 @@ export class BookGeneration extends BaseEntity {
     dedication?: string,
     preface?: string,
     introduction?: string,
-    references?: string,
-    index?: string,
-    glossary?: string,
+   
   };
 
 
@@ -74,4 +72,12 @@ export class BookGeneration extends BaseEntity {
   @OneToMany(() => BookChapter, (bookChapter) => bookChapter.bookGeneration, { onDelete: 'CASCADE' })
   bookChapter: BookChapter[];
  
+  @Column({ type: "text", nullable: true })
+  glossary: string;
+  
+  @Column({ type: "text", nullable: true })
+  index: string;
+  
+  @Column({ type: "text", nullable: true })
+  reference: string;
 }

@@ -444,14 +444,14 @@ export class BookGenerationService {
       - CoreIdea: ${promptData.bookInformation}
     `;
 
-    const dedicationPrompt = `
+      const dedicationPrompt = `
     Write a heartfelt and meaningful dedication for the book titled "${promptData.bookTitle}". 
     Consider the book's central  core idea: "${promptData.bookInformation || "Not specified"}".
     The dedication should be general enough to resonate with a wide audience but still feel personal and authentic. 
     It can express gratitude or motivation, depending on the tone of the book ${promptData.authorName} && ${promptData.authorBio}.
   `;
 
-    const prefacePrompt = `
+      const prefacePrompt = `
     Create a preface for the book titled "${promptData.bookTitle}".
     
     Structure the preface with exactly these four sections using markdown headings:
@@ -582,9 +582,7 @@ export class BookGenerationService {
     }
   }
 
-  private async endOfBookContent(
-    promptData: BookGenerationDto
-  ) {
+  private async endOfBookContent(promptData: BookGenerationDto) {
     try {
       this.logger.log(
         `📖 Generating End-of-Book Content for: "${promptData.bookTitle}"`
@@ -731,11 +729,10 @@ export class BookGenerationService {
       await this.initializeAIModels(); // Ensure API keys are loaded before generating content
 
       // **Run AI Content & Image Generation in Parallel**
-      const [bookContentResult, coverImageResult] =
-        await Promise.allSettled([
-          this.createBookContent(promptData), // Generate book content
-          this.generateBookCover(promptData, "front"), // Generate front cover (URL)
-        ]);
+      const [bookContentResult, coverImageResult] = await Promise.allSettled([
+        this.createBookContent(promptData), // Generate book content
+        this.generateBookCover(promptData, "front"), // Generate front cover (URL)
+      ]);
 
       // **Extract book content**
       if (bookContentResult.status !== "fulfilled") {
@@ -749,7 +746,6 @@ export class BookGenerationService {
         preface,
         introduction,
         tableOfContents,
-       
       } = bookContentResult.value;
 
       // **Immediately save book metadata (Images still downloading)**
@@ -863,18 +859,20 @@ export class BookGenerationService {
       // **Immediately save book metadata (Images still downloading)**
       book.userId = userId;
       book.additionalData = {
-          
-         coverPageResponse:input.coverPageResponse??book.additionalData.coverPageResponse,
-          dedication:input.dedication??book.additionalData.dedication,
-          preface:input.preface??book.additionalData.preface,
-          introduction:input.introduction??book.additionalData.introduction,
-          references:input.references??book.additionalData.references,
-          index:input.index??book.additionalData.index,
-          glossary:input.glossary??book.additionalData.glossary,
+        coverPageResponse:
+          input.coverPageResponse ?? book.additionalData.coverPageResponse,
+        dedication: input.dedication ?? book.additionalData.dedication,
+        preface: input.preface ?? book.additionalData.preface,
+        introduction: input.introduction ?? book.additionalData.introduction,
+
         coverImageUrl: book.additionalData.coverImageUrl,
-        tableOfContents:input.tableOfContents?? book.additionalData.tableOfContents,
+        tableOfContents:
+          input.tableOfContents ?? book.additionalData.tableOfContents,
         backCoverImageUrl: book.additionalData.backCoverImageUrl,
       };
+      if (input.references) book.reference = input.references;
+      if (input.index) book.index = input.index;
+      if (input.glossary) book.glossary = input.glossary;
 
       return this.bookGenerationRepository.save(book);
     } catch (error) {
@@ -890,12 +888,107 @@ export class BookGenerationService {
       // Perform a left join with the BookChapter table
       const book = await this.bookGenerationRepository.findOne({
         where: { id },
-        relations: ["bookChapter","bookChapter.bgr"], // This ensures the BookChapter is included in the result
+        relations: ["bookChapter", "bookChapter.bgr"], // This ensures the BookChapter is included in the result
       });
 
       return book; // Return the book with chapters
     } catch (error) {
       throw new Error(error.message); // Handle any errors that occur
+    }
+  }
+  async getBookEndContent(id: number) {
+    try {
+      await this.initializeAIModels(); // Ensure AI models are initialized
+
+      const book = await this.getBookById(id);
+      if (!book) {
+        throw new Error("Book not found");
+      }
+
+      // Collect all glossary, index, and reference entries from chapters
+      const allGlossaryEntries: string[] = [];
+      const allIndexEntries: string[] = [];
+      const allReferenceEntries: string[] = [];
+
+      for (const chapter of book.bookChapter) {
+        if (chapter.bgr) {
+          if (chapter.bgr.glossary) {
+            allGlossaryEntries.push(chapter.bgr.glossary);
+          }
+          if (chapter.bgr.index) {
+            allIndexEntries.push(chapter.bgr.index);
+          }
+          if (chapter.bgr.refrence) {
+            allReferenceEntries.push(chapter.bgr.refrence);
+          }
+        }
+      }
+
+      // Generate combined content using LLM prompts
+      const [combinedGlossary, combinedIndex, combinedReferences] =
+        await Promise.all([
+          this.generateCombinedContent(
+            "glossary",
+            book.bookTitle,
+            allGlossaryEntries,
+            'Combine these glossary entries into a single alphabetized list. Remove duplicates and format as "Term: Definition".'
+          ),
+          this.generateCombinedContent(
+            "index",
+            book.bookTitle,
+            allIndexEntries,
+            "Create a unified index from these entries. Remove duplicates and organize alphabetically with page references."
+          ),
+          this.generateCombinedContent(
+            "references",
+            book.bookTitle,
+            allReferenceEntries,
+            "Combine these references into a properly formatted bibliography using APA style. Remove duplicates."
+          ),
+        ]);
+
+      // Update book entity
+      book.glossary = combinedGlossary;
+      book.index = combinedIndex;
+      book.reference = combinedReferences;
+
+      await this.bookGenerationRepository.save(book);
+      return book;
+    } catch (error) {
+      this.logger.error(`Error generating book end content: ${error.message}`);
+      throw new Error(error.message);
+    }
+  }
+
+  private async generateCombinedContent(
+    type: "glossary" | "index" | "references",
+    bookTitle: string,
+    entries: string[],
+    specificInstructions: string
+  ): Promise<string> {
+    if (entries.length === 0) return "";
+
+    const prompt = `
+      Create a comprehensive ${type} for the book "${bookTitle}" using content from all chapters.
+      
+      ${specificInstructions}
+      
+      Raw entries from chapters:
+      ${entries.join("\n\n")}
+      
+      Requirements:
+      - Maintain professional formatting
+      - Ensure consistency in style
+      - Remove duplicate entries
+      - Organize content logically
+    `;
+
+    try {
+      const response = await this.textModel.invoke(prompt);
+      return response.content;
+    } catch (error) {
+      this.logger.error(`Error generating ${type}: ${error.message}`);
+      return ""; // Return empty string on failure
     }
   }
   async updateBookImage(

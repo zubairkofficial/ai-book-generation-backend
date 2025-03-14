@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config'; // Import ConfigService
@@ -30,7 +31,10 @@ export class AuthService {
   async signUp(signUpDto: SignUpDto) {
     try {
       const { name, email, password } = signUpDto;
-
+const getUser=await this.usersService.findByEmail(email)
+if(getUser){
+  throw new ConflictException('User with this email already exists');
+}
       // Hash the password using CryptoService
       const hashedPassword = await this.cryptoService.encrypt(password);
 

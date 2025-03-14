@@ -178,6 +178,31 @@ export class BookGenerationController {
       throw new InternalServerErrorException(error.message);
     }
   }
+  @UseGuards(JwtAuthGuard)
+  @Get('end-content/:bookId')
+  async getBookEndContent(
+    @Req() request: RequestWithUser,
+    @Param('bookId') bookId: string
+  ) {
+    const user = request.user;
+    this.logger.log(`Fetching book for user ID: ${user.id}`);
+  
+    if (!user) {
+      this.logger.error('Unauthorized: User ID not found in the request.');
+      throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+    }
+  
+    try {
+      const getBook = await this.bookGenerationService.getBookEndContent(+bookId);
+      return {
+        message: 'Book successfully retrieved.',
+        data: getBook,
+      };
+    } catch (error) {
+      this.logger.error(`Error retrieving books for user ID: ${user.id}`, error.stack);
+      throw new InternalServerErrorException(error.message);
+    }
+  }
   
   @UseGuards(JwtAuthGuard)
   @Put('update-image')
