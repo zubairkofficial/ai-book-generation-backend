@@ -1,7 +1,8 @@
 import { AiAssistant } from 'src/ai-assistant/entities/ai-assistant.entity';
 import { BookGeneration } from 'src/book-generation/entities/book-generation.entity';
 import { BaseEntity } from 'src/common/entities/base.entity';
-import { Entity, Column, OneToMany } from 'typeorm';
+import { Settings } from 'src/settings/entities/settings.entity';
+import { Entity, Column, OneToMany, OneToOne } from 'typeorm';
 
 export enum UserRole {
   USER = 'user',
@@ -40,4 +41,7 @@ export class User extends BaseEntity {
 
   @OneToMany(() => BookGeneration, (bookGeneration) => bookGeneration.user)
   bookGenerations: BookGeneration[];
+
+  @OneToOne(() => Settings, (settings) => settings.user)
+  settings: Settings
 }

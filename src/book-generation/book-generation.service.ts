@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -18,6 +19,7 @@ import { exec } from "child_process";
 import mermaid from "mermaid";
 import {
   BookGenerationDto,
+  BRGDTO,
   RegenerateImage,
   SearchDto,
   UpdateBookCoverDto,
@@ -29,6 +31,8 @@ import { UserDto } from "src/auth/types/request-with-user.interface";
 import axios from "axios";
 import { UserInterface } from "src/users/dto/users.dto";
 import { UsersService } from "src/users/users.service";
+import { ContentType } from "src/utils/roles.enum";
+import { BookChapter } from "src/book-chapter/entities/book-chapter.entity";
 
 @Injectable()
 export class BookGenerationService {
@@ -61,9 +65,7 @@ export class BookGenerationService {
         modelName: this.apiKeyRecord[0].model,
       });
 
-      this.openai = new OpenAI({
-        apiKey: this.apiKeyRecord[0].dalle_key,
-      });
+     
 
       this.logger.log(
         `AI Models initialized successfully with model: ${this.apiKeyRecord[0].model}`
@@ -584,56 +586,7 @@ export class BookGenerationService {
     }
   }
 
-  private async endOfBookContent(promptData: BookGenerationDto) {
-    try {
-      this.logger.log(
-        `📖 Generating End-of-Book Content for: "${promptData.bookTitle}"`
-      );
 
-      // Prepare prompts (UNCHANGED)
-      const glossaryPrompt = `
-      Create a comprehensive glossary for the book titled "${promptData.bookTitle}". 
-      Include definitions for key terms, concepts, and jargon that are central to the book's content. 
-      Make sure the definitions are clear and accessible to the reader, reflecting the book's core theme: "${promptData.bookInformation}".
-      Organize the glossary alphabetically and ensure that each term is explained concisely and accurately.
-    `;
-
-      const indexPrompt = `
-      Create a detailed index for the book titled "${promptData.bookTitle}". 
-      The index should include important topics, concepts, and references that appear in the book. 
-      Ensure that each entry is well-organized, with corresponding page numbers, and reflects the core themes and ideas explored in the book: "${promptData.bookInformation}".
-      The index should help readers easily navigate through the material based on their interests or research needs.
-    `;
-
-      const referencesPrompt = `
-      Write a comprehensive bibliography for the book titled "${promptData.bookTitle}". 
-      Include references to any studies, articles, books, or other materials that were used or inspired the content of the book. 
-      The references should align with the core idea: "${promptData.bookInformation}" and provide additional reading for those interested in further exploration of the book's topics.
-      Ensure that the citations are formatted according to a standard citation style (e.g., APA, MLA, Chicago).
-    `;
-
-      // **Run AI calls in parallel** for faster execution
-      const [glossaryResponse, indexResponse, referencesResponse] =
-        await Promise.all([
-          this.textModel.invoke(glossaryPrompt),
-          this.textModel.invoke(indexPrompt),
-          this.textModel.invoke(referencesPrompt),
-        ]);
-
-      // **Fast String Concatenation**
-      return {
-        glossary: glossaryResponse.content,
-        index: indexResponse.content,
-        references: referencesResponse.content,
-      };
-      // Efficient joining
-    } catch (error) {
-      this.logger.error(
-        `❌ Error generating end-of-book content: ${error.message}`
-      );
-      throw new Error("Failed to generate end-of-book content");
-    }
-  }
 
   private async generateFlowchart(promptText: string): Promise<string> {
     try {
@@ -898,7 +851,7 @@ export class BookGenerationService {
       // Perform a left join with the BookChapter table
       const book = await this.bookGenerationRepository.findOne({
         where: { id },
-        relations: ["bookChapter", "bookChapter.bgr"], // This ensures the BookChapter is included in the result
+        relations: ["bookChapter"], // This ensures the BookChapter is included in the result
       });
 
       return book; // Return the book with chapters
@@ -906,101 +859,120 @@ export class BookGenerationService {
       throw new Error(error.message); // Handle any errors that occur
     }
   }
-  async getBookEndContent(id: number) {
-    try {
-      await this.initializeAIModels(); // Ensure AI models are initialized
+ 
+  async generateBookEndContent(
+    input: BRGDTO,
+    onTextUpdate: (text: string) => void,
+    user: UserInterface
+  ): Promise<BookGeneration> {
+    await this.initializeAIModels(); // Ensure API keys are loaded before generating content
 
-      const book = await this.getBookById(id);
-      if (!book) {
-        throw new Error("Book not found");
+    // 1. Get book with chapters
+    const book = await this.bookGenerationRepository.findOne({
+      where: { id: input.bookId },
+      relations: ['bookChapter']
+    });
+  
+    if (!book) {
+      throw new NotFoundException(`Book with ID ${input.bookId} not found`);
+    }
+  
+   
+    // 3. Validate chapters exist
+    if (!book.bookChapter || book.bookChapter.length === 0) {
+      throw new BadRequestException('Book has no chapters to analyze');
+    }
+  
+    // 4. Extract chapter content
+    const chaptersContent = book.bookChapter
+      .map((chap:BookChapter) => chap.chapterInfo)
+      .join('\n\n');
+  
+    // 5. Generate appropriate content
+    let generatedContent: string;
+    const prompt = this.getContentPrompt(input, chaptersContent);
+  
+    try {
+      const aiResponse = await this.textModel.stream(prompt);
+      let finalSummary = "";
+      for await (const chunk of aiResponse) {
+        finalSummary += chunk.content;
+        onTextUpdate(chunk.content);
       }
 
-      // Collect all glossary, index, and reference entries from chapters
-      const allGlossaryEntries: string[] = [];
-      const allIndexEntries: string[] = [];
-      const allReferenceEntries: string[] = [];
-
-      for (const chapter of book.bookChapter) {
-        if (chapter.bgr) {
-          if (chapter.bgr.glossary) {
-            allGlossaryEntries.push(chapter.bgr.glossary);
-          }
-          if (chapter.bgr.index) {
-            allIndexEntries.push(chapter.bgr.index);
-          }
-          if (chapter.bgr.refrence) {
-            allReferenceEntries.push(chapter.bgr.refrence);
-          }
-        }
-      }
-
-      // Generate combined content using LLM prompts
-      const [combinedGlossary, combinedIndex, combinedReferences] =
-        await Promise.all([
-          this.generateCombinedContent(
-            "glossary",
-            book.bookTitle,
-            allGlossaryEntries,
-            'Combine these glossary entries into a single alphabetized list. Remove duplicates and format as "Term: Definition".'
-          ),
-          this.generateCombinedContent(
-            "index",
-            book.bookTitle,
-            allIndexEntries,
-            "Create a unified index from these entries. Remove duplicates and organize alphabetically with page references."
-          ),
-          this.generateCombinedContent(
-            "references",
-            book.bookTitle,
-            allReferenceEntries,
-            "Combine these references into a properly formatted bibliography using APA style. Remove duplicates."
-          ),
-        ]);
-
-      // Update book entity
-      book.glossary = combinedGlossary;
-      book.index = combinedIndex;
-      book.references = combinedReferences;
-
-      await this.bookGenerationRepository.save(book);
-      return book;
+      generatedContent = finalSummary;
     } catch (error) {
-      this.logger.error(`Error generating book end content: ${error.message}`);
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
     }
+  
+    // 6. Update and save book
+    switch (input.contentType) {
+      case ContentType.GLOSSARY:
+        book.glossary = generatedContent;
+        break;
+      case ContentType.INDEX:
+        book.index = generatedContent;
+        break;
+      case ContentType.REFERENCE:
+        book.references = generatedContent;
+        break;
+    }
+  
+    return this.bookGenerationRepository.save(book);
+  }
+  
+  private getContentPrompt(
+    input: BRGDTO,
+    chaptersContent: string,
+  ): string {
+    if (input.currentContent) {
+      return `
+        You are an expert book writer. Improve the following paragraph of the book provided content type:
+        Content Type :${input.contentType}
+        Current Content: ${input.currentContent}
+        Additional instructions: ${input.additionalInfo}
+        **Guidelines:**
+            - Enhance the clarity and flow.
+            - Maintain the same context and meaning.
+            - Avoid generating completely new or irrelevant content.
+            - Keep it engaging and refined.
+      
+      `;
+    }
+    const basePrompts = {
+      [ContentType.GLOSSARY]: `
+        Generate a comprehensive glossary based on these chapters. Follow these rules:
+        - List terms alphabetically
+        - Include chapter numbers where terms appear
+        - Provide clear definitions
+        - Format: "Term (Chapter X): Definition"
+        Additional instructions: ${input.additionalInfo}
+        Chapters content: ${chaptersContent}
+      `,
+  
+      [ContentType.INDEX]: `
+        Create a detailed book index. Requirements:
+        - List topics and subtopics
+        - Include imaginary page numbers (start each chapter on new page)
+        - Use standard index formatting
+        Additional instructions: ${input.additionalInfo}
+        Chapters content: ${chaptersContent}
+      `,
+  
+      [ContentType.REFERENCE]: `
+        Generate references in APA format. Guidelines:
+        - Include both real and book-specific citations
+        - Format authors properly
+        - Add publication years
+        Additional instructions: ${input.additionalInfo}
+        Chapters content: ${chaptersContent}
+      `
+    };
+  
+    
+    return basePrompts[input.contentType];
   }
 
-  private async generateCombinedContent(
-    type: "glossary" | "index" | "references",
-    bookTitle: string,
-    entries: string[],
-    specificInstructions: string
-  ): Promise<string> {
-    if (entries.length === 0) return "";
-
-    const prompt = `
-      Create a comprehensive ${type} for the book "${bookTitle}" using content from all chapters.
-      
-      ${specificInstructions}
-      
-      Raw entries from chapters:
-      ${entries.join("\n\n")}
-      
-      Requirements:
-      - Maintain professional formatting
-      - Ensure consistency in style
-      - Remove duplicate entries
-      - Organize content logically
-    `;
-
-    try {
-      const response = await this.textModel.invoke(prompt);
-      return response.content;
-    } catch (error) {
-      this.logger.error(`Error generating ${type}: ${error.message}`);
-      return ""; // Return empty string on failure
-    }
-  }
   async updateBookImage(
     input: UpdateDto
   ): Promise<{ message: string; imagePath: string }> {

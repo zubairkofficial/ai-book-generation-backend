@@ -20,7 +20,6 @@ import { BookChapter } from "./entities/book-chapter.entity";
 import { ConversationSummaryBufferMemory } from "langchain/memory";
 import axios from "axios";
 import { get as levenshtein } from "fast-levenshtein";
-import { BgrService } from "src/bgr/bgr.service";
 
 @Injectable()
 export class BookChapterService {
@@ -41,7 +40,6 @@ export class BookChapterService {
     @InjectRepository(ApiKey)
     private apiKeyRepository: Repository<ApiKey>,
 
-    private readonly bgrService: BgrService
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
   }
@@ -364,7 +362,6 @@ export class BookChapterService {
           updatedText += chunk.content;
           onTextUpdate(chunk.content);
         }
-
         // Save the updated context for this paragraph only, not clearing the whole chapter.
         await memory.saveContext(
           { input: promptData.selectedText },
@@ -673,32 +670,7 @@ export class BookChapterService {
       }
       // Save (either insert or update)
       const savedChapter = await this.bookChapterRepository.save(bookChapter);
-      const [glossary, references, index] = await Promise.all([
-        this.generateChapterGlossary(formattedChapter),
-        this.generateChapterReferences(formattedChapter),
-        this.generateChapterIndex(formattedChapter),
-      ]);
-  
-      // Step 10: Create the Bgr entity and store glossary, references, and index
-      const bgr = await this.bgrService.getBgrOne(savedChapter.id, bookInfo.id)
-      if(!bgr){
-      const savedBgr = await this.bgrService.createBgr(
-        glossary,
-        references,
-        index,
-        savedChapter,
-        bookInfo
-      );
-      }else{
-        const savedBgr = await this.bgrService.updateBgr(
-          bgr.id,
-          glossary,
-          references,
-          index,
-          savedChapter,
-          bookInfo
-        );
-      }
+          
       return savedChapter;
     } catch (error) {
       console.error("Error generating book chapter:", error);

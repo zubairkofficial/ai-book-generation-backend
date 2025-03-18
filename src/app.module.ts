@@ -10,8 +10,8 @@ import { ApiKeysModule } from './api-keys/api-keys.module';
 import { BookChapterModule } from './book-chapter/book-chapter.module';
 import { StatsModule } from './stats/stats.module';
 import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
-import { BgrModule } from './bgr/bgr.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { SettingsModule } from './settings/settings.module';
 
 @Module({
   imports: [
@@ -52,8 +52,8 @@ import { AnalyticsModule } from './analytics/analytics.module';
     BookChapterModule,
     StatsModule,
     AiAssistantModule,
-    BgrModule,
     AnalyticsModule,
+    SettingsModule,
   ],
 })
 export class AppModule {}

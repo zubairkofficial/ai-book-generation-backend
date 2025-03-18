@@ -1,9 +1,11 @@
-import { IsString, IsNumber, IsNotEmpty, IsOptional, IsBoolean } from 'class-validator';
+import { IsString, IsNumber, IsNotEmpty, IsOptional, IsBoolean, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { Express } from 'express';
+import { ContentType } from 'src/utils/roles.enum';
 export class BookGenerationDto {
  
+  
  
 
   @ApiProperty({ description: 'The title of the book' })
@@ -305,3 +307,26 @@ export class RegenerateImage {
 
  
 }
+
+
+export class BRGDTO {
+  @ApiProperty({ example: 117 })
+  @IsNumber()
+  @IsNotEmpty()
+  bookId: number;
+
+  // Step 2: Use the @IsEnum decorator with the enum we just created
+  @ApiProperty({ example: 'reference', enum: ContentType })
+  @IsEnum(ContentType)
+  @IsNotEmpty()
+  contentType: ContentType;
+
+  @IsString()
+  @IsOptional()
+  additionalInfo?: string;
+
+  @IsString()
+  @IsOptional()
+  currentContent?: string;
+}
+

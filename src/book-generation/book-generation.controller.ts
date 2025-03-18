@@ -12,24 +12,34 @@ import {
   Param,
   Put,
   UseInterceptors,
-  UploadedFile
+  UploadedFile,
+  Sse
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { BookGenerationService } from './book-generation.service';
-import {  BookGenerationDto, RegenerateImage, UpdateBookCoverDto, UpdateBookDto, UpdateDto } from './dto/book-generation.dto';
+import {  BookGenerationDto, BRGDTO, RegenerateImage, UpdateBookCoverDto, UpdateBookDto, UpdateDto } from './dto/book-generation.dto';
 import { RequestWithUser } from '../auth/types/request-with-user.interface';
 import { ApiOperation, ApiResponse, ApiBody, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import {  BookType } from './entities/book-generation.entity';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Observable, Subject } from 'rxjs';
 
 @ApiTags('books')
 @ApiBearerAuth('JWT-auth')
 @Controller('book-generation')
 export class BookGenerationController {
   private readonly logger = new Logger(BookGenerationController.name);
-
+ private bookBGRUpdates = new Map<number, Subject<string>>();
+ 
   constructor(private readonly bookGenerationService: BookGenerationService) {}
 
+  private getBookGenenrate(userId: number, subjectMap: Map<number, Subject<string>>): Subject<string> {
+    if (!subjectMap.has(userId)) {
+      subjectMap.set(userId, new Subject<string>());
+      this.logger.log(`Created new subject for user ID: ${userId}`);
+    }
+    return subjectMap.get(userId);
+  }
   @UseGuards(JwtAuthGuard)
   @Post('generate')
   @ApiOperation({ summary: 'Generate and save a book based on provided parameters' })
@@ -178,11 +188,12 @@ export class BookGenerationController {
       throw new InternalServerErrorException(error.message);
     }
   }
+
   @UseGuards(JwtAuthGuard)
-  @Get('end-content/:bookId')
-  async getBookEndContent(
+  @Post('brg')
+  async generateBookEndContent(
     @Req() request: RequestWithUser,
-    @Param('bookId') bookId: string
+    @Body() input:BRGDTO
   ) {
     const user = request.user;
     this.logger.log(`Fetching book for user ID: ${user.id}`);
@@ -193,7 +204,11 @@ export class BookGenerationController {
     }
   
     try {
-      const getBook = await this.bookGenerationService.getBookEndContent(+bookId);
+      const bookBGR = this.getBookGenenrate(user.id, this.bookBGRUpdates);
+      
+      const getBook = await this.bookGenerationService.generateBookEndContent(input,(text: string) => {
+        bookBGR.next(text);
+      },user);
       return {
         message: 'Book successfully retrieved.',
         data: getBook,
@@ -231,6 +246,41 @@ export class BookGenerationController {
       throw new InternalServerErrorException(error.message);
     }
   }
+
+
+
+    @UseGuards(JwtAuthGuard)
+    @Sse('/book-end-stream/bgr')
+    bookEndData(@Req() request: RequestWithUser): Observable<{ data: { text: string } }> {
+      const userId = request.user?.id;
+      if (!userId) {
+        throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
+      }
+    
+      const userSubject = this.getBookGenenrate(userId, this.bookBGRUpdates);
+    
+      return new Observable((observer) => {
+        const subscription = userSubject.subscribe({
+          next(data) {
+            observer.next({
+              data: { text: data },
+            });
+          },
+          error(err) {
+            observer.error(err);
+          },
+          complete() {
+            observer.complete();
+          },
+        });
+    
+        // Clean up on unsubscribe
+        return () => {
+          subscription.unsubscribe();
+        };
+      });
+    }
+    
   @UseGuards(JwtAuthGuard)
   @Put('regenerate-image')
   async regenerateBookImage(

@@ -10,7 +10,10 @@ export class RolesGuard implements CanActivate {
 
   private reflector = new Reflector();
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const roles = this.reflector.get<Role[]>(ROLES_KEY, context.getHandler()); // Get roles metadata
+    const roles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
     if (!roles) {
       return true; // If no roles are defined, allow access
     }
