@@ -4,7 +4,6 @@ import { AiAssistantService } from "./ai-assistant.service";
 import { AiAssistantDto, AiAssistantMessage } from "./dto/ai-assistant.dto";
 import { JwtAuthGuard } from "src/auth/guards/jwt-auth.guard";
 import { RequestWithUser } from "src/auth/types/request-with-user.interface";
-import { InternalServerError } from "openai";
 
 @Controller("ai-assistant")
 export class AiAssistantController {

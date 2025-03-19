@@ -27,16 +27,25 @@ export class BookCoverDTO {
   genre: string;
 
   @IsString()
+  @IsOptional()
   coverStyle: string;
 
   @IsString()
-  colorPreference: string;
+  @IsOptional()
+  coreIdea: string;
+
 
   @IsString()
+  @IsOptional()
   targetAudience: string;
 
   @IsString()
-  additionalElements: string;
+  @IsOptional()
+  additionalDetails: string;
+  
+  @IsString()
+  @IsOptional()
+  numberOfImages: string;
 }
 export class BookWriteDTO {
   @IsString()

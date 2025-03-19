@@ -4,29 +4,46 @@ import { Repository } from "typeorm";
 import { AiAssistant, AiAssistantType } from "./entities/ai-assistant.entity";
 import { ChatOpenAI, OpenAI } from "@langchain/openai";
 import { ApiKeysService } from "src/api-keys/api-keys.service";
-import { AiAssistantDto, AiAssistantMessage, StoryDTO } from "./dto/ai-assistant.dto";
+import { AiAssistantDto, AiAssistantMessage } from "./dto/ai-assistant.dto";
 import { UsersService } from "src/users/users.service";
+import { ConfigService } from "@nestjs/config";
+import * as fs from "fs";
+import * as path from "path";
+import axios from "axios";
 import { ConversationSummaryBufferMemory } from "langchain/memory";
-
 @Injectable()
 export class AiAssistantService {
   private readonly model: OpenAI;
- private textModel;
+  private textModel;
   private apiKeyRecord;
   private readonly logger = new Logger(AiAssistantService.name);
   private readonly uploadsDir: string;
+  private openai: OpenAI;
   constructor(
     @InjectRepository(AiAssistant)
     private readonly aiAssistantRepository: Repository<AiAssistant>,
     private readonly apiKeyService: ApiKeysService,
     private readonly usersService: UsersService,
-    
+    private readonly configService: ConfigService,
   ) {
-    
-   
+    this.uploadsDir = this.setupUploadsDirectory();
   }
 
 
+  private setupUploadsDirectory(): string {
+    const rootDir = process.cwd();
+    const uploadsPath = path.join(rootDir, "uploads", "covers");
+    
+    try {
+      if (!fs.existsSync(uploadsPath)) {
+        fs.mkdirSync(uploadsPath, { recursive: true });
+      }
+      return uploadsPath;
+    } catch (error) {
+      this.logger.error(`Error setting up uploads directory: ${error.message}`);
+      throw new Error("Failed to setup uploads directory");
+    }
+  }
    private async initializeAIModels() {
       try {
         this.apiKeyRecord = await this.apiKeyService.getApiKeys();
@@ -46,6 +63,77 @@ export class AiAssistantService {
       }
     }
 
+
+    private async pollImageGeneration(responseUrl: string, bookTitle: string): Promise<string> {
+      const maxRetries = 12;
+      const delayMs = 10000;
+  
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const getResponse = await axios.get(responseUrl, {
+            headers: {
+              Authorization: `Key ${this.apiKeyRecord.fal_ai}`,
+              "Content-Type": "application/json",
+            },
+          });
+  
+          if (getResponse.data.images?.length > 0) {
+            return this.saveGeneratedImage(
+              getResponse.data.images[0].url,
+              bookTitle
+            );
+          }
+        } catch (error) {
+          this.logger.warn(`Image not ready (Attempt ${attempt + 1}/${maxRetries})`);
+        }
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+      throw new Error("Image generation timed out.");
+    }
+
+
+    private async generateCoverImage(prompt: string, bookTitle: string): Promise<string> {
+      try {
+        const requestData = { prompt };
+        const postResponse = await axios.post(
+          this.configService.get<string>("BASE_URL_FAL_AI"),
+          requestData,
+          {
+            headers: {
+              Authorization: `Key ${this.apiKeyRecord.fal_ai}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+  
+        return this.pollImageGeneration(
+          postResponse.data.response_url,
+          bookTitle
+        );
+      } catch (error) {
+        this.logger.error(`Image generation failed: ${error.message}`);
+        throw new Error("Failed to generate image.");
+      }
+    }
+    
+    private async saveGeneratedImage(imageUrl: string, bookTitle: string): Promise<string> {
+      const dirPath = this.uploadsDir;
+      const baseUrl = this.configService.get<string>("BASE_URL");
+      const sanitizedTitle = bookTitle.replace(/[^a-z0-9]/gi, "_").toLowerCase();
+      const filename = `${sanitizedTitle}_${Date.now()}.png`;
+      const imagePath = path.join(dirPath, filename);
+  
+      try {
+        const response = await axios.get(imageUrl, { responseType: "arraybuffer" });
+        fs.writeFileSync(imagePath, response.data);
+        return `${baseUrl}/uploads/covers/${filename}`;
+      } catch (error) {
+        this.logger.error(`Failed to save image: ${error.message}`);
+        throw new Error("Failed to save generated image");
+      }
+    }
+  
+
     async processAiAssistantTask(userId: number, input: AiAssistantDto): Promise<AiAssistant> {
       await this.initializeAIModels();
       
@@ -57,7 +145,9 @@ export class AiAssistantService {
       }
   
       let prompt: string;
-  
+      let imageUrls: string[] = [];
+
+
       // ✅ Handle different AI assistant types
       switch (input.type) {
           case AiAssistantType.BOOK_IDEA:
@@ -68,12 +158,29 @@ export class AiAssistantService {
               aiAssistant.information = input.information;
               break;
   
-          case AiAssistantType.BOOK_COVER_IMAGE:
+        case AiAssistantType.BOOK_COVER_IMAGE:
               if (!input.bookCoverInfo) {
-                  throw new Error("Missing required information for BOOK_COVER_IMAGE.");
+                throw new Error("Missing required information for BOOK_COVER_IMAGE.");
               }
+      
+              // Generate cover images
+              const numberOfImages = input.bookCoverInfo.numberOfImages || 1;
               prompt = this.generatePrompt(input.type, input.bookCoverInfo);
-              aiAssistant.information = input.bookCoverInfo; // Store book cover details
+              
+              // Generate multiple images
+              for (let i = 0; i < Number(numberOfImages); i++) {
+                try {
+                  const imageUrl = await this.generateCoverImage(
+                    prompt,
+                    input.bookCoverInfo.bookTitle
+                  );
+                  imageUrls.push(imageUrl);
+                } catch (error) {
+                  this.logger.error(`Failed to generate image ${i + 1}: ${error.message}`);
+                }
+              }
+      
+              aiAssistant.information = input.bookCoverInfo;
               break;
   
           case AiAssistantType.WRITING_ASSISTANT:
@@ -89,6 +196,7 @@ export class AiAssistantService {
       }
   
       // ✅ Generate AI response
+   if(input.type!==AiAssistantType.BOOK_COVER_IMAGE) {
       const response = await this.textModel.invoke(prompt);
   
       // ✅ Store AI response in the database
@@ -97,7 +205,13 @@ export class AiAssistantService {
       aiAssistant.response = {
           generatedText: response.content,
           timestamp: new Date(),
-      };
+      };}else{
+        aiAssistant.type = input.type;
+        aiAssistant.user = user;
+        aiAssistant.response={
+         imageUrls
+        }
+      }
   
       const aiAssistantDetail = await this.aiAssistantRepository.save(aiAssistant);
       return aiAssistantDetail;
@@ -189,14 +303,12 @@ export class AiAssistantService {
   private generatePrompt(type: AiAssistantType, info: Record<string, any>): string {
     switch (type) {
       case AiAssistantType.BOOK_IDEA:
-        return `Generate a compelling and unique **core idea** for a book based on the following details:
+        return `Generate a compelling and unique **3-5 unique book concepts** **core idea** for a book based on the following details:
           
         - **Genre**: ${info?.genre || "Any"}
         - **Theme or Topic**: ${info?.themeOrTopic || "Innovative, insightful, and thought-provoking"}
         - **Target Audience**: ${info?.targetAudience || "All age groups"}
-        - **Key Elements**: ${info?.specificElements || "Visionary concepts, human creativity, or breakthrough ideas"}
-        - **Writing Style**: ${info?.writingStyle || "Engaging, immersive, and intellectually stimulating"}
-        - **Description**: ${info?.description || "Develop a powerful and insightful book concept that explores impactful ideas and real-world transformations."}
+         - **Description**: ${info?.description || "Develop a powerful and insightful book concept that explores impactful ideas and real-world transformations."}
         
         ### **Expected Output Format**
         - **Book Title**: A compelling title that reflects the book's concept.
@@ -205,15 +317,12 @@ export class AiAssistantService {
         The response should be **concise, profound, and engaging**, capturing the essence of the book in a way that excites potential readers and publishers.`;
         
         case AiAssistantType.BOOK_COVER_IMAGE:
-          return `### Book Cover Design Brief Prompt:
-
-          **Book Title**: "${info?.bookTitle || "Untitled"}"  
-          **Genre**: ${info?.genre || "General"}  
-          **Target Audience**: ${info?.targetAudience || "All Ages"}  
-          **Cover Style**: ${info?.coverStyle || "Illustrated"}  
-          **Color Theme**: ${info?.colorPreference || "Dark and moody tones"}  
-          **Additional Design Notes**: ${info?.additionalElements || "Subtle business-related icons for a sleek finish"}  
-          `;
+          return `Design a book front cover image 
+        - Book Titled "${info?.bookTitle || "Untitled"}". 
+        - Genre: ${info?.genre || "General"}
+        - Target Audience: ${info?.targetAudience || "All Ages"}
+        - Core Idea: ${info?.coreIdea || "Subtle business-related icons for a sleek finish"}
+        The front cover should be visually engaging and appropriate for the target audience.`;
           
       
       case AiAssistantType.WRITING_ASSISTANT:

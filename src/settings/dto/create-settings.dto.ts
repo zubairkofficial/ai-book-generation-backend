@@ -16,6 +16,11 @@ export class CreateSettingsDto {
   @IsString()
   coverImageModel?: string;
 
+  @ApiProperty({ required: false, description: 'Model used for generating cover image domain url' })
+  @IsOptional()
+  @IsString()
+  coverImageDomainUrl?: string;
+
   @ApiProperty({ required: false, description: 'Prompt for generating chapter images' })
   @IsOptional()
   @IsString()
@@ -25,4 +30,9 @@ export class CreateSettingsDto {
   @IsOptional()
   @IsString()
   chapterImageModel?: string;
+
+  @ApiProperty({ required: false, description: 'Model used for generating chapter image domain url' })
+  @IsOptional()
+  @IsString()
+  chapterImageDomainUrl?: string;
 }

@@ -4,7 +4,7 @@ import { Roles } from 'src/decorators/roles.decorator';
 import { RolesGuard } from 'src/guards/roles.guard';
 import { Role } from 'src/utils/roles.enum';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
-import { CreateApiKeyDto, UpdateApiKeyDto } from './dto/api-key.dto';
+import {  UpdateApiKeyDto } from './dto/api-key.dto';
 
 @Controller('api-keys')
 @UseGuards(JwtAuthGuard, RolesGuard) // First authenticate, then check role

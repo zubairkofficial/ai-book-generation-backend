@@ -29,6 +29,7 @@ export class AiAssistant extends BaseEntity {
   @Column('jsonb', { nullable: true })
   response?: {
     generatedText?: string;
+    imageUrls?: string[];
     timestamp?: Date;
   };
 }

@@ -19,17 +19,24 @@ export class SettingsService {
     return this.settingsRepository.save(settings);
   }
 
-  async createOrUpdate(userID: number, updateSettingsDto: UpdateSettingsDto): Promise<Settings> {
+  async createOrUpdate(userID: number, input: UpdateSettingsDto): Promise<Settings> {
     const settings = await this.settingsRepository.findOne({
-      where: updateSettingsDto?.id 
-        ? { id: updateSettingsDto.id, user: { id: userID } }
+      where: input?.id 
+        ? { id: input.id, user: { id: userID } }
         : { user: { id: userID } }
     });
 
     if (!settings) {
-      return this.create(userID, updateSettingsDto);
+      return this.create(userID, input);
+    }else{
+      if(input.chapterImageDomainUrl)settings.chapterImageDomainUrl=input.chapterImageDomainUrl
+      if(input.chapterImageModel)settings.chapterImageModel=input.chapterImageModel
+      if(input.chapterImagePrompt)settings.chapterImagePrompt=input.chapterImagePrompt
+      if(input.coverImageDomainUrl)settings.coverImageDomainUrl=input.coverImageDomainUrl
+      if(input.coverImageModel)settings.coverImageModel=input.coverImageModel
+      if(input.coverImagePrompt)settings.coverImagePrompt=input.coverImagePrompt
+      return this.settingsRepository.save(settings);
     }
 
-    return this.settingsRepository.save({ ...settings, ...updateSettingsDto });
   }
 }

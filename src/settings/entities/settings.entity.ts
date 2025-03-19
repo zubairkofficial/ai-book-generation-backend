@@ -11,10 +11,16 @@ export class Settings extends BaseEntity {
   coverImageModel: string;
 
   @Column({ nullable: true })
+  coverImageDomainUrl: string;
+
+  @Column({ nullable: true })
   chapterImagePrompt: string;
 
   @Column({ nullable: true })
   chapterImageModel: string;
+  
+  @Column({ nullable: true })
+  chapterImageDomainUrl: string;
 
   @Column()
   userID: number;
