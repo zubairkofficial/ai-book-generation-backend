@@ -184,6 +184,12 @@ export class BookGenerationService {
 
       const imageParameters = {
         prompt: coverPrompt,
+        num_images: 1,
+        enable_safety_checker: true,
+        safety_tolerance: "2",
+        output_format: "jpeg",
+        aspect_ratio: "9:16",
+        raw: false,
       };
 
       let responseUrl: string | null = null;
@@ -248,7 +254,7 @@ export class BookGenerationService {
           - **Language**:${promptData.language || "All Ages"}
           - **System Prompt**:${this.settingPrompt.coverImagePrompt}
           `
-                  
+
       const requestData = {
         prompt: coverPrompt,
         num_images: 1,
