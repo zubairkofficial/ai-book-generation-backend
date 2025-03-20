@@ -11,9 +11,11 @@ import * as fs from "fs";
 import * as path from "path";
 import axios from "axios";
 import { ConversationSummaryBufferMemory } from "langchain/memory";
+import { SettingsService } from "src/settings/settings.service";
 @Injectable()
 export class AiAssistantService {
   private readonly model: OpenAI;
+  private settingPrompt;
   private textModel;
   private apiKeyRecord;
   private readonly logger = new Logger(AiAssistantService.name);
@@ -25,6 +27,7 @@ export class AiAssistantService {
     private readonly apiKeyService: ApiKeysService,
     private readonly usersService: UsersService,
     private readonly configService: ConfigService,
+    private readonly settingsService: SettingsService
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
   }
@@ -50,7 +53,10 @@ export class AiAssistantService {
         if (!this.apiKeyRecord) {
           throw new Error("No API keys found in the database.");
         }
-  
+        this.settingPrompt=await this.settingsService.getAllSettings()
+        if (!this.settingPrompt) {
+          throw new Error("No setting prompt found in the database.");
+        }
         this.textModel = new ChatOpenAI({
           openAIApiKey: this.apiKeyRecord.openai_key,
           temperature: 0.7,
@@ -94,9 +100,16 @@ export class AiAssistantService {
 
     private async generateCoverImage(prompt: string, bookTitle: string): Promise<string> {
       try {
-        const requestData = { prompt };
+        const requestData = { prompt ,
+          num_images: 1,
+        enable_safety_checker: true,
+        safety_tolerance: "2",
+        output_format: "jpeg",
+        aspect_ratio: "9:16",
+        raw: false,
+        };
         const postResponse = await axios.post(
-          this.configService.get<string>("BASE_URL_FAL_AI"),
+          this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
           requestData,
           {
             headers: {
@@ -112,7 +125,7 @@ export class AiAssistantService {
         );
       } catch (error) {
         this.logger.error(`Image generation failed: ${error.message}`);
-        throw new Error("Failed to generate image.");
+        throw new Error(error.message);
       }
     }
     
@@ -267,12 +280,7 @@ export class AiAssistantService {
     // Save the new response in memory
     await memory.saveContext({ input: input.message }, { output: generatedResponse });
   
-    // Persist response to database
-    // aiAssistant.response = {
-    //   generatedText: generatedResponse,
-    //   timestamp: new Date(),
-    // };
-    // await this.aiAssistantRepository.save(aiAssistant);
+  
   
     return generatedResponse;
   } catch (error) {
@@ -322,6 +330,7 @@ export class AiAssistantService {
         - Genre: ${info?.genre || "General"}
         - Target Audience: ${info?.targetAudience || "All Ages"}
         - Core Idea: ${info?.coreIdea || "Subtle business-related icons for a sleek finish"}
+        - **System Prompt**:${this.settingPrompt.coverImagePrompt}
         The front cover should be visually engaging and appropriate for the target audience.`;
           
       

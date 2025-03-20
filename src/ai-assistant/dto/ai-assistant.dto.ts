@@ -12,8 +12,6 @@ export class StoryDTO {
   @IsString()
   themeOrTopic: string;
 
-  @IsString()
-  specificElements: string;
 
   @IsString()
   description: string;
@@ -28,20 +26,13 @@ export class BookCoverDTO {
 
   @IsString()
   @IsOptional()
-  coverStyle: string;
-
-  @IsString()
-  @IsOptional()
-  coreIdea: string;
+  coreIdea?: string;
 
 
   @IsString()
   @IsOptional()
-  targetAudience: string;
+  targetAudience?: string;
 
-  @IsString()
-  @IsOptional()
-  additionalDetails: string;
   
   @IsString()
   @IsOptional()

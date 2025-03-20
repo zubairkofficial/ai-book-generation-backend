@@ -18,14 +18,14 @@ export class SettingsService {
     });
     return this.settingsRepository.save(settings);
   }
+  async getAllSettings(): Promise<Settings> {
+    const setting=await this.settingsRepository.find();
+   return setting[0]
+  }
 
   async createOrUpdate(userID: number, input: UpdateSettingsDto): Promise<Settings> {
-    const settings = await this.settingsRepository.findOne({
-      where: input?.id 
-        ? { id: input.id, user: { id: userID } }
-        : { user: { id: userID } }
-    });
-
+    const settingsResponse = await this.settingsRepository.find();
+const settings=settingsResponse[0]
     if (!settings) {
       return this.create(userID, input);
     }else{
@@ -39,4 +39,5 @@ export class SettingsService {
     }
 
   }
+
 }

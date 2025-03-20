@@ -28,6 +28,20 @@ export class UsersController {
     }
     return user;
   }
+  @Get('me/stats')
+  @ApiOperation({ summary: 'Get current user profile' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the current user\'s profile',
+    type: User,
+  })
+  async getProfileByStats(@GetUser() userPayload: { id: string }) {
+    const user = await this.usersService.getProfileByStats(+userPayload.id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return user;
+  }
 
   @Patch('me')
   @ApiOperation({ summary: 'Update current user profile' })

@@ -1,4 +1,5 @@
-import { ChatOpenAI } from "@langchain/openai";
+import { SettingsService } from './../settings/settings.service';
+import { ChatOpenAI, ChatOpenAICallOptions } from "@langchain/openai";
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
@@ -20,10 +21,12 @@ import { BookChapter } from "./entities/book-chapter.entity";
 import { ConversationSummaryBufferMemory } from "langchain/memory";
 import axios from "axios";
 import { get as levenshtein } from "fast-levenshtein";
+import { Settings } from 'src/settings/entities/settings.entity';
 
 @Injectable()
 export class BookChapterService {
   private textModel;
+  private settingPrompt: Settings;
   private apiKeyRecord;
   private openai: OpenAI;
   private readonly logger = new Logger(BookChapterService.name);
@@ -39,6 +42,8 @@ export class BookChapterService {
 
     @InjectRepository(ApiKey)
     private apiKeyRepository: Repository<ApiKey>,
+
+    private settingsService: SettingsService,
 
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
@@ -74,20 +79,15 @@ export class BookChapterService {
       if (!this.apiKeyRecord) {
         throw new Error("No API keys found in the database.");
       }
-
+      this.settingPrompt=await this.settingsService.getAllSettings()
+     
       this.textModel = new ChatOpenAI({
         openAIApiKey: this.apiKeyRecord[0].openai_key,
         temperature: 0.7,
         modelName: this.apiKeyRecord[0].model,
       });
 
-      this.openai = new OpenAI({
-        apiKey: this.apiKeyRecord[0].dalle_key,
-      });
-
-      this.logger.log(
-        `AI Models initialized successfully with model: ${this.apiKeyRecord[0].model}`
-      );
+     
     } catch (error) {
       this.logger.error(`Failed to initialize AI models: ${error.message}`);
       throw new Error("Failed to initialize AI models.");
@@ -300,7 +300,7 @@ export class BookChapterService {
         returnMessages: true,
       });
 
-      let updatePrompt;
+      let updatePrompt: string;
 
       // Step 1: If 'bookChapter' is true, clear only the current chapter memory for the full chapter generation,
       // but do not clear memory if only a paragraph is being regenerated.
@@ -370,7 +370,8 @@ export class BookChapterService {
 
         return updatedText;
       } else {
-        // Step 3: Generate the full chapter text with context from previous chapters
+
+      // Step 3: Generate the full chapter text with context from previous chapters
         const chapterPrompt = `
           You are a professional author tasked with writing **Chapter ${promptData.chapterNo}: "${promptData.chapterName}"** of the book titled **"${bookInfo.bookTitle}"**.
     
@@ -380,7 +381,6 @@ export class BookChapterService {
           - **Core Idea**: ${bookInfo.ideaCore || "A detailed and insightful book on the subject."}
           - **Target Audience**: ${bookInfo.targetAudience || "Professionals, students, and knowledge seekers."}
           - **Language**: The book is written in ${bookInfo.language || "English"}.
-    
           ## 🎯 Writing Style:
           - Clearly structure the content using Markdown:
           Based on the genre **"${bookInfo.genre}"**, adopt an appropriate writing style.
@@ -440,7 +440,7 @@ export class BookChapterService {
         const keyPointResponse = await this.textModel.invoke(keyPointPrompt);
         const keyPoints = keyPointResponse.content
           ?.split("\n")
-          .filter((point) => point.trim() !== "");
+          .filter((point: string) => point.trim() !== "");
 
         if (!keyPoints || keyPoints.length !== promptData.noOfImages) {
           throw new Error(
@@ -449,10 +449,10 @@ export class BookChapterService {
         }
 
         const chapterImages: { title: string; url: string | null }[] =
-          keyPoints.map((keyPoint) => ({ title: keyPoint, url: null }));
+          keyPoints.map((keyPoint: any) => ({ title: keyPoint, url: null }));
 
         // Trigger image generation (this step remains unchanged)
-        const imageRequests = keyPoints.map(async (keyPoint, index) => {
+        const imageRequests = keyPoints.map(async (keyPoint: string, index: number) => {
           const imagePrompt = `
           Create a high-quality illustration for:
           - **Chapter Number**: ${promptData.chapterNo}
@@ -461,15 +461,15 @@ export class BookChapterService {
           - **Genre**: "${bookInfo.genre}"
           - **Target Audience**: "${bookInfo.targetAudience}"
           - **Core Concept**: "${bookInfo.ideaCore}"
-    
+          - **System Prompt**: "${this.settingPrompt.chapterImagePrompt}"
           The illustration should visually capture the essence of the key point, aligning with the book's theme, tone, and intended audience. Ensure the style matches the genre, making it compelling and engaging.
         `;
 
-          const requestData = { prompt: imagePrompt };
+          const imagePromptData = { prompt: imagePrompt };
           try {
             const postResponse = await axios.post(
-              this.configService.get<string>("BASE_URL_FAL_AI"),
-              requestData,
+              this.settingPrompt.chapterImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+              imagePromptData,
               {
                 headers: {
                   Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
@@ -533,7 +533,7 @@ export class BookChapterService {
   
       // Use the model to extract glossary items
       const glossaryResponse = await this.textModel.invoke(glossaryPrompt);
-      const glossaryItems = glossaryResponse.content?.split("\n").filter((item) => item.trim());
+      const glossaryItems = glossaryResponse.content?.split("\n").filter((item: string) => item.trim());
   
       return glossaryItems || [];
     } catch (error) {
@@ -559,7 +559,7 @@ export class BookChapterService {
   
       // Use the model to extract references
       const referencesResponse = await this.textModel.invoke(referencesPrompt);
-      const references = referencesResponse.content?.split("\n").filter((reference) => reference.trim());
+      const references = referencesResponse.content?.split("\n").filter((reference: string) => reference.trim());
   
       return references || [];
     } catch (error) {
@@ -584,7 +584,7 @@ export class BookChapterService {
   
       // Use the model to generate the index
       const indexResponse = await this.textModel.invoke(indexPrompt);
-      const indexItems = indexResponse.content?.split("\n").filter((item) => item.trim());
+      const indexItems = indexResponse.content?.split("\n").filter((item: string) => item.trim());
   
       return indexItems || [];
     } catch (error) {
@@ -602,7 +602,7 @@ export class BookChapterService {
     onTextUpdate: (text: string) => void
   ) {
     try {
-      let chapterSummaryResponse;
+      let chapterSummaryResponse: string;
 
       await this.initializeAIModels();
 

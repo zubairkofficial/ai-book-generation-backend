@@ -5,6 +5,7 @@ import { User } from './entities/user.entity';
 import { UpdateUserDto } from './dto/users.dto';
 import { compare } from 'bcryptjs';
 import { CryptoService } from 'src/utils/crypto.service';
+import { BookType } from 'src/book-generation/entities/book-generation.entity';
 
 @Injectable()
 export class UsersService {
@@ -15,6 +16,41 @@ export class UsersService {
       
   ) {}
 
+
+  async getProfileByStats(id: number): Promise<{
+    user: User;
+    stats: {
+      totalBooks: number;
+      completed: number;
+      inProgress: number;
+    };
+  }> {
+    const user = await this.userRepository.findOne({ 
+      where: { id },
+      relations: ['bookGenerations'] // Load book generations relation
+    });
+  
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+  
+    // Calculate statistics
+    const totalBooks = user.bookGenerations.length;
+    const completed = user.bookGenerations.filter(
+      bg => bg.type === BookType.COMPLETE
+    ).length;
+    const inProgress = totalBooks - completed;
+  
+    return {
+      user,
+      stats: {
+        totalBooks,
+        completed,
+        inProgress
+      }
+    };
+  }
+  
   async getProfile(id: number): Promise<User> {
     const user = await this.userRepository.findOne({ where: { id } });
    

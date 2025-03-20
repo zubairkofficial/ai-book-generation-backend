@@ -5,12 +5,14 @@ import { AiAssistantService } from "./ai-assistant.service";
 import { AiAssistantController } from "./ai-assistant.controller";
 import { ApiKeysModule } from "src/api-keys/api-keys.module"; 
 import { UsersModule } from "src/users/users.module";
+import { SettingsModule } from "src/settings/settings.module";
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([AiAssistant]), 
     ApiKeysModule,  
     UsersModule, // Ensure correct indentation
+    SettingsModule
   ],
   controllers: [AiAssistantController],
   providers: [AiAssistantService], // Remove UsersService, as it is provided by UsersModule

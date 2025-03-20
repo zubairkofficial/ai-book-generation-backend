@@ -7,16 +7,14 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import { ChatOpenAI, OpenAI as LangchainOpenAI } from "@langchain/openai"; // For text generation
-import { PromptTemplate } from "@langchain/core/prompts";
+import { ChatOpenAI } from "@langchain/openai"; // For text generation
 import { ConfigService } from "@nestjs/config";
 import { BookGeneration } from "./entities/book-generation.entity";
 import OpenAI from "openai"; // For DALL·E image generation
 import * as fs from "fs";
 import * as path from "path";
 import { ApiKey } from "src/api-keys/entities/api-key.entity";
-import { exec } from "child_process";
-import mermaid from "mermaid";
+
 import {
   BookGenerationDto,
   BRGDTO,
@@ -26,16 +24,17 @@ import {
   UpdateBookDto,
   UpdateDto,
 } from "./dto/book-generation.dto";
-import { allowedSizes } from "src/common";
 import { UserDto } from "src/auth/types/request-with-user.interface";
 import axios from "axios";
 import { UserInterface } from "src/users/dto/users.dto";
 import { UsersService } from "src/users/users.service";
 import { ContentType } from "src/utils/roles.enum";
 import { BookChapter } from "src/book-chapter/entities/book-chapter.entity";
+import { SettingsService } from "src/settings/settings.service";
 
 @Injectable()
 export class BookGenerationService {
+  private settingPrompt;
   private textModel;
   private apiKeyRecord;
   private openai: OpenAI;
@@ -48,7 +47,8 @@ export class BookGenerationService {
     private bookGenerationRepository: Repository<BookGeneration>,
     @InjectRepository(ApiKey)
     private apiKeyRepository: Repository<ApiKey>,
-    private readonly userService: UsersService
+    private readonly userService: UsersService,
+    private readonly settingsService: SettingsService
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
   }
@@ -58,7 +58,10 @@ export class BookGenerationService {
       if (!this.apiKeyRecord) {
         throw new Error("No API keys found in the database.");
       }
-
+      this.settingPrompt=await this.settingsService.getAllSettings()
+      if (!this.settingPrompt) {
+        throw new Error("No setting prompt  found in the database.");
+      }
       this.textModel = new ChatOpenAI({
         openAIApiKey: this.apiKeyRecord[0].openai_key,
         temperature: 0.4,
@@ -97,128 +100,6 @@ export class BookGenerationService {
     } catch (error) {
       this.logger.error(`Error setting up uploads directory: ${error.message}`);
       throw new Error("Failed to setup uploads directory");
-    }
-  }
-
-  private async saveImage(
-    imageData: string,
-    fileName: string,
-    subDirectory: string = "covers"
-  ): Promise<string> {
-    try {
-      const dirPath = path.join(this.uploadsDir, subDirectory);
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-      }
-
-      const timestamp = new Date().getTime();
-      const sanitizedFileName = fileName
-        .replace(/[^a-z0-9]/gi, "_")
-        .toLowerCase();
-      const fullFileName = `${sanitizedFileName}_${timestamp}.png`;
-      const filePath = path.join(dirPath, fullFileName);
-      fs.writeFileSync(filePath, imageData);
-
-      this.logger.log(`Image saved successfully: ${filePath}`);
-      return path.join(subDirectory, fullFileName);
-    } catch (error) {
-      this.logger.error(`Error saving image: ${error.message}`);
-      throw new Error("Failed to save image");
-    }
-  }
-
-  private async saveFlowchartImage(
-    mermaidCode: string,
-    fileName: string
-  ): Promise<string> {
-    try {
-      const dirPath = path.join(this.uploadsDir, "flowcharts");
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-      }
-
-      const timestamp = new Date().getTime();
-      const sanitizedFileName = fileName
-        .replace(/[^a-z0-9]/gi, "_")
-        .toLowerCase();
-      const mermaidFilePath = path.join(
-        dirPath,
-        `${sanitizedFileName}_${timestamp}.mmd`
-      );
-      const svgFilePath = path.join(
-        dirPath,
-        `${sanitizedFileName}_${timestamp}.svg`
-      );
-
-      // Write Mermaid.js syntax to a file
-      fs.writeFileSync(mermaidFilePath, mermaidCode, "utf-8");
-
-      // Use mermaid-cli (mmdc) to generate SVG
-      await new Promise((resolve, reject) => {
-        exec(
-          `npx mmdc -i "${mermaidFilePath}" -o "${svgFilePath}"`,
-          (error, stdout, stderr) => {
-            if (error) {
-              reject(`Error executing Mermaid CLI: ${stderr}`);
-            } else {
-              resolve(stdout);
-            }
-          }
-        );
-      });
-
-      this.logger.log(`Flowchart saved: ${svgFilePath}`);
-      return path.join("flowcharts", `${sanitizedFileName}_${timestamp}.svg`);
-    } catch (error) {
-      this.logger.error(`Error saving flowchart: ${error.message}`);
-      throw new Error("Failed to save flowchart");
-    }
-  }
-  private async saveDiagramImage(
-    mermaidCode: string,
-    fileName: string
-  ): Promise<string> {
-    try {
-      const dirPath = path.join(this.uploadsDir, "graphs");
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-      }
-
-      const timestamp = new Date().getTime();
-      const sanitizedFileName = fileName
-        .replace(/[^a-z0-9]/gi, "_")
-        .toLowerCase();
-      const mermaidFilePath = path.join(
-        dirPath,
-        `${sanitizedFileName}_${timestamp}.mmd`
-      );
-      const svgFilePath = path.join(
-        dirPath,
-        `${sanitizedFileName}_${timestamp}.svg`
-      );
-
-      // Write Mermaid.js syntax to a file
-      fs.writeFileSync(mermaidFilePath, mermaidCode, "utf-8");
-
-      // Use mermaid-cli (mmdc) to generate SVG
-      await new Promise((resolve, reject) => {
-        exec(
-          `npx mmdc -i "${mermaidFilePath}" -o "${svgFilePath}"`,
-          (error, stdout, stderr) => {
-            if (error) {
-              reject(`Error executing Mermaid CLI: ${stderr}`);
-            } else {
-              resolve(stdout);
-            }
-          }
-        );
-      });
-
-      this.logger.log(`Flowchart saved: ${svgFilePath}`);
-      return path.join("graphs", `${sanitizedFileName}_${timestamp}.svg`);
-    } catch (error) {
-      this.logger.error(`Error saving flowchart: ${error.message}`);
-      throw new Error("Failed to save flowchart");
     }
   }
 
@@ -285,8 +166,14 @@ export class BookGenerationService {
 
       let coverPrompt =
         coverType === "front"
-          ? `Design a visually striking and professional front cover for "${promptData.bookTitle}".`
-          : `Generate a professional back cover for "${promptData.bookTitle}".`;
+        ? `Design a visually striking and professional front cover for "${promptData.bookTitle}"
+        - **Core Idea**:${promptData.bookInformation}
+        - **Target Audience**:${promptData.targetAudience}
+        - **Language**:${promptData.language}
+        - **System Prompt**:${this.settingPrompt.coverImagePrompt}
+        - Show Front cover image (no show back cover image)
+        `
+         : `Generate a professional back cover for "${promptData.bookTitle}".`;
 
       if (promptData.bookInformation) {
         coverPrompt += ` The book explores the following theme: ${promptData.bookInformation}.`;
@@ -295,14 +182,8 @@ export class BookGenerationService {
         coverPrompt += ` Additional notes for the cover: ${promptData.additionalContent}.`;
       }
 
-      const requestData = {
+      const imageParameters = {
         prompt: coverPrompt,
-        num_images: 1,
-        enable_safety_checker: true,
-        safety_tolerance: "2",
-        output_format: "jpeg",
-        aspect_ratio: "9:16",
-        raw: false,
       };
 
       let responseUrl: string | null = null;
@@ -310,8 +191,8 @@ export class BookGenerationService {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           const postResponse = await axios.post(
-            this.configService.get<string>("BASE_URL_FAL_AI"),
-            requestData,
+            this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+            imageParameters,
             {
               headers: {
                 Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
@@ -355,17 +236,19 @@ export class BookGenerationService {
 
   private async generateBookCover(
     promptData: BookGenerationDto,
-    coverType: "front" | "back"
+    
   ): Promise<string> {
     try {
       const maxRetries = 5; // Retry up to 5 times
       const delayMs = 3000; // Wait 3 seconds between retries
 
-      const coverPrompt =
-        coverType === "front"
-          ? `Design a visually striking and professional front cover for "${promptData.bookTitle}".`
-          : `Generate a professional back cover for "${promptData.bookTitle}".`;
-
+      const coverPrompt = `Design a visually striking and professional front cover for "${promptData.bookTitle}"
+          - **Core Idea**:${promptData.bookInformation || "Subtle business-related icons for a sleek finish"}
+          - **Target Audience**:${promptData.targetAudience || "General"}
+          - **Language**:${promptData.language || "All Ages"}
+          - **System Prompt**:${this.settingPrompt.coverImagePrompt}
+          `
+                  
       const requestData = {
         prompt: coverPrompt,
         num_images: 1,
@@ -381,7 +264,7 @@ export class BookGenerationService {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           const postResponse = await axios.post(
-            this.configService.get<string>("BASE_URL_FAL_AI"),
+            this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
             requestData,
             {
               headers: {
@@ -412,24 +295,7 @@ export class BookGenerationService {
     }
   }
 
-  private getDefaultStyling() {
-    return {
-      diagramConfig: {
-        theme: "base",
-        themeVariables: {
-          primaryColor: "#F6F6F6",
-          edgeLabelBackground: "#FFFFFF",
-          fontSize: "16px",
-          fontFamily: "Arial",
-        },
-      },
-      diagramStyles: {
-        decisionNodes: { shape: "diamond", color: "#FFA500" },
-        actionNodes: { shape: "rect", color: "#87CEEB" },
-        outcomeNodes: { shape: "roundRect", color: "#90EE90" },
-      },
-    };
-  }
+
 
   private async introductionContent(promptData: BookGenerationDto) {
     try {
@@ -542,92 +408,11 @@ export class BookGenerationService {
     }
   }
 
-  private async generateDiagram(
-    chapterContent: string,
-    chapterNumber: number,
-    bookTitle: string
-  ): Promise<string> {
-    try {
-      const diagramPrompt = `
-        Analyze this chapter content and generate a Mermaid.js diagram:
-        "${chapterContent}"
-        
-        Requirements:
-        - Use either graph TD (top-down) or graph LR (left-right)
-        - Focus on character interactions and plot progression
-        - Include key decision points and consequences
-        - Use emojis in node labels where appropriate
-        - Maximum 15 nodes
-        - Style Requirement: ${this.getDefaultStyling().diagramStyles}
-  
-        Format:
-        graph TD
-          A[Start] --> B{Decision}
-          B -->|Yes| C[Action 1]
-          B -->|No| D[Action 2]
-      `;
-
-      const response = await this.textModel.invoke(diagramPrompt);
-      let diagramCode = response.content
-        .replace(/```mermaid/g, "")
-        .replace(/```/g, "")
-        .trim();
-
-      // Add styling configuration
-      diagramCode = `%%{init: ${JSON.stringify(this.getDefaultStyling().diagramConfig)} }%%\n${diagramCode}`;
-
-      return this.saveDiagramImage(
-        diagramCode,
-        `chapter_${chapterNumber}_diagram`
-      );
-    } catch (error) {
-      this.logger.error(`Diagram generation failed: ${error.message}`);
-      return ""; // Fail gracefully
-    }
-  }
 
 
 
-  private async generateFlowchart(promptText: string): Promise<string> {
-    try {
-      const flowchartPrompt = `
-        Generate a valid Mermaid.js flowchart using this description:
-        "${promptText}"
-        Ensure the response starts with "graph TD" or "graph LR".
-        Do not include any extra text, explanations, or markdown code blocks (e.g., do not wrap in \`\`\`mermaid ... \`\`\`).
-      `;
 
-      const response = await this.textModel.invoke(flowchartPrompt);
-
-      let flowchartCode =
-        typeof response === "string" ? response : response?.content || "";
-
-      flowchartCode = flowchartCode
-        .replace(/```mermaid/g, "")
-        .replace(/```/g, "")
-        .trim();
-
-      if (!flowchartCode.includes("graph")) {
-        throw new Error("Invalid Mermaid.js output from AI.");
-      }
-      if (
-        flowchartCode.startsWith("graph TD") &&
-        !flowchartCode.startsWith("graph TD\n")
-      ) {
-        flowchartCode = flowchartCode.replace("graph TD", "graph TD\n");
-      }
-      // Similarly for graph LR if needed.
-
-      const filePath = await this.saveFlowchartImage(
-        flowchartCode,
-        "flowchart"
-      );
-      return filePath;
-    } catch (error) {
-      this.logger.error(`Error generating flowchart: ${error.message}`);
-      throw new Error("Failed to generate flowchart");
-    }
-  }
+ 
 
   private async createBookContent(promptData: BookGenerationDto) {
     try {
@@ -690,7 +475,7 @@ export class BookGenerationService {
       // **Run AI Content & Image Generation in Parallel**
       const [bookContentResult, coverImageResult] = await Promise.allSettled([
         this.createBookContent(promptData), // Generate book content
-        this.generateBookCover(promptData, "front"), // Generate front cover (URL)
+        this.generateBookCover(promptData), // Generate front cover (URL)
       ]);
 
       // **Extract book content**
@@ -766,34 +551,7 @@ export class BookGenerationService {
             )
         );
 
-        // if (backCoverImageResult.status === "fulfilled") {
-        //   imageDownloadTasks.push(
-        //     this.generateBookImage(backCoverImageResult.value, promptData)
-        //       .then(async (backCoverPath) => {
-        //         // Retrieve the current book record
-        //         const book = await this.bookGenerationRepository.findOne({
-        //           where: { id: savedBook.id },
-        //         });
-        //         if (!book) return;
-
-        //         // Update `additionalData`
-        //         book.additionalData = {
-        //           ...book.additionalData,
-        //           backCoverImageUrl: backCoverPath,
-        //         };
-
-        //         // Save the updated record
-        //         await this.bookGenerationRepository.update(savedBook.id, {
-        //           additionalData: book.additionalData,
-        //         });
-        //       })
-        //       .catch((error) =>
-        //         this.logger.error(
-        //           `❌ Failed to save back cover: ${error.message}`
-        //         )
-        //       )
-        //   );
-        // }
+      
       }
 
       // **Process Image Downloads in Background**
