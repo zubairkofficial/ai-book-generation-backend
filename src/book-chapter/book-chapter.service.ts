@@ -1,5 +1,5 @@
 import { SettingsService } from './../settings/settings.service';
-import { ChatOpenAI, ChatOpenAICallOptions } from "@langchain/openai";
+import { ChatOpenAI } from "@langchain/openai";
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
@@ -15,7 +15,6 @@ import {
 } from "./dto/book-chapter.dto";
 import {
   BookGeneration,
-  BookType,
 } from "src/book-generation/entities/book-generation.entity";
 import { BookChapter } from "./entities/book-chapter.entity";
 import { ConversationSummaryBufferMemory } from "langchain/memory";
@@ -516,83 +515,6 @@ export class BookChapterService {
       throw new Error(error.message);
     }
   }
-
-  private async generateChapterGlossary(chapterText: string): Promise<string[]> {
-    try {
-      // Extract key terms or phrases using natural language processing (NLP)
-      const glossaryPrompt = `
-        Extract key terms or phrases from the following chapter text and provide definitions or descriptions for each term:
-        
-        Chapter Text:
-        ${chapterText}
-  
-        The glossary should include important terms, proper names, or any specific terminology used within the chapter. 
-        Provide definitions or descriptions that make the terms easily understandable to the reader.
-        Chapter number and chapter name not showing 
-      `;
-  
-      // Use the model to extract glossary items
-      const glossaryResponse = await this.textModel.invoke(glossaryPrompt);
-      const glossaryItems = glossaryResponse.content?.split("\n").filter((item: string) => item.trim());
-  
-      return glossaryItems || [];
-    } catch (error) {
-      console.error("Error generating glossary:", error);
-      throw new Error("Failed to generate glossary.");
-    }
-  }
-
-  
-  private async generateChapterReferences(chapterText: string): Promise<string[]> {
-    try {
-      // Extract references from the chapter text (look for book titles, authors, etc.)
-      const referencesPrompt = `
-        Extract all references from the following chapter text. 
-        These can include books, articles, authors, or any other references to external sources.
-        
-        Chapter Text:
-        ${chapterText}
-  
-        Provide a list of references in a standard citation format.
-        
-      `;
-  
-      // Use the model to extract references
-      const referencesResponse = await this.textModel.invoke(referencesPrompt);
-      const references = referencesResponse.content?.split("\n").filter((reference: string) => reference.trim());
-  
-      return references || [];
-    } catch (error) {
-      console.error("Error generating references:", error);
-      throw new Error("Failed to generate references.");
-    }
-  }
-
-  
-  private async generateChapterIndex(chapterText: string): Promise<string[]> {
-    try {
-      // Extract key concepts for the index
-      const indexPrompt = `
-        Generate an index for the following chapter. Include terms, concepts, or names that are important for the reader.
-        Include the virtual page numbers where each term or concept is first mentioned. 
-  
-        Chapter Text:
-        ${chapterText}
-  
-        The index should be a list of terms or concepts with their corresponding virtual page numbers.
-      `;
-  
-      // Use the model to generate the index
-      const indexResponse = await this.textModel.invoke(indexPrompt);
-      const indexItems = indexResponse.content?.split("\n").filter((item: string) => item.trim());
-  
-      return indexItems || [];
-    } catch (error) {
-      console.error("Error generating index:", error);
-      throw new Error("Failed to generate index.");
-    }
-  }
-
  
   
   
@@ -657,18 +579,7 @@ export class BookChapterService {
         bookChapter.chapterSummary = chapterSummaryResponse;
         bookChapter.chapterName = input.chapterName;
       }
-      if (bookInfo.numberOfChapters === input.chapterNo) {
-        const updatedBookGeneration = {
-          ...bookChapter.bookGeneration,
-          type: BookType.COMPLETE,
-        };
-
-        await this.bookGenerationRepository.update(
-          { id: bookChapter.bookGeneration.id }, // Search condition
-          updatedBookGeneration // Fields to update
-        );
-      }
-      // Save (either insert or update)
+       // Save (either insert or update)
       const savedChapter = await this.bookChapterRepository.save(bookChapter);
           
       return savedChapter;

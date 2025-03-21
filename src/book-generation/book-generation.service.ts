@@ -9,7 +9,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { ChatOpenAI } from "@langchain/openai"; // For text generation
 import { ConfigService } from "@nestjs/config";
-import { BookGeneration } from "./entities/book-generation.entity";
+import { BookGeneration, BookType } from "./entities/book-generation.entity";
 import OpenAI from "openai"; // For DALL·E image generation
 import * as fs from "fs";
 import * as path from "path";
@@ -579,10 +579,14 @@ export class BookGenerationService {
   ): Promise<BookGeneration> {
     try {
       const book = await this.getBookById(input.bookGenerationId);
+      if(!book){
+        throw new NotFoundException('book not exist')
+      }
       const user=await this.userService.getProfile(userId)
       if(!user){
         throw new NotFoundException('user not exist')
       }
+     
       // **Immediately save book metadata (Images still downloading)**
       book.user = user;
       book.additionalData = {
@@ -681,7 +685,8 @@ export class BookGenerationService {
         book.references = generatedContent;
         break;
     }
-  
+    if(book.index&&book.references&&book.glossary) book.type=BookType.COMPLETE
+    
     return this.bookGenerationRepository.save(book);
   }
   

@@ -352,28 +352,5 @@ export class BookGenerationController {
     }
   }
 
-  // @UseGuards(JwtAuthGuard)
-  // @Get('search-by-id')
-  // async searchBookQuery(@Body() input: SearchDto, @Req() request: RequestWithUser) {
-  //   const userId = request.user?.id;
-  //   this.logger.log(`Fetching books for user ID: ${userId}`);
-
-  //   if (!userId) {
-  //     this.logger.error('Unauthorized: User ID not found in the request.');
-  //     throw new UnauthorizedException('Unauthorized: User ID not found in the request.');
-  //   }
-
-  //   try {
-  //     const books = await this.bookGenerationService.searchBookQuery(userId, input);
-  //     return {
-  //       message: 'Books successfully retrieved.',
-  //       data: books,
-  //     };
-  //   } catch (error) {
-  //     this.logger.error(`Error retrieving books for user ID: ${userId}`, error.stack);
-  //     throw new InternalServerErrorException('An error occurred while fetching books.');
-  //   }
-  // }
-
 
 }
