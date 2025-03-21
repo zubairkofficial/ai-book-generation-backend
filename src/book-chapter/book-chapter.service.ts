@@ -130,56 +130,39 @@ export class BookChapterService {
       throw new Error(`Failed to save image: ${error.message}`);
     }
   }
-  private normalizeText(text: string): string {
-    return text
-      .toLowerCase()
-      .replace(/[.,/#!$%^&*;:{}=_`~()]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
+
   private insertImagesIntoChapter(
     chapterText: string,
     keyPoints: string[],
     chapterImages: { title: string; url: string | null }[]
   ): string {
     let formattedChapter = "";
-    const chapterTextParts = chapterText.split("\n");
-    const fallbackImageUrl = this.configService.get<string>("FALLBACK_IMAGE_URL");
+    let chapterTextParts = chapterText.split("\n");
 
+    // Step 1: Match key points with actual text
     const matchedKeyPoints = this.matchKeyPointsWithText(
       chapterText,
       keyPoints
     );
 
+    console.log("🔍 Matched Key Points:", matchedKeyPoints);
+    console.log("🖼️ Chapter Images:", chapterImages);
+
     for (let i = 0; i < chapterTextParts.length; i++) {
       formattedChapter += chapterTextParts[i] + "\n\n";
 
-      const normalizedTextPart = this.normalizeText(chapterTextParts[i]);
+      // Find the best-matching key point in the text
+      const imageIndex = matchedKeyPoints.findIndex(
+        (key) =>
+          chapterTextParts[i].toLowerCase().includes(key.toLowerCase().trim()) // Case-insensitive match
+      );
 
-      // First pass: exact match check
-      let imageIndex = matchedKeyPoints.findIndex((key) => {
-        const normalizedKey = this.normalizeText(key);
-        return normalizedTextPart.includes(normalizedKey);
-      });
-
-      // Second pass: similarity check if no exact match
-      if (imageIndex === -1) {
-        imageIndex = matchedKeyPoints.findIndex((key) => {
-          const normalizedKey = this.normalizeText(key);
-          const distance = levenshtein(normalizedTextPart, normalizedKey);
-          return distance <= 5; // Allow small differences
-        });
-      }
-
-      if (imageIndex !== -1) {
-        const img = chapterImages[imageIndex];
-        if (img?.url) {
-          formattedChapter += `### ${img.title}\n\n`;
-          formattedChapter += `![${img.title}](${img.url})\n\n`;
-        } else if (fallbackImageUrl) {
-          formattedChapter += `### ${img.title}\n\n`;
-          formattedChapter += `![Fallback Image](${fallbackImageUrl})\n\n`;
-        }
+      if (imageIndex !== -1 && chapterImages[imageIndex]?.url) {
+        console.log(
+          `✅ Inserting image for key point: "${chapterImages[imageIndex].title}"`
+        );
+        formattedChapter += `### ${chapterImages[imageIndex].title}\n\n`;
+        formattedChapter += `![${chapterImages[imageIndex].title}](${chapterImages[imageIndex].url})\n\n`;
       }
     }
 
@@ -191,52 +174,25 @@ export class BookChapterService {
     keyPoints: string[]
   ): string[] => {
     const chapterSentences = chapterText
-      .split(/[.?!]\s+|[\n]/)
-      .map(s => s.trim())
-      .filter(s => s);
-  
-    const usedSentences = new Set<number>();
-    const fallback = chapterSentences[0]; // Default fallback
-  
-    return keyPoints.map(keyPoint => {
-      const cleanKey = this.normalizeText(keyPoint);
-  
-      // Find best unused match
-      let bestMatchIndex = -1;
-      let bestMatchScore = Infinity;
-  
-      chapterSentences.forEach((sentence, index) => {
-        if (usedSentences.has(index)) return;
-  
-        const sentenceClean = this.normalizeText(sentence);
-        const exactMatch = sentenceClean.includes(cleanKey);
-        const distance = levenshtein(cleanKey, sentenceClean);
-  
-        // Prioritize exact matches first
-        const score = exactMatch ? distance - 1000 : distance;
-  
-        if (score < bestMatchScore) {
-          bestMatchScore = score;
-          bestMatchIndex = index;
+      .split(/[.?!]\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s);
+
+    return keyPoints.map((keyPoint) => {
+      let bestMatch = chapterSentences[0];
+      let lowestDistance = Infinity;
+
+      for (const sentence of chapterSentences) {
+        const distance = levenshtein(keyPoint, sentence);
+        if (distance < lowestDistance) {
+          lowestDistance = distance;
+          bestMatch = sentence;
         }
-      });
-  
-      if (bestMatchIndex !== -1) {
-        usedSentences.add(bestMatchIndex);
-        return chapterSentences[bestMatchIndex];
       }
-  
-      // Fallback to first unused sentence if no matches
-      const firstUnused = chapterSentences.find((_, i) => !usedSentences.has(i));
-      if (firstUnused) {
-        usedSentences.add(chapterSentences.indexOf(firstUnused));
-        return firstUnused;
-      }
-  
-      return fallback;
+
+      return bestMatch;
     });
   };
-
 
   private async pollImageGeneration(
     responseUrl: string,
@@ -531,8 +487,10 @@ export class BookChapterService {
               chapterImages
             );
           } catch (error) {
-            throw new Error(error.message)
-           
+            console.error(
+              `Error triggering image generation for key point: "${keyPoint}"`,
+              error
+            );
           }
         });
 
