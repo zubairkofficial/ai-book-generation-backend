@@ -531,10 +531,8 @@ export class BookChapterService {
               chapterImages
             );
           } catch (error) {
-            console.error(
-              `Error triggering image generation for key point: "${keyPoint}"`,
-              error
-            );
+            throw new Error(error.message)
+           
           }
         });
 
