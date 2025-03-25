@@ -1014,7 +1014,7 @@ export class BookGenerationService {
             // Create 'Created' activity for the chapter only if the book is complete
             if (book.type === BookType.COMPLETE) {
                 const chapterCreatedActivity: RecentActivity = {
-                    bookTitle: chapter.chapterName || 'Unnamed Chapter',
+                    bookTitle: book.bookTitle || 'Unnamed Chapter',
                     actionType: 'created',
                     timestamp: chapter.createdAt.toISOString(),
                     bookId: book.id,
@@ -1029,7 +1029,7 @@ export class BookGenerationService {
             // Create 'Edited' activity for the chapter if updated after creation
             if (chapter.updatedAt > chapter.createdAt) {
                 const chapterEditedActivity: RecentActivity = {
-                    bookTitle: chapter.chapterName || 'Unnamed Chapter',
+                    bookTitle: book.bookTitle || 'Unnamed Chapter',
                     actionType: 'edited',
                     timestamp: chapter.updatedAt.toISOString(),
                     bookId: book.id,
