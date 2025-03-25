@@ -18,6 +18,7 @@ import { ApiKey } from "src/api-keys/entities/api-key.entity";
 import {
   BookGenerationDto,
   BRGDTO,
+  RecentActivity,
   RegenerateImage,
   SearchDto,
   UpdateBookCoverDto,
@@ -963,6 +964,126 @@ export class BookGenerationService {
     } catch (error) {
       this.logger.error(`Error during book search: ${error.message}`);
       throw new Error("Failed to search books.");
+    }
+  }
+
+  async getRecentActivities(userId: number): Promise<RecentActivity[]> {
+    const books = await this.bookGenerationRepository.find({
+        where: { user: { id: userId } },
+        relations: ['bookChapter'], // Join the BookChapter entity
+        order: { createdAt: 'DESC' },
+    });
+
+    let latestCreatedActivity: RecentActivity | null = null;
+    let latestStartedActivity: RecentActivity | null = null;
+    let latestEditedActivity: RecentActivity | null = null;
+
+    for (const book of books) {
+        // Create 'Created' activity for the book if it's complete
+        if (book.type === BookType.COMPLETE) {
+            const createdActivity: RecentActivity = {
+                bookTitle: book.bookTitle,
+                actionType: 'created',
+                timestamp: book.createdAt.toISOString(),
+                bookId: book.id,
+            };
+
+            // Check if this is the latest 'Created' activity
+            if (!latestCreatedActivity || new Date(createdActivity.timestamp) > new Date(latestCreatedActivity.timestamp)) {
+                latestCreatedActivity = createdActivity;
+            }
+        }
+
+        // Create 'Started' activity for the book if it's incomplete
+        if (book.type === BookType.INCOMPLETE) {
+            const startedActivity: RecentActivity = {
+                bookTitle: book.bookTitle,
+                actionType: 'started',
+                timestamp: book.createdAt.toISOString(),
+                bookId: book.id,
+            };
+
+            // Check if this is the latest 'Started' activity
+            if (!latestStartedActivity || new Date(startedActivity.timestamp) > new Date(latestStartedActivity.timestamp)) {
+                latestStartedActivity = startedActivity;
+            }
+        }
+
+        // Check for chapter activities
+        for (const chapter of book.bookChapter) {
+            // Create 'Created' activity for the chapter only if the book is complete
+            if (book.type === BookType.COMPLETE) {
+                const chapterCreatedActivity: RecentActivity = {
+                    bookTitle: chapter.chapterName || 'Unnamed Chapter',
+                    actionType: 'created',
+                    timestamp: chapter.createdAt.toISOString(),
+                    bookId: book.id,
+                };
+
+                // Check if this is the latest 'Created' activity for chapters
+                if (!latestCreatedActivity || new Date(chapterCreatedActivity.timestamp) > new Date(latestCreatedActivity.timestamp)) {
+                    latestCreatedActivity = chapterCreatedActivity;
+                }
+            }
+
+            // Create 'Edited' activity for the chapter if updated after creation
+            if (chapter.updatedAt > chapter.createdAt) {
+                const chapterEditedActivity: RecentActivity = {
+                    bookTitle: chapter.chapterName || 'Unnamed Chapter',
+                    actionType: 'edited',
+                    timestamp: chapter.updatedAt.toISOString(),
+                    bookId: book.id,
+                };
+
+                // Check if this is the latest 'Edited' activity for chapters
+                if (!latestEditedActivity || new Date(chapterEditedActivity.timestamp) > new Date(latestEditedActivity.timestamp)) {
+                    latestEditedActivity = chapterEditedActivity;
+                }
+            }
+        }
+
+        // Check if the book has been edited after creation
+        if (book.updatedAt > book.createdAt) {
+            const bookEditedActivity: RecentActivity = {
+                bookTitle: book.bookTitle,
+                actionType: 'edited',
+                timestamp: book.updatedAt.toISOString(),
+                bookId: book.id,
+            };
+
+            // Check if this is the latest 'Edited' activity for the book
+            if (!latestEditedActivity || new Date(bookEditedActivity.timestamp) > new Date(latestEditedActivity.timestamp)) {
+                latestEditedActivity = bookEditedActivity;
+            }
+        }
+    }
+
+    // Combine the latest 'Created', 'Started', and 'Edited' activities
+    const activities: RecentActivity[] = [latestCreatedActivity, latestStartedActivity, latestEditedActivity]
+        .filter(activity => activity !== null) as RecentActivity[];
+
+    // Sort activities by timestamp descending
+    activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return activities;
+}
+  private getTimeAgo(date: Date): string {
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+  
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+  
+    if (days > 0) {
+      return `${days} day${days !== 1 ? 's' : ''} ago`;
+    } else if (hours > 0) {
+      return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+    } else if (minutes > 0) {
+      return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+    } else {
+      return `${seconds} second${seconds !== 1 ? 's' : ''} ago`;
     }
   }
 }

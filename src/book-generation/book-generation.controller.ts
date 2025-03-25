@@ -352,5 +352,17 @@ export class BookGenerationController {
     }
   }
 
+  @UseGuards(JwtAuthGuard)
+@Get('/book/recent-activity')
+@ApiOperation({ summary: 'Get recent user activity on books' })
+@ApiResponse({ status: 200, description: 'List of recent activities.' })
+async getRecentActivity(@Req() request: RequestWithUser) {
+  const user = request.user;
+  if (!user) {
+    throw new UnauthorizedException('Unauthorized: User not found.');
+  }
+  const activities = await this.bookGenerationService.getRecentActivities(user.id);
+  return { data: activities };
+}
 
 }

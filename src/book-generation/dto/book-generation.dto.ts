@@ -330,3 +330,11 @@ export class BRGDTO {
   currentContent?: string;
 }
 
+
+
+export interface RecentActivity {
+  bookTitle: string;
+  actionType: string; // e.g., 'created', 'edited', 'started'
+  timestamp: string; // ISO string format
+  bookId: number;
+}
