@@ -325,7 +325,7 @@ export class BookGenerationService {
     Write a heartfelt and meaningful dedication for the book titled "${promptData.bookTitle}". 
     Consider the book's central  core idea: "${promptData.bookInformation || "Not specified"}".
     The dedication should be general enough to resonate with a wide audience but still feel personal and authentic. 
-    It can express gratitude or motivation, depending on the tone of the book ${promptData.authorName} && ${promptData.authorBio}.
+    It can express gratitude or motivation, depending on the tone of the book ${promptData.authorName??"Cyberify"} && ${promptData.authorBio}.
   `;
 
       const prefacePrompt = `
@@ -1067,23 +1067,5 @@ export class BookGenerationService {
 
     return activities;
 }
-  private getTimeAgo(date: Date): string {
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-  
-    const seconds = Math.floor(diff / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-  
-    if (days > 0) {
-      return `${days} day${days !== 1 ? 's' : ''} ago`;
-    } else if (hours > 0) {
-      return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
-    } else if (minutes > 0) {
-      return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
-    } else {
-      return `${seconds} second${seconds !== 1 ? 's' : ''} ago`;
-    }
-  }
+
 }
