@@ -1,4 +1,4 @@
-import {  Controller, Get, Param,  StreamableFile } from '@nestjs/common';
+import {  Controller, Get, InternalServerErrorException, Param,  StreamableFile } from '@nestjs/common';
 
 import { BookHtmlContentService } from './book-html-content.service';
 
@@ -9,6 +9,8 @@ export class BookHtmlContentController {
      ) {}
   @Get('generate/:id')
   async generatePdf(@Param('id') id: string): Promise<StreamableFile> {
+  try {
+    
   
     const pdfBuffer = await this.bookHtmlContentService.generatePdf(+id);
    const bookTitle = pdfBuffer.book.bookTitle;
@@ -16,6 +18,9 @@ export class BookHtmlContentController {
       type: 'application/pdf',
       disposition: `attachment; filename="${bookTitle}.pdf"`,
     });
+  } catch (error) {
+    throw new InternalServerErrorException(error.message)
+  }
   }
   
 }

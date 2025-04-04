@@ -273,7 +273,9 @@ export class BookHtmlContentService {
           }
   
           return {book,pdfBuffer};
-      } finally {
+      }
+       finally {
+
           await page.close();
           await browser.close();
       }
