@@ -22,7 +22,15 @@ export class BookHtmlContentService {
     async generatePdf(id: number) {
       const book = await this.bookGenerationService.findOneWithHtmlContent(+id);
   
-      const browser = await puppeteer.launch();
+    //   const browser = await puppeteer.launch();
+    const browser = await puppeteer.launch({
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--single-process'
+        ]
+      });
       const page = await browser.newPage();
   
       try {
