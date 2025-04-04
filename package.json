@@ -34,7 +34,6 @@
     "chromium": "^3.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
-    "dalle-node": "^1.0.8",
     "dotenv": "^16.4.7",
     "fast-levenshtein": "^3.0.0",
     "flowchart.js": "^1.18.0",
