@@ -227,7 +227,7 @@ export class BookHtmlContentService {
                   
                     <!-- Index -->
                   <div class="section page-break">
-                      <h2>Index</h2>
+                      
                       <div>${book.htmlContent?.indexHtml || ''}</div>
                   </div>
                   
