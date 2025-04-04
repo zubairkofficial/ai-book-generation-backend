@@ -1,7 +1,8 @@
 import { BookChapter } from 'src/book-chapter/entities/book-chapter.entity';
+import { BookHtmlContent } from 'src/book-html-content/entities/book-html-content.entity';
 import { BaseEntity } from 'src/common/entities/base.entity';
 import { User } from 'src/users/entities/user.entity';
-import { Entity, Column,  OneToMany, JoinColumn, ManyToOne } from 'typeorm';
+import { Entity, Column,  OneToMany, JoinColumn, ManyToOne, OneToOne } from 'typeorm';
 
 export enum BookType {
   COMPLETE = 'complete',
@@ -74,9 +75,6 @@ export class BookGeneration extends BaseEntity {
   })
   type: BookType;
 
-  @OneToMany(() => BookChapter, (bookChapter) => bookChapter.bookGeneration, { onDelete: 'CASCADE' })
-  bookChapter: BookChapter[];
- 
   @Column({ type: "text", nullable: true })
   glossary: string;
   
@@ -85,4 +83,15 @@ export class BookGeneration extends BaseEntity {
   
   @Column({ type: "text", nullable: true })
   references: string;
+  
+  @OneToMany(() => BookChapter, (bookChapter) => bookChapter.bookGeneration, { onDelete: 'CASCADE' })
+  bookChapter: BookChapter[];
+
+  @OneToOne(() => BookHtmlContent, htmlContent => htmlContent.book, { 
+    cascade: true,
+    onDelete: 'CASCADE' // Add if needed
+  })
+  htmlContent: BookHtmlContent;
+ 
+ 
 }

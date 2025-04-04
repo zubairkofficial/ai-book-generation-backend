@@ -462,7 +462,7 @@ export class BookChapterService {
   - Organize the content with clear section headings (# Heading) and subheadings (## Subheading) throughout the chapter.
   - Each major concept, theme, or section should have its own heading.
   - Use headings to create a logical flow and hierarchy of information.
-
+  
           ## 📝 Context Memory (Summarized Previous Chapters):
           ${memory}
     
@@ -481,6 +481,7 @@ export class BookChapterService {
           ${memory || "No previous summary available."}
     
           **📝 Begin Chapter ${promptData.chapterNo}:**
+          **Always return chapter content in Paragraph format**
         `;
 
         const stream = await this.textModel.stream(chapterPrompt);

@@ -12,6 +12,7 @@ import { StatsModule } from './stats/stats.module';
 import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { SettingsModule } from './settings/settings.module';
+import { BookHtmlContentModule } from './book-html-content/book-html-content.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { SettingsModule } from './settings/settings.module';
     AiAssistantModule,
     AnalyticsModule,
     SettingsModule,
+    BookHtmlContentModule,
   ],
 })
 export class AppModule {}

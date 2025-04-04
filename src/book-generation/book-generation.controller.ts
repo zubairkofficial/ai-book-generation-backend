@@ -365,4 +365,14 @@ async getRecentActivity(@Req() request: RequestWithUser) {
   return { data: activities };
 }
 
+@Get(':id/html-content/generate')
+async getHtmlContent(@Param('id') id: string) {
+ try{
+  const book = await this.bookGenerationService.findOneWithHtmlContent(+id);
+  return book.htmlContent;
+}
+catch (error) {
+  throw new InternalServerErrorException(error.message);
+}
+}
 }

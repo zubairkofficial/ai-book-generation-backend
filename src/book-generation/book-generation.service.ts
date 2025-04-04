@@ -32,6 +32,8 @@ import { UsersService } from "src/users/users.service";
 import { ContentType } from "src/utils/roles.enum";
 import { BookChapter } from "src/book-chapter/entities/book-chapter.entity";
 import { SettingsService } from "src/settings/settings.service";
+import { BookHtmlContent } from "src/book-html-content/entities/book-html-content.entity";
+import { MarkdownConverter } from "src/utils/markdown-converter.util";
 
 @Injectable()
 export class BookGenerationService {
@@ -48,6 +50,9 @@ export class BookGenerationService {
     private bookGenerationRepository: Repository<BookGeneration>,
     @InjectRepository(ApiKey)
     private apiKeyRepository: Repository<ApiKey>,
+    @InjectRepository(BookHtmlContent)
+    private bookHtmlContentRepository: Repository<BookHtmlContent>,
+    private readonly markdownConverter: MarkdownConverter,
     private readonly userService: UsersService,
     private readonly settingsService: SettingsService
   ) {
@@ -579,7 +584,7 @@ export class BookGenerationService {
     input: UpdateBookDto
   ): Promise<BookGeneration> {
     try {
-      const book = await this.getBookById(input.bookGenerationId);
+      const book = await this.findOneWithHtmlContent(input.bookGenerationId);
       if(!book){
         throw new NotFoundException('book not exist')
       }
@@ -605,7 +610,7 @@ export class BookGenerationService {
       if (input.references) book.references = input.references;
       if (input.index) book.index = input.index;
       if (input.glossary) book.glossary = input.glossary;
-
+      await this.updateHtmlContent(book);
       return this.bookGenerationRepository.save(book);
     } catch (error) {
       this.logger.error(
@@ -613,6 +618,57 @@ export class BookGenerationService {
       );
       throw new Error(error.message);
     }
+  }
+
+  private async updateHtmlContent(book: BookGeneration): Promise<void> {
+    // Get or create HTML content entity
+   try{
+    let htmlContent = book.htmlContent;
+    if (!htmlContent) {
+      htmlContent = new BookHtmlContent();
+      htmlContent.book = book;
+    }
+  
+    // Convert Markdown to HTML for updated fields
+    htmlContent.glossaryHtml = book.glossary 
+      ?await this.markdownConverter.convert(book.glossary)
+      : htmlContent.glossaryHtml;
+  
+    htmlContent.indexHtml = book.index 
+      ?await this.markdownConverter.convert(book.index)
+      : htmlContent.indexHtml;
+  
+    htmlContent.referencesHtml = book.references 
+      ?await this.markdownConverter.convert(book.references)
+      : htmlContent.referencesHtml;
+  
+    // Update additional HTML content
+    htmlContent.additionalHtml = {
+      ...htmlContent.additionalHtml,
+      tableOfContents: book.additionalData?.tableOfContents 
+        ?await this.markdownConverter.convert(book.additionalData.tableOfContents)
+        : htmlContent.additionalHtml?.tableOfContents,
+      dedication: book.additionalData?.dedication 
+        ?await this.markdownConverter.convert(book.additionalData.dedication)
+        : htmlContent.additionalHtml?.dedication,
+      preface: book.additionalData?.preface 
+        ?await this.markdownConverter.convert(book.additionalData.preface)
+        : htmlContent.additionalHtml?.preface,
+      introduction: book.additionalData?.introduction 
+        ?await this.markdownConverter.convert(book.additionalData.introduction)
+        : htmlContent.additionalHtml?.introduction,
+    };
+  
+    // Save HTML content
+    await this.bookHtmlContentRepository.save(htmlContent);
+  }
+  catch (error) {
+    this.logger.error(
+      `❌ Error generating and saving book html content: ${error.message}`
+    );
+    throw new Error(error.message);
+  }
+
   }
 
   async getBookById(id: number) {
@@ -686,9 +742,49 @@ export class BookGenerationService {
         book.references = generatedContent;
         break;
     }
-    if(book.index&&book.references&&book.glossary) book.type=BookType.COMPLETE
+    if(book.index&&book.references&&book.glossary){ book.type=BookType.COMPLETE}
+
     
-    return this.bookGenerationRepository.save(book);
+    const savedBook = await this.bookGenerationRepository.save(book);
+  
+  // Convert all content to HTML
+  if(savedBook.type===BookType.COMPLETE){
+    const htmlContent = new BookHtmlContent();
+  htmlContent.book = savedBook;
+  
+  // Convert main content
+  htmlContent.glossaryHtml =await this.markdownConverter.convert(savedBook.glossary || '');
+  htmlContent.indexHtml =await this.markdownConverter.convert(savedBook.index || '');
+  htmlContent.referencesHtml =await this.markdownConverter.convert(savedBook.references || '');
+
+  // Convert additional content
+  htmlContent.additionalHtml = {
+    tableOfContents: savedBook.additionalData?.tableOfContents 
+      ?await this.markdownConverter.convert(savedBook.additionalData.tableOfContents)
+      : '',
+    dedication: savedBook.additionalData?.dedication
+      ?await this.markdownConverter.convert(savedBook.additionalData.dedication)
+      : '',
+    preface: savedBook.additionalData?.preface
+      ?await this.markdownConverter.convert(savedBook.additionalData.preface)
+      : '',
+    introduction: savedBook.additionalData?.introduction
+      ?await this.markdownConverter.convert(savedBook.additionalData.introduction)
+      : '',
+  };
+
+  // Convert chapters
+  htmlContent.chaptersHtml = await Promise.all(book.bookChapter.map(async (chapter) => ({
+    chapterNo: chapter.chapterNo,
+    chapterName: chapter.chapterName,
+    contentHtml: await this.markdownConverter.convert(chapter.chapterInfo || '')
+  })));
+
+  // Save HTML content
+  await this.bookHtmlContentRepository.save(htmlContent);
+}
+  return savedBook;
+
   }
   
   private getContentPrompt(
@@ -1066,6 +1162,24 @@ export class BookGenerationService {
     activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     return activities;
+}
+
+
+async findOneWithHtmlContent(id: number): Promise<BookGeneration> {
+ try {
+  
+ 
+  return this.bookGenerationRepository.findOne({
+    where: { id },
+    relations: ['htmlContent']
+  });
+}
+  catch (error) {
+    this.logger.error(
+      `❌ Error get  book with htmlContent: ${error.message}`
+    );
+    throw new Error(error.message);
+  }
 }
 
 }
