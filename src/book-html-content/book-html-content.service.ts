@@ -144,6 +144,7 @@ export class BookHtmlContentService {
                   .section {
                       margin-bottom: 40px;
                       padding: 2rem 4.5rem;
+                      background-color: #fffbf2;
                       border-radius: 10px;
                       border-top: 5px solid #ffc107;
                       page-break-inside: avoid;
