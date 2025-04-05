@@ -23,14 +23,16 @@ export class BookHtmlContentService {
       const book = await this.bookGenerationService.findOneWithHtmlContent(+id);
   
     //   const browser = await puppeteer.launch();
-    const browser = await puppeteer.launch({
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--single-process'
-        ]
-      });
+   const browser = await puppeteer.launch({
+  headless: 'new',
+  args: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--single-process'
+  ],
+  timeout: 60000, // Increase to 60 seconds
+});
       const page = await browser.newPage();
   
       try {
