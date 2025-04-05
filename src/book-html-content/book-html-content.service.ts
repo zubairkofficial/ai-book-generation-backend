@@ -51,7 +51,7 @@ export class BookHtmlContentService {
                       padding: 0;
                       background-color: #fffbf2;
                       color: #333;
-                      line-height: 1.3;
+                      line-height: 1.4;
                   }
                   .container {
                       max-width: 100%;  
@@ -159,6 +159,7 @@ export class BookHtmlContentService {
                   }
                   @page {
                       margin-top: 30px;
+                      padding-top:20px
                   }
                   .page-break {
                       page-break-after: always;
