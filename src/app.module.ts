@@ -13,6 +13,7 @@ import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { SettingsModule } from './settings/settings.module';
 import { BookHtmlContentModule } from './book-html-content/book-html-content.module';
+import { CardPaymentModule } from './card-payment/card-payment.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { BookHtmlContentModule } from './book-html-content/book-html-content.mod
     AnalyticsModule,
     SettingsModule,
     BookHtmlContentModule,
+    CardPaymentModule,
   ],
 })
 export class AppModule {}

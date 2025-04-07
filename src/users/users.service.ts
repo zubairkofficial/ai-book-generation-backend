@@ -6,6 +6,7 @@ import { UpdateUserDto } from './dto/users.dto';
 import { compare } from 'bcryptjs';
 import { CryptoService } from 'src/utils/crypto.service';
 import { BookType } from 'src/book-generation/entities/book-generation.entity';
+import { CreateCardTokenDto } from 'src/card-payment/dto/payment.dto';
 
 @Injectable()
 export class UsersService {
@@ -115,6 +116,15 @@ async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<User> {
     .getRawMany(); // Fetch raw data without full entities
 
   return usersWithBookCount;
+  } catch (error) {
+    throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+       
+  }
+  }
+  async updateUserPayment(cardData: CreateCardTokenDto,user: User): Promise<any> {
+   try {
+    user.availableAmount=Number(user.availableAmount)+Number(cardData.amount)
+    return this.userRepository.save(user)
   } catch (error) {
     throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
        

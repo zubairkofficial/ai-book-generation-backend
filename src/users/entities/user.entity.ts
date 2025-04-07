@@ -36,6 +36,9 @@ export class User extends BaseEntity {
   })
   role: UserRole;
 
+  @Column({type:"int",default:0})
+  availableAmount:number
+
   @OneToMany(() => AiAssistant, (aiAssistant) => aiAssistant.user, { cascade: true })
   aiAssistants: AiAssistant[];
 
