@@ -472,6 +472,12 @@ export class BookGenerationService {
       });
     else return await this.bookGenerationRepository.count();
   }
+  async getAllBooksForLandingPage() {
+    
+  return await this.bookGenerationRepository.find({
+    order: { createdAt: 'DESC' },
+  });
+  }
 
   async generateAndSaveBook(
     userId: number,

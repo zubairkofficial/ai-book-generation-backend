@@ -162,6 +162,19 @@ export class BookGenerationController {
       throw new InternalServerErrorException(error.message);
     }
   }
+  @Get('/landing/all')
+   async getAllLandingBooks(@Req() request: RequestWithUser) {
+    
+    try {
+      const books = await this.bookGenerationService.getAllBooksForLandingPage();
+      return {
+        message: 'Books successfully retrieved.',
+        data: books,
+      };
+    } catch (error) {
+      throw new InternalServerErrorException(error.message);
+    }
+  }
 
   @UseGuards(JwtAuthGuard)
   @Get(':bookId')
