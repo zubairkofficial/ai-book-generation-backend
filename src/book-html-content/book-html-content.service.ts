@@ -329,7 +329,7 @@ export class BookHtmlContentService {
       const tocEntries = chapterPageNumbers.map(chapter => 
         `<div class="toc-entry">
           <a href="#${chapter.id}">${chapter.title}</a>
-        </div>`
+          </div>`
       ).join('');
 
       return `
