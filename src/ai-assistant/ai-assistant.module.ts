@@ -14,13 +14,15 @@ import { Package } from "src/subscription/entities/package.entity";
 import { UserSubscription } from "src/subscription/entities/user-subscription.entity";
 import { Usage } from "src/subscription/entities/usage.entity";
 import { User } from "src/users/entities/user.entity";
+import { ApiKey } from "src/api-keys/entities/api-key.entity";
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([AiAssistant,BookChapter,BookGeneration,Package,UserSubscription,Usage,User]), 
     ApiKeysModule,  
     UsersModule, // Ensure correct indentation
-    SettingsModule
+    SettingsModule,
+    ApiKeysModule
   ],
   controllers: [AiAssistantController],
   providers: [AiAssistantService,BookChapterService,SubscriptionService], // Remove UsersService, as it is provided by UsersModule

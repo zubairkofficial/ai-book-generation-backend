@@ -38,6 +38,7 @@ import { MarkdownConverter } from "src/utils/markdown-converter.util";
 import { SubscriptionService } from "src/subscription/subscription.service";
 import { UsageType } from "src/subscription/entities/usage.entity";
 import { BookChapterService } from "src/book-chapter/book-chapter.service";
+import { User, UserRole } from "src/users/entities/user.entity";
 
 @Injectable()
 export class BookGenerationService {
@@ -67,6 +68,11 @@ export class BookGenerationService {
   }
   private async initializeAIModels(userId:number) {
     try {
+     let maxCompletionTokens:number
+     const user=await this.userService.getProfile(userId)
+     if(!user){
+      throw new NotFoundException('user not exist')
+    }
       this.apiKeyRecord = await this.apiKeyRepository.find();
       this.userKeyRecord = await this.subscriptionService.getUserActiveSubscription(userId);
       
@@ -78,7 +84,7 @@ export class BookGenerationService {
       if (!this.settingPrompt) {
         throw new Error("No setting prompt found in the database.");
       }
-      
+      if(user.role!==UserRole.ADMIN) {
       // Calculate a reasonable maxTokens value
       const remainingTokens = this.userKeyRecord[0].package.tokenLimit - this.userKeyRecord[0].tokensUsed;
       if(remainingTokens===0)
@@ -86,13 +92,14 @@ export class BookGenerationService {
           throw new BadRequestException("Token limit exceeded")
         } 
       // Set a reasonable upper limit for completion tokens
-      const maxCompletionTokens = Math.min(remainingTokens, 4000); 
-      
+       maxCompletionTokens = Math.min(remainingTokens, 4000); 
+      }
       this.textModel = new ChatOpenAI({
         openAIApiKey: this.apiKeyRecord[0].openai_key,
         temperature: 0.4,
-        modelName: this.userKeyRecord[0].package.modelType,
-        maxTokens: maxCompletionTokens
+        modelName:user.role===UserRole.ADMIN?this.apiKeyRecord[0].modelType :this.userKeyRecord[0].package.modelType,
+        maxTokens: user.role === UserRole.ADMIN ? undefined : maxCompletionTokens // Set maxTokens conditionally
+
       });
 
       this.logger.log(
@@ -183,7 +190,9 @@ export class BookGenerationService {
 
   private async regenerateBookCover(
     promptData: BookGenerationDto,
-    coverType: "front" | "back"
+    coverType: "front" | "back",
+    user: UserInterface
+
   ): Promise<string> {
     try {
       const maxRetries = 5;
@@ -222,8 +231,8 @@ export class BookGenerationService {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           const postResponse = await axios.post(
-            this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
-            imageParameters,
+            user.role===UserRole.USER?this.userKeyRecord[0].imageModelType : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+          imageParameters,
             {
               headers: {
                 Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
@@ -267,6 +276,7 @@ export class BookGenerationService {
 
   private async generateBookCover(
     promptData: BookGenerationDto,
+    user: User
     
   ): Promise<string> {
     try {
@@ -295,8 +305,8 @@ export class BookGenerationService {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           const postResponse = await axios.post(
-            this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
-            requestData,
+          user.role===UserRole.USER?this.userKeyRecord[0].imageModelType : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+         requestData,
             {
               headers: {
                 Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
@@ -423,7 +433,7 @@ export class BookGenerationService {
         this.textModel.invoke(introductionPrompt),
         this.textModel.invoke(tableOfContentsPrompt),
       ]);
-
+if(user.role===UserRole.USER){
       // Fixed getUsage function that safely extracts token count
       const getUsage = (response) => {
         // Check if response has usage_metadata and it has a total_tokens property
@@ -449,7 +459,7 @@ export class BookGenerationService {
         }
       await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, totalTokens);  
       await this.subscriptionService.trackTokenUsage(user.id,"bookContent",UsageType.TOKEN,metadata);
-      
+      }
       return {
         coverPageResponse: coverPageResponse.content,
         dedication: dedication.content,
@@ -539,7 +549,7 @@ export class BookGenerationService {
       // **Run AI Content & Image Generation in Parallel**
       const [bookContentResult, coverImageResult] = await Promise.allSettled([
         this.createBookContent(promptData,user), // Generate book content
-        this.generateBookCover(promptData), // Generate front cover (URL)
+        this.generateBookCover(promptData,user), // Generate front cover (URL)
       ]);
       
       // **Extract book content**
@@ -607,9 +617,10 @@ export class BookGenerationService {
               await this.bookGenerationRepository.update(savedBook.id, {
                 additionalData: book.additionalData,
               });
+              if(user.role===UserRole.USER){
                await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, 0,1);  
       await this.subscriptionService.trackTokenUsage(user.id,"coverImage",UsageType.IMAGE,{coverImageUrl:coverImagePath});
-      
+      }
             })
             .catch((error) =>
               this.logger.error(
@@ -795,10 +806,11 @@ export class BookGenerationService {
       }
       console.log(finalResult?.usage_metadata);
 
+      if(user.role===UserRole.USER){
       const totalTokens= finalResult?.usage_metadata.total_tokens 
       await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, totalTokens);  
       await this.subscriptionService.trackTokenUsage(user.id,input.currentContent?`${input.contentType}ParagraphRegenerate`: input.contentType,UsageType.TOKEN, {[input.contentType]:totalTokens});
-     
+     }
 
       generatedContent = finalSummary;
     } catch (error) {
@@ -1009,8 +1021,8 @@ export class BookGenerationService {
     };
     let imageUrl;
     if (input.imageType == "cover")
-      imageUrl = await this.regenerateBookCover(promptData, "front");
-    else imageUrl = await this.regenerateBookCover(promptData, "back");
+      imageUrl = await this.regenerateBookCover(promptData, "front",user);
+    else imageUrl = await this.regenerateBookCover(promptData, "back",user);
     if (input.imageType === "cover") {
       this.generateBookImage(imageUrl, promptData)
         .then(async (backCoverPath) => {

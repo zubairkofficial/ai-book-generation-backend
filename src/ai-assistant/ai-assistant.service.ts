@@ -16,6 +16,8 @@ import { SettingsService } from "src/settings/settings.service";
 import { BookChapterService } from "src/book-chapter/book-chapter.service";
 import { SubscriptionService } from "src/subscription/subscription.service";
 import { UsageType } from "src/subscription/entities/usage.entity";
+import { UserRole } from "src/users/entities/user.entity";
+import { ApiKey } from "src/api-keys/entities/api-key.entity";
 @Injectable()
 export class AiAssistantService {
   private readonly model: OpenAI;
@@ -26,6 +28,7 @@ export class AiAssistantService {
   private readonly logger = new Logger(AiAssistantService.name);
   private readonly uploadsDir: string;
   private openai: OpenAI;
+  private userInfo;
   constructor(
     @InjectRepository(AiAssistant)
     private readonly aiAssistantRepository: Repository<AiAssistant>,
@@ -34,7 +37,11 @@ export class AiAssistantService {
     private readonly configService: ConfigService,
     private readonly settingsService: SettingsService,
     private readonly bookChapterService: BookChapterService,
-    private readonly subscriptionService: SubscriptionService
+    private readonly subscriptionService: SubscriptionService,
+    @InjectRepository(ApiKey)
+     private apiKeyRepository: Repository<ApiKey>,
+    
+    
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
   }
@@ -54,39 +61,51 @@ export class AiAssistantService {
       throw new Error("Failed to setup uploads directory");
     }
   }
-   private async initializeAIModels(userId:number) {
-      try {
-        this.apiKeyRecord = await this.apiKeyService.getApiKeys();
-        this.userKeyRecord = await this.subscriptionService.getUserActiveSubscription(userId);
-      
-        if (!this.apiKeyRecord) {
-          throw new Error("No API keys found in the database.");
-        }
-        this.settingPrompt=await this.settingsService.getAllSettings()
-        if (!this.settingPrompt) {
-          throw new Error("No setting prompt found in the database.");
-        }
-
+    private async initializeAIModels(userId:number) {
+       try {
+        let maxCompletionTokens:number
+         this.userInfo=await this.usersService.getProfile(userId)
+        if(!this.userInfo){
+         throw new NotFoundException('user not exist')
+       }
+       
+         this.apiKeyRecord = await this.apiKeyRepository.find();
+         this.userKeyRecord = await this.subscriptionService.getUserActiveSubscription(userId);
+         
+         if (!this.apiKeyRecord) {
+           throw new Error("No API keys found in the database.");
+         }
+         
+         this.settingPrompt = await this.settingsService.getAllSettings();
+         if (!this.settingPrompt) {
+           throw new Error("No setting prompt found in the database.");
+         }
+         if(this.userInfo.role===UserRole.USER) {
+         // Calculate a reasonable maxTokens value
          const remainingTokens = this.userKeyRecord[0].package.tokenLimit - this.userKeyRecord[0].tokensUsed;
-              if(remainingTokens===0)
-                {
-                  throw new BadRequestException("Token limit exceeded")
-                } 
-             
-                const maxCompletionTokens = Math.min(remainingTokens, 4000); 
-      
-        this.textModel = new ChatOpenAI({
-          openAIApiKey: this.apiKeyRecord.openai_key,
-          temperature: 0.7,
-          modelName: this.userKeyRecord[0].package.modelType,
-        maxTokens: maxCompletionTokens
-        });
-        
-      } catch (error) {
-        this.logger.error(`Failed to initialize AI models: ${error.message}`);
-        throw new Error("Failed to initialize AI models.");
-      }
-    }
+         if(remainingTokens===0)
+           {
+             throw new BadRequestException("Token limit exceeded")
+           } 
+         // Set a reasonable upper limit for completion tokens
+          maxCompletionTokens = Math.min(remainingTokens, 4000); 
+         }
+         this.textModel = new ChatOpenAI({
+           openAIApiKey: this.apiKeyRecord[0].openai_key,
+           temperature: 0.4,
+           modelName:this.userInfo.role===UserRole.ADMIN?this.apiKeyRecord[0].modelType :this.userKeyRecord[0].package.modelType,
+           maxTokens: this.userInfo.role === UserRole.ADMIN ? undefined : maxCompletionTokens // Set maxTokens conditionally
+   
+         });
+   
+         this.logger.log(
+           `AI Models initialized successfully with model: ${this.apiKeyRecord[0].model}`
+         );
+       } catch (error) {
+         this.logger.error(`Failed to initialize AI models: ${error.message}`);
+         throw new Error(error.message);
+       }
+     }
 
 
     private async pollImageGeneration(responseUrl: string, bookTitle: string): Promise<string> {
@@ -97,7 +116,7 @@ export class AiAssistantService {
         try {
           const getResponse = await axios.get(responseUrl, {
             headers: {
-              Authorization: `Key ${this.apiKeyRecord.fal_ai}`,
+              Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
               "Content-Type": "application/json",
             },
           });
@@ -128,11 +147,11 @@ export class AiAssistantService {
         raw: false,
         };
         const postResponse = await axios.post(
-          this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+          this.userInfo.role===UserRole.USER?this.userKeyRecord[0].imageModelType : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
           requestData,
           {
             headers: {
-              Authorization: `Key ${this.apiKeyRecord.fal_ai}`,
+              Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
               "Content-Type": "application/json",
             },
           }
@@ -167,6 +186,7 @@ export class AiAssistantService {
   
 
     async processAiAssistantTask(userId: number, input: AiAssistantDto): Promise<AiAssistant> {
+     try{ 
       await this.initializeAIModels(userId);
       
       const user = await this.usersService.getProfile(userId);
@@ -205,13 +225,15 @@ export class AiAssistantService {
                   const imageUrl = await this.generateCoverImage(
                     prompt,
                     input.bookCoverInfo.bookTitle
-                  ); 
+                  );
+                  if(this.userInfo.role===UserRole.USER){ 
                   await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, 0,1);  
                   await this.subscriptionService.trackTokenUsage(user.id,input.bookCoverInfo.bookTitle,UsageType.IMAGE,{aiAssistantCoverImage:imageUrl});
-                 
+                 }
                   imageUrls.push(imageUrl);
                 } catch (error) {
                   this.logger.error(`Failed to generate image ${i + 1}: ${error.message}`);
+                 throw new Error(error.message)
                 }
               }
       
@@ -233,10 +255,11 @@ export class AiAssistantService {
       // ✅ Generate AI response
    if(input.type!==AiAssistantType.BOOK_COVER_IMAGE) {
       const response = await this.textModel.invoke(prompt);
-  const totalTokens=await this.bookChapterService.getUsage(response)
+ if(this.userInfo.role===UserRole.USER){
+      const totalTokens=await this.bookChapterService.getUsage(response)
       await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, totalTokens);  
       await this.subscriptionService.trackTokenUsage(user.id,_.camelCase(input.type),UsageType.TOKEN,{[_.camelCase(input.type)]:totalTokens});
-       
+       }
       // ✅ Store AI response in the database
       aiAssistant.type = input.type;
       aiAssistant.user = user;
@@ -253,6 +276,10 @@ export class AiAssistantService {
   
       const aiAssistantDetail = await this.aiAssistantRepository.save(aiAssistant);
       return aiAssistantDetail;
+    }
+      catch(error){
+        throw new BadRequestException(error.message)
+      }
   }
   async getAiAssistantChat(userId: number, input: AiAssistantMessage) {
    try {
