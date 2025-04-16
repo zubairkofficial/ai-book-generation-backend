@@ -231,7 +231,7 @@ export class BookGenerationService {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           const postResponse = await axios.post(
-            user.role===UserRole.USER?this.userKeyRecord[0].imageModelType : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+            user.role===UserRole.USER?this.userKeyRecord[0].package.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
           imageParameters,
             {
               headers: {
@@ -305,7 +305,7 @@ export class BookGenerationService {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           const postResponse = await axios.post(
-          user.role===UserRole.USER?this.userKeyRecord[0].imageModelType : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+          user.role===UserRole.USER?this.userKeyRecord[0].package.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
          requestData,
             {
               headers: {

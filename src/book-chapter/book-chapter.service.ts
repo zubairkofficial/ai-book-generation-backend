@@ -612,7 +612,7 @@ export class BookChapterService {
           const imagePromptData = { prompt: imagePrompt };
           try {
             const postResponse = await axios.post(
-          this.userInfo.role===UserRole.USER?this.userKeyRecord[0].imageModelType : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+          this.userInfo.role===UserRole.USER?this.userKeyRecord[0].package.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
           imagePromptData,
               {
                 headers: {

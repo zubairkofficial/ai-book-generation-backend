@@ -28,6 +28,9 @@ export class Package extends BaseEntity {
   @Column({ length: 50, nullable: true }) 
   imageModelType: string;  // The fal.ai model to use
 
+  @Column({  nullable: true }) 
+  imageModelURL: string;  
+
   @Column({ default: true })
   isActive: boolean;
 
