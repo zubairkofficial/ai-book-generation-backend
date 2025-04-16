@@ -1,6 +1,7 @@
 import { BaseEntity } from 'src/common/entities/base.entity';
-import { Entity, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { User } from 'src/users/entities/user.entity';
+import { Transaction } from 'src/transaction/entities/transaction.entity';
 
 @Entity()
 export class CardPayment extends BaseEntity {
@@ -26,18 +27,16 @@ export class CardPayment extends BaseEntity {
   @Column({ length: 4, nullable: true })
   cvc: string; // Last 4 digits of card number (for display only)
 
-  @Column({ length: 50, nullable: true })
-  cardBrand: string; // 'visa', 'mastercard', etc.
-
   @Column({ type: 'int', nullable: true })
   expiryMonth: number;
 
   @Column({ type: 'int', nullable: true })
   expiryYear: number;
 
-  @Column({ length: 50, nullable: true })
-  paymentMethod: string; // 'credit', 'debit', etc.
-
   @Column('jsonb', { nullable: true })
   metadata: Record<string, any>; // Additional payment details
+
+    @OneToMany(() => Transaction, (transaction) => transaction.cardPayment, { onDelete: 'CASCADE' })
+    transaction: Transaction[];
+  
 }

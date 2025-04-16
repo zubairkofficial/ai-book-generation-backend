@@ -2,7 +2,7 @@ import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ApiKey } from './entities/api-key.entity';
-import { CreateApiKeyDto, UpdateApiKeyDto } from './dto/api-key.dto';
+import {  UpdateApiKeyDto } from './dto/api-key.dto';
 
 @Injectable()
 export class ApiKeysService {
@@ -37,7 +37,7 @@ export class ApiKeysService {
       if(input.openai_key) apiKeys.openai_key = input.openai_key;
       if(input.model)  apiKeys.model = input.model;
       if(input.fal_ai)   apiKeys.fal_ai = input.fal_ai;
-      if(input.stripe_api_key)   apiKeys.stripe_api_key = input.stripe_api_key;
+      if(input.stripe_key)   apiKeys.stripe_key = input.stripe_key;
       }
 
       await this.apiKeysRepository.save(apiKeys);

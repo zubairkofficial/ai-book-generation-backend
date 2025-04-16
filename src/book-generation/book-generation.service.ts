@@ -14,7 +14,8 @@ import OpenAI from "openai"; // For DALL·E image generation
 import * as fs from "fs";
 import * as path from "path";
 import { ApiKey } from "src/api-keys/entities/api-key.entity";
-
+import { concat } from "@langchain/core/utils/stream";
+import type { AIMessageChunk } from "@langchain/core/messages";
 import {
   BookGenerationDto,
   BRGDTO,
@@ -34,12 +35,16 @@ import { BookChapter } from "src/book-chapter/entities/book-chapter.entity";
 import { SettingsService } from "src/settings/settings.service";
 import { BookHtmlContent } from "src/book-html-content/entities/book-html-content.entity";
 import { MarkdownConverter } from "src/utils/markdown-converter.util";
+import { SubscriptionService } from "src/subscription/subscription.service";
+import { UsageType } from "src/subscription/entities/usage.entity";
+import { BookChapterService } from "src/book-chapter/book-chapter.service";
 
 @Injectable()
 export class BookGenerationService {
   private settingPrompt;
   private textModel;
   private apiKeyRecord;
+  private userKeyRecord;
   private openai: OpenAI;
   private readonly logger = new Logger(BookGenerationService.name);
   private readonly uploadsDir: string;
@@ -54,34 +59,48 @@ export class BookGenerationService {
     private bookHtmlContentRepository: Repository<BookHtmlContent>,
     private readonly markdownConverter: MarkdownConverter,
     private readonly userService: UsersService,
-    private readonly settingsService: SettingsService
+    private readonly settingsService: SettingsService,
+    private readonly subscriptionService: SubscriptionService,
+    private readonly bookChapterService: BookChapterService
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
   }
-  private async initializeAIModels() {
+  private async initializeAIModels(userId:number) {
     try {
       this.apiKeyRecord = await this.apiKeyRepository.find();
+      this.userKeyRecord = await this.subscriptionService.getUserActiveSubscription(userId);
+      
       if (!this.apiKeyRecord) {
         throw new Error("No API keys found in the database.");
       }
-      this.settingPrompt=await this.settingsService.getAllSettings()
+      
+      this.settingPrompt = await this.settingsService.getAllSettings();
       if (!this.settingPrompt) {
-        throw new Error("No setting prompt  found in the database.");
+        throw new Error("No setting prompt found in the database.");
       }
+      
+      // Calculate a reasonable maxTokens value
+      const remainingTokens = this.userKeyRecord[0].package.tokenLimit - this.userKeyRecord[0].tokensUsed;
+      if(remainingTokens===0)
+        {
+          throw new BadRequestException("Token limit exceeded")
+        } 
+      // Set a reasonable upper limit for completion tokens
+      const maxCompletionTokens = Math.min(remainingTokens, 4000); 
+      
       this.textModel = new ChatOpenAI({
         openAIApiKey: this.apiKeyRecord[0].openai_key,
         temperature: 0.4,
-        modelName: this.apiKeyRecord[0].model,
+        modelName: this.userKeyRecord[0].package.modelType,
+        maxTokens: maxCompletionTokens
       });
-
-     
 
       this.logger.log(
         `AI Models initialized successfully with model: ${this.apiKeyRecord[0].model}`
       );
     } catch (error) {
       this.logger.error(`Failed to initialize AI models: ${error.message}`);
-      throw new Error("Failed to initialize AI models.");
+      throw new Error(error.message);
     }
   }
   private setupUploadsDirectory(): string {
@@ -309,7 +328,7 @@ export class BookGenerationService {
 
 
 
-  private async introductionContent(promptData: BookGenerationDto) {
+  private async introductionContent(promptData: BookGenerationDto, user) {
     try {
       this.logger.log(
         `📖 Generating Introduction Content for: "${promptData.bookTitle}"`
@@ -405,6 +424,32 @@ export class BookGenerationService {
         this.textModel.invoke(tableOfContentsPrompt),
       ]);
 
+      // Fixed getUsage function that safely extracts token count
+      const getUsage = (response) => {
+        // Check if response has usage_metadata and it has a total_tokens property
+        if (response?.usage_metadata?.total_tokens !== undefined) {
+          return response.usage_metadata.total_tokens;
+        }
+        // Fallback to a reasonable estimate if not available
+        return response?.content?.length ? Math.ceil(response.content.length / 4) : 0;
+      };
+  
+      const totalTokens = 
+        getUsage(coverPageResponse) + 
+        getUsage(dedication) + 
+        getUsage(preface) + 
+        getUsage(introduction) + 
+        getUsage(tableOfContentsResponse);
+        const metadata={
+         coverPage: getUsage(coverPageResponse) ,
+         dedication: getUsage(dedication) ,
+         preface: getUsage(preface) ,
+         introduction: getUsage(introduction) ,
+         tableOfContentsResponse: getUsage(tableOfContentsResponse)
+        }
+      await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, totalTokens);  
+      await this.subscriptionService.trackTokenUsage(user.id,"bookContent",UsageType.TOKEN,metadata);
+      
       return {
         coverPageResponse: coverPageResponse.content,
         dedication: dedication.content,
@@ -426,11 +471,11 @@ export class BookGenerationService {
 
  
 
-  private async createBookContent(promptData: BookGenerationDto) {
+  private async createBookContent(promptData: BookGenerationDto,user) {
     try {
       // Run introduction & end-of-book content generation **in parallel**
       const [introContent] = await Promise.all([
-        this.introductionContent(promptData),
+        this.introductionContent(promptData,user),
         // this.endOfBookContent(promptData),
       ]);
 
@@ -484,7 +529,8 @@ export class BookGenerationService {
     promptData: BookGenerationDto
   ): Promise<BookGeneration> {
     try {
-      await this.initializeAIModels(); // Ensure API keys are loaded before generating content
+     
+      await this.initializeAIModels(userId); // Ensure API keys are loaded before generating content
 
       const user=await this.userService.getProfile(userId)
       if(!user){
@@ -492,14 +538,14 @@ export class BookGenerationService {
       }
       // **Run AI Content & Image Generation in Parallel**
       const [bookContentResult, coverImageResult] = await Promise.allSettled([
-        this.createBookContent(promptData), // Generate book content
+        this.createBookContent(promptData,user), // Generate book content
         this.generateBookCover(promptData), // Generate front cover (URL)
       ]);
-
+      
       // **Extract book content**
       if (bookContentResult.status !== "fulfilled") {
         throw new Error(
-          `❌ Book content generation failed: ${bookContentResult.reason}`
+          ` ${bookContentResult.reason}`
         );
       }
       const {
@@ -561,6 +607,9 @@ export class BookGenerationService {
               await this.bookGenerationRepository.update(savedBook.id, {
                 additionalData: book.additionalData,
               });
+               await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, 0,1);  
+      await this.subscriptionService.trackTokenUsage(user.id,"coverImage",UsageType.IMAGE,{coverImageUrl:coverImagePath});
+      
             })
             .catch((error) =>
               this.logger.error(
@@ -579,6 +628,12 @@ export class BookGenerationService {
 
       return savedBook;
     } catch (error) {
+      // Handle subscription-related errors
+      if (error instanceof BadRequestException && 
+         (error.message.includes('Token limit exceeded') || 
+          error.message.includes('Image generation limit exceeded'))) {
+        throw new BadRequestException('Subscription limit reached: ' + error.message);
+      }
       this.logger.error(
         `❌ Error generating and saving book: ${error.message}`
       );
@@ -696,7 +751,7 @@ export class BookGenerationService {
     onTextUpdate: (text: string) => void,
     user: UserInterface
   ): Promise<BookGeneration> {
-    await this.initializeAIModels(); // Ensure API keys are loaded before generating content
+    await this.initializeAIModels(user.id); // Ensure API keys are loaded before generating content
 
     // 1. Get book with chapters
     const book = await this.bookGenerationRepository.findOne({
@@ -725,11 +780,25 @@ export class BookGenerationService {
   
     try {
       const aiResponse = await this.textModel.stream(prompt);
+    
+      let finalResult: AIMessageChunk | undefined;
       let finalSummary = "";
       for await (const chunk of aiResponse) {
+        if (finalResult) {
+          finalResult = concat(finalResult, chunk);
+        } else {
+          finalResult = chunk;
+        }
         finalSummary += chunk.content;
+       
         onTextUpdate(chunk.content);
       }
+      console.log(finalResult?.usage_metadata);
+
+      const totalTokens= finalResult?.usage_metadata.total_tokens 
+      await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, totalTokens);  
+      await this.subscriptionService.trackTokenUsage(user.id,input.currentContent?`${input.contentType}ParagraphRegenerate`: input.contentType,UsageType.TOKEN, {[input.contentType]:totalTokens});
+     
 
       generatedContent = finalSummary;
     } catch (error) {
@@ -916,8 +985,8 @@ export class BookGenerationService {
     };
   }
 
-  async regenerateBookImage(input: RegenerateImage) {
-    await this.initializeAIModels(); // Ensure API keys are loaded before generating content
+  async regenerateBookImage(user:UserInterface,input: RegenerateImage) {
+    await this.initializeAIModels(user.id); // Ensure API keys are loaded before generating content
 
     const getBook = await this.bookGenerationRepository.findOne({
       where: { id: input.bookId },
@@ -1187,5 +1256,6 @@ async findOneWithHtmlContent(id: number): Promise<BookGeneration> {
     throw new Error(error.message);
   }
 }
+
 
 }

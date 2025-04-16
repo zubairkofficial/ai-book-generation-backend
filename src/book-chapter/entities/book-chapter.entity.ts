@@ -1,6 +1,7 @@
 import { BookGeneration } from 'src/book-generation/entities/book-generation.entity';
 import { BaseEntity } from 'src/common/entities/base.entity';
-import { Entity, Column,  ManyToOne, JoinColumn, OneToOne } from 'typeorm';
+import { Usage } from 'src/subscription/entities/usage.entity';
+import { Entity, Column,  ManyToOne, JoinColumn, OneToOne, OneToMany } from 'typeorm';
 
 
 
@@ -29,7 +30,8 @@ export class BookChapter extends BaseEntity {
   @Column('text', { nullable: true })
   chapterName?: string; // Store summary as plain text or JSON based on your use case
   
-
+  @OneToMany(() => Usage, (usage) => usage.bookChapter, { onDelete: 'CASCADE' })
+  usageRecords: Usage[]; // Relation to Usage
 
 
 }

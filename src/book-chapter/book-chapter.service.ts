@@ -1,6 +1,6 @@
 import { SettingsService } from './../settings/settings.service';
 import { ChatOpenAI } from "@langchain/openai";
-import { Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ApiKey } from "src/api-keys/entities/api-key.entity";
@@ -8,6 +8,8 @@ import { Repository } from "typeorm";
 import OpenAI from "openai";
 import * as fs from "fs";
 import * as path from "path";
+import { concat } from "@langchain/core/utils/stream";
+import type { AIMessageChunk } from "@langchain/core/messages";
 import {
   BookChapterDto,
   BookChapterGenerationDto,
@@ -21,12 +23,16 @@ import { ConversationSummaryBufferMemory } from "langchain/memory";
 import axios from "axios";
 import { get as levenshtein } from "fast-levenshtein";
 import { Settings } from 'src/settings/entities/settings.entity';
+import { UsersService } from 'src/users/users.service';
+import { SubscriptionService } from 'src/subscription/subscription.service';
+import { UsageType } from 'src/subscription/entities/usage.entity';
 
 @Injectable()
 export class BookChapterService {
   private textModel;
   private settingPrompt: Settings;
   private apiKeyRecord;
+  private userKeyRecord;
   private openai: OpenAI;
   private readonly logger = new Logger(BookChapterService.name);
   private readonly uploadsDir: string;
@@ -43,6 +49,8 @@ export class BookChapterService {
     private apiKeyRepository: Repository<ApiKey>,
 
     private settingsService: SettingsService,
+    private userService: UsersService,
+    private readonly subscriptionService: SubscriptionService
 
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
@@ -72,20 +80,30 @@ export class BookChapterService {
       throw new Error("Failed to setup uploads directory");
     }
   }
-  private async initializeAIModels() {
+  private async initializeAIModels(userId:number) {
     try {
       this.apiKeyRecord = await this.apiKeyRepository.find();
       if (!this.apiKeyRecord) {
         throw new Error("No API keys found in the database.");
       }
+      this.userKeyRecord = await this.subscriptionService.getUserActiveSubscription(userId);
+      
       this.settingPrompt=await this.settingsService.getAllSettings()
      
+      const remainingTokens = this.userKeyRecord[0].package.tokenLimit - this.userKeyRecord[0].tokensUsed;
+      if(remainingTokens===0)
+        {
+          throw new BadRequestException("Token limit exceeded")
+        } 
+      // Set a reasonable upper limit for completion tokens
+      const maxCompletionTokens = Math.min(remainingTokens, 4000); 
+      
       this.textModel = new ChatOpenAI({
         openAIApiKey: this.apiKeyRecord[0].openai_key,
         temperature: 0.7,
-        modelName: this.apiKeyRecord[0].model,
+        modelName: this.userKeyRecord[0].package.modelType,
+        maxTokens: maxCompletionTokens
       });
-
      
     } catch (error) {
       this.logger.error(`Failed to initialize AI models: ${error.message}`);
@@ -95,7 +113,8 @@ export class BookChapterService {
 
   private async saveGeneratedImage(
     imageUrl: string,
-    bookTitle: string
+    bookTitle: string,
+    userId:number
   ): Promise<string> {
     try {
       if (!imageUrl) {
@@ -123,7 +142,9 @@ export class BookChapterService {
 
       // Save image
       fs.writeFileSync(imagePath, imageResponse.data);
-
+      await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, 0,1);  
+      await this.subscriptionService.trackTokenUsage(userId,"chapterImage",UsageType.IMAGE);
+     
       return `${baseUrl}/uploads/chapters/${fullFileName}`;
     } catch (error) {
       console.error(`Error saving chapter image: ${error.message}`);
@@ -273,7 +294,8 @@ export class BookChapterService {
     bookTitle: string,
     keyPoint: string,
     index: number,
-    chapterImages: { title: string; url: string | null }[]
+    chapterImages: { title: string; url: string | null }[],
+    userId:number
   ): Promise<void> {
     const maxRetries = 12; // Retry for up to 2 minutes
     const delayMs = 10000; // Wait 10 seconds per retry
@@ -310,7 +332,7 @@ export class BookChapterService {
     }
 
     // Save the image once it's ready
-    const savedImagePath = await this.saveGeneratedImage(imageUrl, bookTitle);
+    const savedImagePath = await this.saveGeneratedImage(imageUrl, bookTitle,userId);
 
     if (savedImagePath) {
       // Explicitly update the array
@@ -323,7 +345,7 @@ export class BookChapterService {
     }
   }
 
-  private async generateChapterSummary(chapterText: string,bookInfo: BookGeneration): Promise<string> {
+  private async generateChapterSummary(chapterText: string,bookInfo: BookGeneration,userId:number): Promise<string> {
     try {
       if (!chapterText || chapterText.trim().length === 0) {
         throw new Error("Chapter text is empty or invalid.");
@@ -341,7 +363,10 @@ export class BookChapterService {
 
       // Use the model from this.textModel dynamically
       const response = await this.textModel.invoke(prompt);
-
+     const totalTokens= await this.getUsage(response)
+      await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, totalTokens);  
+      await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN,{summaryTokens:totalTokens});
+      
       // Log the response for debugging
       this.logger.log(
         "OpenAI API Response:",
@@ -364,6 +389,7 @@ export class BookChapterService {
     promptData: BookChapterGenerationDto,
     bookInfo: BookGeneration,
     bookChapter: boolean,
+    userId:number,
     onTextUpdate: (text: string) => void
   ): Promise<string> {
     try {
@@ -430,11 +456,21 @@ export class BookChapterService {
 
         let updateResponse = await this.textModel.stream(updatePrompt);
         let updatedText = "";
-
+ let finalResult: AIMessageChunk | undefined;
+      
         for await (const chunk of updateResponse) {
+           if (finalResult) {
+                    finalResult = concat(finalResult, chunk);
+                  } else {
+                    finalResult = chunk;
+                  }
           updatedText += chunk.content;
           onTextUpdate(chunk.content);
         }
+        const totalTokens= finalResult?.usage_metadata.total_tokens 
+        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, totalTokens);  
+        await this.subscriptionService.trackTokenUsage(userId,"chapterParagraphRegenerate",UsageType.TOKEN, {chapterParagraphRegenerate:totalTokens});
+       
         // Save the updated context for this paragraph only, not clearing the whole chapter.
         await memory.saveContext(
           { input: promptData.selectedText },
@@ -487,13 +523,22 @@ export class BookChapterService {
         const stream = await this.textModel.stream(chapterPrompt);
         let chapterText = "";
         const chunks = [];
+        let finalResult: AIMessageChunk | undefined;
 
         for await (const chunk of stream) {
           chunks.push(chunk);
           chapterText += chunk.content;
+          if (finalResult) {
+            finalResult = concat(finalResult, chunk);
+          } else {
+            finalResult = chunk;
+          }
           onTextUpdate(chunk.content);
         }
-
+        const useTotalTokens= finalResult?.usage_metadata.total_tokens 
+        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, useTotalTokens);  
+        await this.subscriptionService.trackTokenUsage(userId,"generateChapter",UsageType.TOKEN, {generateChapter:useTotalTokens});
+       
         if (!chapterText.trim()) {
           throw new Error(`Chapter ${promptData.chapterNo} content is empty.`);
         }
@@ -512,6 +557,10 @@ export class BookChapterService {
         `;
 
         const keyPointResponse = await this.textModel.invoke(keyPointPrompt);
+        const totalTokens= await this.getUsage(keyPointResponse)
+        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, totalTokens);  
+        await this.subscriptionService.trackTokenUsage(userId,"chapterKeyPoint",UsageType.TOKEN,{chapterKeyPoint:totalTokens});
+       
         const keyPoints = keyPointResponse.content
           ?.split("\n")
           .filter((point: string) => point.trim() !== "");
@@ -559,7 +608,8 @@ export class BookChapterService {
               bookInfo.bookTitle,
               keyPoint,
               index,
-              chapterImages
+              chapterImages,
+              userId
             );
           } catch (error) {
             throw new Error(error.message)
@@ -594,12 +644,13 @@ export class BookChapterService {
 
   async generateChapterOfBook(
     input: BookChapterGenerationDto,
+    userId:number,
     onTextUpdate: (text: string) => void
   ) {
     try {
       let chapterSummaryResponse: string;
 
-      await this.initializeAIModels();
+      await this.initializeAIModels(userId);
 
       // Retrieve the book generation info
       const bookInfo = await this.bookGenerationRepository.findOne({
@@ -624,12 +675,13 @@ export class BookChapterService {
         input,
         bookInfo,
         !!bookChapter,
+        userId,
         onTextUpdate
       );
 
       if (!input.selectedText){
         chapterSummaryResponse =
-          await this.generateChapterSummary(formattedChapter,bookInfo);
+          await this.generateChapterSummary(formattedChapter,bookInfo,userId);
 }
       if (input.selectedText || input.instruction) {
         return formattedChapter;
@@ -661,9 +713,9 @@ export class BookChapterService {
       throw new Error(error.message);
     }
   }
-  async updateChapter(input: BookChapterUpdateDto) {
+  async updateChapter(input: BookChapterUpdateDto,userId:number) {
     try {
-      await this.initializeAIModels();
+      await this.initializeAIModels(userId);
 
       // Retrieve the book generation info
       const bookInfo = await this.bookGenerationRepository.findOne({
@@ -697,10 +749,11 @@ export class BookChapterService {
 
   async generateChapterSummaries(
     summaryRequest: BookChapterDto,
+    userId,
     onTextUpdate: (text: string) => void
   ) {
     try {
-      await this.initializeAIModels();
+      await this.initializeAIModels(userId);
   
       // Validate book exists
       const bookInfo = await this.bookGenerationRepository.findOne({
@@ -763,11 +816,20 @@ export class BookChapterService {
         const stream = await this.textModel.stream(summaryPrompt);
   
         let finalSummary = "";
+        let finalResult: AIMessageChunk | undefined;
         for await (const chunk of stream) {
+          if (finalResult) {
+            finalResult = concat(finalResult, chunk);
+          } else {
+            finalResult = chunk;
+          }
           finalSummary += chunk.content;
           onTextUpdate(chunk.content);
         }
-  
+        const totalTokens= finalResult?.usage_metadata.total_tokens 
+        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, totalTokens);  
+        await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN, {chapterSummary:totalTokens});
+       
   
       } else {
         // If isCombined is false, generate chapter-wise summaries
@@ -796,6 +858,10 @@ export class BookChapterService {
             // Stream the chapter summary generation
             const stream = await this.textModel.invoke(chapterSummaryPrompt);
    onTextUpdate(stream.content)
+   const totalTokens= await this.getUsage(stream)
+   await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, totalTokens);  
+   await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN,{chapterSummary:totalTokens});
+  
             // let chapterSummary = "";
             // for await (const chunk of stream) {
             //   chapterSummary += chunk.content;
@@ -820,10 +886,11 @@ export class BookChapterService {
     bookId: number,
     chapterIds: number[],
     numberOfSlides: number,
+    userId:number,
     onTextUpdate: (text: string) => void
   ) {
     try {
-      await this.initializeAIModels();
+      await this.initializeAIModels(userId);
 
       // Validate book exists
       const bookInfo = await this.bookGenerationRepository.findOne({
@@ -876,6 +943,11 @@ export class BookChapterService {
 
           // Stream the slides generation
           const stream = await this.textModel.invoke(slidePrompt);
+
+          const totalTokens= await this.getUsage(stream)
+          await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, totalTokens);  
+          await this.subscriptionService.trackTokenUsage(userId,"chapterSlides",UsageType.TOKEN,{chapterSlides:totalTokens});
+         
           return stream.content;
         } catch (error) {
           onTextUpdate(
@@ -894,4 +966,12 @@ export class BookChapterService {
       throw new Error(`Failed to generate chapter slides: ${error.message}`);
     }
   }
+  async getUsage  (response) {
+    // Check if response has usage_metadata and it has a total_tokens property
+    if (response?.usage_metadata?.total_tokens !== undefined) {
+      return response.usage_metadata.total_tokens;
+    }
+    // Fallback to a reasonable estimate if not available
+    return response?.content?.length ? Math.ceil(response.content.length / 4) : 0;
+  };
 }

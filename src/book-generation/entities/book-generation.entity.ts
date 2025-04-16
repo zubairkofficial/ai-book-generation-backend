@@ -1,6 +1,7 @@
 import { BookChapter } from 'src/book-chapter/entities/book-chapter.entity';
 import { BookHtmlContent } from 'src/book-html-content/entities/book-html-content.entity';
 import { BaseEntity } from 'src/common/entities/base.entity';
+import { Usage } from 'src/subscription/entities/usage.entity';
 import { User } from 'src/users/entities/user.entity';
 import { Entity, Column,  OneToMany, JoinColumn, ManyToOne, OneToOne } from 'typeorm';
 
@@ -93,5 +94,7 @@ export class BookGeneration extends BaseEntity {
   })
   htmlContent: BookHtmlContent;
  
+  @OneToMany(() => Usage, (usage) => usage.bookGeneration, { onDelete: 'CASCADE' })
+  usageRecords: Usage[];
  
 }

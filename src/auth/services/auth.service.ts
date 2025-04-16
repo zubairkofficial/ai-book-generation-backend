@@ -110,7 +110,7 @@ export class AuthService {
       const otp = await this.otpService.generateOtp(email);
 
       // Send OTP via email
-      await this.emailService.sendOtpEmail(email, otp.code);
+      // await this.emailService.sendOtpEmail(email, otp.code);
 
       return { message: "OTP sent to your email. Please verify to log in." };
     } catch (error) {

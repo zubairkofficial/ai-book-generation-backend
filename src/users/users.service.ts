@@ -121,9 +121,9 @@ async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<User> {
        
   }
   }
-  async updateUserPayment(cardData: CreateCardTokenDto,user: User): Promise<any> {
+  async updateUserPayment(amount: number,user: User): Promise<any> {
    try {
-    user.availableAmount=Number(user.availableAmount)+Number(cardData.amount)
+    user.availableAmount=Number(user.availableAmount)+Number(amount)
     return this.userRepository.save(user)
   } catch (error) {
     throw new HttpException(error.message, HttpStatus.BAD_REQUEST);

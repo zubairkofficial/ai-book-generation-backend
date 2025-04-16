@@ -46,6 +46,7 @@ export class BookChapterController {
       // Generate chapter and stream it via SSE
       const savedChapter = await this.bookChapterService.generateChapterOfBook(
         bookGenerationDto,
+        userId,
         (text: string) => {
           userSubject.next(text);
         }
@@ -80,7 +81,7 @@ export class BookChapterController {
 
     try {
       // Generate chapter and stream it via SSE
-      const savedChapter = await this.bookChapterService.updateChapter(bookGenerationDto);
+      const savedChapter = await this.bookChapterService.updateChapter(bookGenerationDto,userId);
       this.logger.log(`Chapter successfully updated for user ID: ${userId}`);
       
       return {
@@ -145,6 +146,7 @@ export class BookChapterController {
       
       await this.bookChapterService.generateChapterSummaries(
         summaryRequest,
+        userId,
         (text: string) => {
           userSubject.next(text);
         }
@@ -211,6 +213,7 @@ export class BookChapterController {
         slideRequest.bookId,
         slideRequest.chapterIds,
         slideRequest.numberOfSlides,
+        userId,
         (text: string) => {
           userSubject.next(text);
         }

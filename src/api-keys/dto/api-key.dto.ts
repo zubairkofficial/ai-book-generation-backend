@@ -33,8 +33,8 @@ export class UpdateApiKeyDto {
   fal_ai: string;
 
   @IsNotEmpty()
-  @IsOptional()
-  stripe_api_key: string;
+  @IsNotEmpty()
+  stripe_key: string;
 }
 
 

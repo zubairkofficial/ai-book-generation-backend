@@ -9,13 +9,17 @@ import { MarkdownConverter } from 'src/utils/markdown-converter.util';
 import { BookGenerationController } from './book-generation.controller';
 import { BookGenerationService } from './book-generation.service';
 import { BookGeneration } from './entities/book-generation.entity';
+import { SubscriptionModule } from 'src/subscription/subscription.module';
+import { BookChapterService } from 'src/book-chapter/book-chapter.service';
+import { BookChapter } from 'src/book-chapter/entities/book-chapter.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([BookGeneration, ApiKey]),
+    TypeOrmModule.forFeature([BookGeneration, ApiKey,BookChapter]),
     UsersModule,
     SettingsModule,
     forwardRef(() => BookHtmlContentModule), // Use forwardRef to avoid circular dependency
+ SubscriptionModule,
   ],
   controllers: [BookGenerationController],
   providers: [
@@ -23,6 +27,8 @@ import { BookGeneration } from './entities/book-generation.entity';
     ChapterPlotChain, 
     EventsChain,
     MarkdownConverter,
+    BookChapterService,
+    
   ],
   exports: [BookGenerationService, TypeOrmModule],
 })

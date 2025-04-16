@@ -14,6 +14,8 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { SettingsModule } from './settings/settings.module';
 import { BookHtmlContentModule } from './book-html-content/book-html-content.module';
 import { CardPaymentModule } from './card-payment/card-payment.module';
+import { SubscriptionModule } from './subscription/subscription.module';
+import { TransactionModule } from './transaction/transaction.module';
 
 @Module({
   imports: [
@@ -58,6 +60,8 @@ import { CardPaymentModule } from './card-payment/card-payment.module';
     SettingsModule,
     BookHtmlContentModule,
     CardPaymentModule,
+    SubscriptionModule,
+    TransactionModule,
   ],
 })
 export class AppModule {}

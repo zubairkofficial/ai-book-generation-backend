@@ -6,16 +6,24 @@ import { AiAssistantController } from "./ai-assistant.controller";
 import { ApiKeysModule } from "src/api-keys/api-keys.module"; 
 import { UsersModule } from "src/users/users.module";
 import { SettingsModule } from "src/settings/settings.module";
+import { BookChapterService } from "src/book-chapter/book-chapter.service";
+import { SubscriptionService } from "src/subscription/subscription.service";
+import { BookChapter } from "src/book-chapter/entities/book-chapter.entity";
+import { BookGeneration } from "src/book-generation/entities/book-generation.entity";
+import { Package } from "src/subscription/entities/package.entity";
+import { UserSubscription } from "src/subscription/entities/user-subscription.entity";
+import { Usage } from "src/subscription/entities/usage.entity";
+import { User } from "src/users/entities/user.entity";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([AiAssistant]), 
+    TypeOrmModule.forFeature([AiAssistant,BookChapter,BookGeneration,Package,UserSubscription,Usage,User]), 
     ApiKeysModule,  
     UsersModule, // Ensure correct indentation
     SettingsModule
   ],
   controllers: [AiAssistantController],
-  providers: [AiAssistantService], // Remove UsersService, as it is provided by UsersModule
+  providers: [AiAssistantService,BookChapterService,SubscriptionService], // Remove UsersService, as it is provided by UsersModule
   exports: [AiAssistantService],
 })
 export class AiAssistantModule {}

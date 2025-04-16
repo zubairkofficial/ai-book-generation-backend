@@ -309,6 +309,7 @@ export class BookGenerationController {
   
     try {
       const updateBookImage = await this.bookGenerationService.regenerateBookImage(
+        user,
         input  // Converting file to buffer
       );
       return {

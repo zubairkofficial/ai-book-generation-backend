@@ -13,8 +13,8 @@ export class ApiKey extends BaseEntity {
   @Column({nullable:true})
   fal_ai: string;
 
-  @Column({nullable:true})
-  stripe_api_key: string;
+  @Column({nullable:false})
+  stripe_key: string;
 
   @Column()
   model: string;

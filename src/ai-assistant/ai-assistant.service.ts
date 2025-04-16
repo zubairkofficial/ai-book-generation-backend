@@ -1,6 +1,7 @@
-import { Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
+import {_} from "lodash";
 import { AiAssistant, AiAssistantType } from "./entities/ai-assistant.entity";
 import { ChatOpenAI, OpenAI } from "@langchain/openai";
 import { ApiKeysService } from "src/api-keys/api-keys.service";
@@ -12,11 +13,15 @@ import * as path from "path";
 import axios from "axios";
 import { ConversationSummaryBufferMemory } from "langchain/memory";
 import { SettingsService } from "src/settings/settings.service";
+import { BookChapterService } from "src/book-chapter/book-chapter.service";
+import { SubscriptionService } from "src/subscription/subscription.service";
+import { UsageType } from "src/subscription/entities/usage.entity";
 @Injectable()
 export class AiAssistantService {
   private readonly model: OpenAI;
   private settingPrompt;
   private textModel;
+  private userKeyRecord;
   private apiKeyRecord;
   private readonly logger = new Logger(AiAssistantService.name);
   private readonly uploadsDir: string;
@@ -27,7 +32,9 @@ export class AiAssistantService {
     private readonly apiKeyService: ApiKeysService,
     private readonly usersService: UsersService,
     private readonly configService: ConfigService,
-    private readonly settingsService: SettingsService
+    private readonly settingsService: SettingsService,
+    private readonly bookChapterService: BookChapterService,
+    private readonly subscriptionService: SubscriptionService
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
   }
@@ -47,9 +54,11 @@ export class AiAssistantService {
       throw new Error("Failed to setup uploads directory");
     }
   }
-   private async initializeAIModels() {
+   private async initializeAIModels(userId:number) {
       try {
         this.apiKeyRecord = await this.apiKeyService.getApiKeys();
+        this.userKeyRecord = await this.subscriptionService.getUserActiveSubscription(userId);
+      
         if (!this.apiKeyRecord) {
           throw new Error("No API keys found in the database.");
         }
@@ -57,10 +66,20 @@ export class AiAssistantService {
         if (!this.settingPrompt) {
           throw new Error("No setting prompt found in the database.");
         }
+
+         const remainingTokens = this.userKeyRecord[0].package.tokenLimit - this.userKeyRecord[0].tokensUsed;
+              if(remainingTokens===0)
+                {
+                  throw new BadRequestException("Token limit exceeded")
+                } 
+             
+                const maxCompletionTokens = Math.min(remainingTokens, 4000); 
+      
         this.textModel = new ChatOpenAI({
           openAIApiKey: this.apiKeyRecord.openai_key,
           temperature: 0.7,
-          modelName: this.apiKeyRecord.model,
+          modelName: this.userKeyRecord[0].package.modelType,
+        maxTokens: maxCompletionTokens
         });
         
       } catch (error) {
@@ -148,7 +167,7 @@ export class AiAssistantService {
   
 
     async processAiAssistantTask(userId: number, input: AiAssistantDto): Promise<AiAssistant> {
-      await this.initializeAIModels();
+      await this.initializeAIModels(userId);
       
       const user = await this.usersService.getProfile(userId);
       const aiAssistant = new AiAssistant();
@@ -186,7 +205,10 @@ export class AiAssistantService {
                   const imageUrl = await this.generateCoverImage(
                     prompt,
                     input.bookCoverInfo.bookTitle
-                  );
+                  ); 
+                  await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, 0,1);  
+                  await this.subscriptionService.trackTokenUsage(user.id,input.bookCoverInfo.bookTitle,UsageType.IMAGE,{aiAssistantCoverImage:imageUrl});
+                 
                   imageUrls.push(imageUrl);
                 } catch (error) {
                   this.logger.error(`Failed to generate image ${i + 1}: ${error.message}`);
@@ -211,7 +233,10 @@ export class AiAssistantService {
       // ✅ Generate AI response
    if(input.type!==AiAssistantType.BOOK_COVER_IMAGE) {
       const response = await this.textModel.invoke(prompt);
-  
+  const totalTokens=await this.bookChapterService.getUsage(response)
+      await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, totalTokens);  
+      await this.subscriptionService.trackTokenUsage(user.id,_.camelCase(input.type),UsageType.TOKEN,{[_.camelCase(input.type)]:totalTokens});
+       
       // ✅ Store AI response in the database
       aiAssistant.type = input.type;
       aiAssistant.user = user;
@@ -233,7 +258,7 @@ export class AiAssistantService {
    try {
     
   
-    await this.initializeAIModels();
+    await this.initializeAIModels(userId);
   
     const user = await this.usersService.getProfile(userId);
   

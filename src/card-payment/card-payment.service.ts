@@ -8,6 +8,8 @@ import { CardPayment } from './entities/card-payment.entity';
 import { CreateCardTokenDto } from './dto/payment.dto';
 import { UsersService } from 'src/users/users.service';
 import { ApiKey } from 'src/api-keys/entities/api-key.entity';
+import { TransactionService } from 'src/transaction/transaction.service';
+import { TransactionType } from 'src/transaction/entities/transaction.entity';
 
 @Injectable()
 export class CardPaymentService {
@@ -21,6 +23,7 @@ export class CardPaymentService {
     private apiKeyRepository: Repository<ApiKey>, // The repository to fetch API keys
   
     private usersService: UsersService,
+    private transactionService: TransactionService,
   ) {
    
   }
@@ -28,11 +31,11 @@ export class CardPaymentService {
   private async getStripeApiKey(): Promise<string> {
     const apiKey = await this.apiKeyRepository.find();
     
-    if (!apiKey || !apiKey[0]?.stripe_api_key) {
+    if (!apiKey || !apiKey[0]?.stripe_key) {
       throw new InternalServerErrorException('Stripe API key not found in the database');
     }
 
-    return apiKey[0].stripe_api_key; // Return the first API key found
+    return apiKey[0].stripe_key; // Return the first API key found
   }
 
   // Initialize Stripe with the API key fetched from the database
@@ -87,38 +90,122 @@ export class CardPaymentService {
     }
   }
 
-  async createCard(cardData: CreateCardTokenDto,userId: number) {
+  async createCard(cardData: CreateCardTokenDto, userId: number) {
     try {
       await this.initializeStripe(); // Initialize Stripe with the API key
-    
-      const user = await this.usersService.getProfile(
-       userId
-      );
-      const card = new CardPayment();
-      card.cardNumber = cardData.cardNumber;
-      card.expiryMonth = Number(cardData.expiryMonth);
-      card.expiryYear = Number(cardData.expiryYear);
-      card.cvc = cardData.cvc;
-      card.user = user;
+  
+      // Fetch user profile and create card token in parallel
+      const [user, cardToken] = await Promise.all([
+        this.usersService.getProfile(userId),
+        this.createCardToken(cardData),
+      ]);
+  
+      // Prepare card payment data
       const cardInput = {
-        cardNumber: card.cardNumber,
-        expiryMonth: Number(card.expiryMonth),
-        expiryYear: Number(card.expiryYear),
-        cvc: card.cvc.toString(),
+        cardNumber: cardData.cardNumber,
+        expiryMonth: Number(cardData.expiryMonth),
+        expiryYear: Number(cardData.expiryYear),
+        cvc: cardData.cvc.toString(),
         amount: cardData.amount,
-        cardHolderName:cardData.cardHolderName,
-        status:"pending"
+        cardHolderName: cardData.cardHolderName,
+        status: "pending",
+        user: user, // Directly assign user object
       };
-      await this.cardPaymentRepository.save(cardInput)
-      const cardToken = await this.createCardToken(cardData);
-      const paymentIntent = await this.createPaymentIntent(
-        Math.round(cardData.amount * 100), // Convert to cents
-        'usd', // Currency
-        cardToken.id // Card token ID
-      );
-      const updateUser = await this.usersService.updateUserPayment(cardData, user);
-     
-       return paymentIntent;
+  
+      // Save card payment and create payment intent in parallel
+      const paymentIntent = await this.createPaymentIntent(Math.round(cardData.amount * 100), 'usd', cardToken.id);
+
+      // If saveCard is true, save the card payment to the database
+      let savedCardPayment;
+      if (cardData.saveCard) {
+        savedCardPayment = await this.cardPaymentRepository.save(cardInput);
+      }
+  
+      // Update user payment and create transaction
+      await Promise.all([
+        this.usersService.updateUserPayment(cardData.amount, user),
+        this.transactionService.createTransaction({
+          type: TransactionType.PAYMENT,
+          amount: Number(cardData.amount),
+          description: 'Card payment',
+          userId: user.id,
+          cardId:savedCardPayment?.id,
+          referenceId: paymentIntent.id,
+          metadata: {
+            cardLastFour: cardData.cardNumber.slice(-4),
+            paymentMethod: 'card',
+            cardBrand: cardToken.card.brand,
+          },
+        }),
+      ]);
+  
+      // Update card payment status to succeeded
+    if(cardData.saveCard)  await this.cardPaymentRepository.update(savedCardPayment.id, { status: "succeeded" });
+  
+      return paymentIntent;
+    } catch (error) {
+      throw new Error(`Failed to create card payment: ${error.message}`);
+    }
+  }
+  async getCardsByUserId(userId: number) {
+    try {
+      return await this.cardPaymentRepository.find({
+        where: { user: { id: userId } }, // Use the user relation to filter
+        relations: ['user'], // Optionally include user relation if needed
+      });  
+    } catch (error) {
+      throw new Error(error.message);
+    }
+  }
+  async getCardById(cardId: number) {
+    try {
+      return await this.cardPaymentRepository.findOne({where:{id:cardId}});  
+    } catch (error) {
+      throw new Error(error.message);
+    }
+  }
+  async deductAmountToken(input,id:number,userId: number) {
+    try {
+      await this.initializeStripe(); // Initialize Stripe with the API key
+    const user=await this.usersService.getProfile(userId)
+      const cardPayment = await this.cardPaymentRepository.findOne({
+        where: { id: id, user: { id: userId } }, // Ensure the card belongs to the user
+      }); 
+      const payload: CreateCardTokenDto = {
+        cardNumber: cardPayment.cardNumber,
+        expiryMonth: String(cardPayment.expiryMonth),
+        expiryYear: String(cardPayment.expiryYear),
+        cvc: cardPayment.cvc,
+        amount: input.amount,
+        saveCard: input.saveCard, // Set this based on your logic
+      };
+     const cardToken= await this.createCardToken(payload)
+     const  paymentIntent=  await this.createPaymentIntent(Math.round(input.amount * 100), 'usd', cardToken.id)
+     await Promise.all([
+        this.usersService.updateUserPayment(input.amount, user),
+        this.transactionService.createTransaction({
+          type: TransactionType.PAYMENT,
+          amount: Number(input.amount),
+          description: 'Card payment',
+          userId: user.id,
+          cardId:cardPayment.id,
+          referenceId: paymentIntent.id,
+          metadata: {
+            cardLastFour: cardPayment.cardNumber.slice(-4),
+            paymentMethod: 'card',
+            cardBrand: cardToken.card.brand,
+          },
+        }),
+      ]);
+  
+    } catch (error) {
+      throw new Error(error.message);
+    }
+  }
+  async deleteCardsByUserId(userId: number,cardId:number) {
+    try {
+      return await this.cardPaymentRepository.delete({ id:cardId 
+      });  
     } catch (error) {
       throw new Error(error.message);
     }
