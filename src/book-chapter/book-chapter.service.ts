@@ -82,7 +82,7 @@ export class BookChapterService {
       throw new Error("Failed to setup uploads directory");
     }
   }
-  private async initializeAIModels(userId:number) {
+  private async initializeAIModels(userId:number,noOfImages?:number) {
     try {
      let maxCompletionTokens:number
       this.userInfo=await this.userService.getProfile(userId)
@@ -97,6 +97,10 @@ export class BookChapterService {
         throw new Error("No API keys found in the database.");
       }
       
+      if(this.userInfo.role===UserRole.USER &&(  this.userKeyRecord[0].package.imageLimit< noOfImages ) ){
+        throw new UnauthorizedException("exceeded maximum image generation limit")
+      }
+
       this.settingPrompt = await this.settingsService.getAllSettings();
       if (!this.settingPrompt) {
         throw new Error("No setting prompt found in the database.");
@@ -104,7 +108,7 @@ export class BookChapterService {
       if(this.userInfo.role===UserRole.USER) {
       // Calculate a reasonable maxTokens value
       const remainingTokens = this.userKeyRecord[0].package.tokenLimit - this.userKeyRecord[0].tokensUsed;
-      if(remainingTokens===0)
+      if(remainingTokens<200)
         {
           throw new BadRequestException("Token limit exceeded")
         } 
@@ -674,7 +678,7 @@ export class BookChapterService {
     try {
       let chapterSummaryResponse: string;
 
-      await this.initializeAIModels(userId);
+      await this.initializeAIModels(userId,input.noOfImages);
 
       // Retrieve the book generation info
       const bookInfo = await this.bookGenerationRepository.findOne({

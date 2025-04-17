@@ -81,6 +81,10 @@ export class BookGenerationService {
         throw new Error("No API keys found in the database.");
       }
       
+      if(user.role===UserRole.USER &&( this.userKeyRecord[0].package.imageLimit ===0) ){
+        throw new UnauthorizedException("exceeded maximum image generation limit")
+      }
+
       this.settingPrompt = await this.settingsService.getAllSettings();
       if (!this.settingPrompt) {
         throw new Error("No setting prompt found in the database.");
@@ -88,7 +92,7 @@ export class BookGenerationService {
       if(user.role!==UserRole.ADMIN) {
       // Calculate a reasonable maxTokens value
       const remainingTokens = this.userKeyRecord[0].package.tokenLimit - this.userKeyRecord[0].tokensUsed;
-      if(remainingTokens===0)
+      if(remainingTokens<500)
         {
           throw new BadRequestException("Token limit exceeded")
         } 

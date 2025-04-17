@@ -61,7 +61,7 @@ export class AiAssistantService {
       throw new Error("Failed to setup uploads directory");
     }
   }
-    private async initializeAIModels(userId:number) {
+    private async initializeAIModels(userId:number,noOfImages?:number) {
        try {
         let maxCompletionTokens:number
          this.userInfo=await this.usersService.getProfile(userId)
@@ -83,10 +83,16 @@ export class AiAssistantService {
          if (!this.settingPrompt) {
            throw new Error("No setting prompt found in the database.");
          }
+
+           if(this.userInfo.role===UserRole.USER &&(  this.userKeyRecord[0].package.imageLimit< noOfImages ) ){
+                 throw new UnauthorizedException("exceeded maximum image generation limit")
+               }
+         
+
          if(this.userInfo.role===UserRole.USER) {
          // Calculate a reasonable maxTokens value
          const remainingTokens = this.userKeyRecord[0].package.tokenLimit - this.userKeyRecord[0].tokensUsed;
-         if(remainingTokens===0)
+         if(remainingTokens<500)
            {
              throw new BadRequestException("Token limit exceeded")
            } 
@@ -193,7 +199,8 @@ export class AiAssistantService {
 
     async processAiAssistantTask(userId: number, input: AiAssistantDto): Promise<AiAssistant> {
      try{ 
-      await this.initializeAIModels(userId);
+      const noOfImages=input.type===AiAssistantType.BOOK_COVER_IMAGE && input.bookCoverInfo.numberOfImages
+      await this.initializeAIModels(userId,+noOfImages );
       
       const user = await this.usersService.getProfile(userId);
       const aiAssistant = new AiAssistant();
