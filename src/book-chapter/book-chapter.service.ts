@@ -1,6 +1,6 @@
 import { SettingsService } from './../settings/settings.service';
 import { ChatOpenAI } from "@langchain/openai";
-import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ApiKey } from "src/api-keys/entities/api-key.entity";
@@ -611,6 +611,9 @@ export class BookChapterService {
 
           const imagePromptData = { prompt: imagePrompt };
           try {
+            if(this.userKeyRecord[0].imagesGenerated >= this.userKeyRecord[0].package.imageLimit ){
+              throw new UnauthorizedException("exceeded maximum image generation limit")
+            }
             const postResponse = await axios.post(
           this.userInfo.role===UserRole.USER?this.userKeyRecord[0].package.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
           imagePromptData,

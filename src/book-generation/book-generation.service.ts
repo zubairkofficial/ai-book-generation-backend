@@ -4,6 +4,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
@@ -230,6 +231,9 @@ export class BookGenerationService {
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
+          if(this.userKeyRecord[0].imagesGenerated >= this.userKeyRecord[0].package.imageLimit ){
+            throw new UnauthorizedException("exceeded maximum image generation limit")
+          }
           const postResponse = await axios.post(
             user.role===UserRole.USER?this.userKeyRecord[0].package.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
           imageParameters,
@@ -304,6 +308,9 @@ export class BookGenerationService {
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
+          if(this.userKeyRecord[0].imagesGenerated >= this.userKeyRecord[0].package.imageLimit ){
+            throw new UnauthorizedException("exceeded maximum image generation limit")
+          }
           const postResponse = await axios.post(
           user.role===UserRole.USER?this.userKeyRecord[0].package.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
          requestData,

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import {_} from "lodash";
@@ -149,6 +149,9 @@ export class AiAssistantService {
         aspect_ratio: "9:16",
         raw: false,
         };
+        if(this.userKeyRecord[0].imagesGenerated >= this.userKeyRecord[0].package.imageLimit ){
+          throw new UnauthorizedException("exceeded maximum image generation limit")
+        }
         const postResponse = await axios.post(
           this.userInfo.role===UserRole.USER?this.userKeyRecord[0].package.imageModelURL  : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
           requestData,
