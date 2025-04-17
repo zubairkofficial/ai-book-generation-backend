@@ -149,7 +149,7 @@ export class AiAssistantService {
         aspect_ratio: "9:16",
         raw: false,
         };
-        if(this.userKeyRecord[0].imagesGenerated >= this.userKeyRecord[0].package.imageLimit ){
+        if( this.userInfo.role===UserRole.USER && this.userKeyRecord[0].imagesGenerated >= this.userKeyRecord[0].package.imageLimit ){
           throw new UnauthorizedException("exceeded maximum image generation limit")
         }
         const postResponse = await axios.post(
