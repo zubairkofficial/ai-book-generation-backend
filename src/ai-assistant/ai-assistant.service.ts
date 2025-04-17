@@ -84,9 +84,9 @@ export class AiAssistantService {
            throw new Error("No setting prompt found in the database.");
          }
 
-           if(this.userInfo.role===UserRole.USER &&(  this.userKeyRecord[0].package.imageLimit< noOfImages ) ){
-                 throw new UnauthorizedException("exceeded maximum image generation limit")
-               }
+         if(this.userInfo.role===UserRole.USER &&( this.userKeyRecord[0].package.imageLimit<this.userKeyRecord[0].imagesGenerated || ((this.userKeyRecord[0].package.imageLimit-this.userKeyRecord[0].imagesGenerated)< noOfImages) ) ){
+          throw new UnauthorizedException("exceeded maximum image generation limit")
+        }
          
 
          if(this.userInfo.role===UserRole.USER) {
@@ -155,9 +155,7 @@ export class AiAssistantService {
         aspect_ratio: "9:16",
         raw: false,
         };
-        if( this.userInfo.role===UserRole.USER && this.userKeyRecord[0].imagesGenerated >= this.userKeyRecord[0].package.imageLimit ){
-          throw new UnauthorizedException("exceeded maximum image generation limit")
-        }
+     
         const postResponse = await axios.post(
           this.userInfo.role===UserRole.USER?this.userKeyRecord[0].package.imageModelURL  : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
           requestData,

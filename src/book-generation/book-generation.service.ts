@@ -81,7 +81,7 @@ export class BookGenerationService {
         throw new Error("No API keys found in the database.");
       }
       
-      if(user.role===UserRole.USER &&( this.userKeyRecord[0].package.imageLimit ===0) ){
+      if(user.role===UserRole.USER &&( this.userKeyRecord[0].package.imageLimit<this.userKeyRecord[0].imagesGenerated || ((this.userKeyRecord[0].package.imageLimit-this.userKeyRecord[0].imagesGenerated)< 1) ) ){
         throw new UnauthorizedException("exceeded maximum image generation limit")
       }
 
