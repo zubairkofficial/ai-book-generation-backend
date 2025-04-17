@@ -76,6 +76,9 @@ export class AiAssistantService {
            throw new Error("No API keys found in the database.");
          }
          
+         if(!this.userKeyRecord[0].package.imageModelURL||!this.userKeyRecord[0].package.modelType){
+          throw new Error("Model type not exist");
+         }
          this.settingPrompt = await this.settingsService.getAllSettings();
          if (!this.settingPrompt) {
            throw new Error("No setting prompt found in the database.");

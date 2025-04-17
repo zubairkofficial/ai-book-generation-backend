@@ -41,6 +41,11 @@ export class CreatePackageDto {
   @IsOptional()
   imageModelType?: string;
 
+  @ApiProperty({ description: 'Image model url' })
+  @IsString()
+  @IsOptional()
+  imageModelURL?: string;
+
   @ApiProperty({ description: 'Whether the package is active' })
   @IsBoolean()
   @IsOptional()
