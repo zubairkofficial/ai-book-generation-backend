@@ -97,7 +97,7 @@ export class BookChapterService {
         throw new Error("No API keys found in the database.");
       }
       
-      if(this.userInfo.role===UserRole.USER &&(  this.userKeyRecord[0].package.imageLimit< noOfImages ) ){
+      if(this.userInfo.role===UserRole.USER &&(  this.userKeyRecord[0].package.imageLimit<= noOfImages ) ){
         throw new UnauthorizedException("exceeded maximum image generation limit")
       }
 
