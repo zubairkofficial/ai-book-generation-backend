@@ -30,8 +30,5 @@ export class BookChapter extends BaseEntity {
   @Column('text', { nullable: true })
   chapterName?: string; // Store summary as plain text or JSON based on your use case
   
-  @OneToMany(() => Usage, (usage) => usage.bookChapter, { onDelete: 'CASCADE' })
-  usageRecords: Usage[]; // Relation to Usage
-
-
+  
 }

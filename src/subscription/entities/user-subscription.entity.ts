@@ -39,6 +39,12 @@ export class UserSubscription extends BaseEntity {
   @Column({ type: 'int', default: 0 })
   imagesGenerated: number;
 
+  @Column({ type: 'int', default: 0 })
+  totalTokens: number;
+
+  @Column({ type: 'int', default: 0 })
+  totalImages: number;
+
   @Column({ type: 'boolean', default: false })
   autoRenew: boolean;
 

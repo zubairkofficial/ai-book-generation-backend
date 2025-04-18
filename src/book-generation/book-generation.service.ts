@@ -75,13 +75,13 @@ export class BookGenerationService {
       throw new NotFoundException('user not exist')
     }
       this.apiKeyRecord = await this.apiKeyRepository.find();
-      this.userKeyRecord = await this.subscriptionService.getUserActiveSubscription(userId);
+      [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
       
       if (!this.apiKeyRecord) {
         throw new Error("No API keys found in the database.");
       }
       
-      if(user.role===UserRole.USER &&( this.userKeyRecord[0].package.imageLimit<this.userKeyRecord[0].imagesGenerated || ((this.userKeyRecord[0].package.imageLimit-this.userKeyRecord[0].imagesGenerated)< 1) ) ){
+      if(user.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.package.imageLimit-this.userKeyRecord.imagesGenerated)< 1) ) ){
         throw new UnauthorizedException("exceeded maximum image generation limit")
       }
 
@@ -89,9 +89,9 @@ export class BookGenerationService {
       if (!this.settingPrompt) {
         throw new Error("No setting prompt found in the database.");
       }
-      if(user.role!==UserRole.ADMIN) {
+      if(user.role===UserRole.USER) {
       // Calculate a reasonable maxTokens value
-      const remainingTokens = this.userKeyRecord[0].package.tokenLimit - this.userKeyRecord[0].tokensUsed;
+      const remainingTokens = this.userKeyRecord.totalTokens - this.userKeyRecord.tokensUsed;
       if(remainingTokens<500)
         {
           throw new BadRequestException("Token limit exceeded")
@@ -102,7 +102,7 @@ export class BookGenerationService {
       this.textModel = new ChatOpenAI({
         openAIApiKey: this.apiKeyRecord[0].openai_key,
         temperature: 0.4,
-        modelName:user.role===UserRole.ADMIN?this.apiKeyRecord[0].modelType :this.userKeyRecord[0].package.modelType,
+        modelName:user.role===UserRole.ADMIN?this.apiKeyRecord[0].modelType :this.userKeyRecord.package.modelType,
         maxTokens: user.role === UserRole.ADMIN ? undefined : maxCompletionTokens // Set maxTokens conditionally
 
       });
@@ -235,11 +235,11 @@ export class BookGenerationService {
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          if(user.role===UserRole.USER && this.userKeyRecord[0].imagesGenerated >= this.userKeyRecord[0].package.imageLimit ){
+          if(user.role===UserRole.USER && this.userKeyRecord.imagesGenerated >= this.userKeyRecord.package.imageLimit ){
             throw new UnauthorizedException("exceeded maximum image generation limit")
           }
           const postResponse = await axios.post(
-            user.role===UserRole.USER?this.userKeyRecord[0].package.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+            user.role===UserRole.USER?this.userKeyRecord.package.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
           imageParameters,
             {
               headers: {
@@ -312,11 +312,11 @@ export class BookGenerationService {
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          if(user.role===UserRole.USER && this.userKeyRecord[0].imagesGenerated >= this.userKeyRecord[0].package.imageLimit ){
+          if(user.role===UserRole.USER && this.userKeyRecord.imagesGenerated >= this.userKeyRecord.package.imageLimit ){
             throw new UnauthorizedException("exceeded maximum image generation limit")
           }
           const postResponse = await axios.post(
-          user.role===UserRole.USER?this.userKeyRecord[0].package.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+          user.role===UserRole.USER?this.userKeyRecord.package.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
          requestData,
             {
               headers: {
@@ -468,7 +468,7 @@ if(user.role===UserRole.USER){
          introduction: getUsage(introduction) ,
          tableOfContentsResponse: getUsage(tableOfContentsResponse)
         }
-      await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, totalTokens);  
+      await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package.id, totalTokens);  
       await this.subscriptionService.trackTokenUsage(user.id,"bookContent",UsageType.TOKEN,metadata);
       }
       return {
@@ -497,12 +497,11 @@ if(user.role===UserRole.USER){
       // Run introduction & end-of-book content generation **in parallel**
       const [introContent] = await Promise.all([
         this.introductionContent(promptData,user),
-        // this.endOfBookContent(promptData),
+        
       ]);
 
       return {
         ...introContent,
-        // ...endOfBookContent,
       };
     } catch (error) {
       this.logger.error(`❌ Error creating book content: ${error.message}`);
@@ -601,7 +600,12 @@ if(user.role===UserRole.USER){
 
       // **Save book immediately**
       const savedBook = await this.bookGenerationRepository.save(book);
-      this.logger.log(
+
+      if(user.role===UserRole.USER){ 
+       await this.subscriptionService.updateTrackTokenUsage(user,this.userKeyRecord.package, savedBook)
+       }
+
+       this.logger.log(
         `📖 Book saved successfully for user ${userId}: ${promptData.bookTitle}`
       );
 
@@ -629,8 +633,8 @@ if(user.role===UserRole.USER){
                 additionalData: book.additionalData,
               });
               if(user.role===UserRole.USER){
-               await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, 0,1);  
-      await this.subscriptionService.trackTokenUsage(user.id,"coverImage",UsageType.IMAGE,{coverImageUrl:coverImagePath});
+               await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package.id, 0,1);  
+               await this.subscriptionService.trackTokenUsage(user.id,"coverImage",UsageType.IMAGE,{coverImageUrl:coverImagePath},book);
       }
             })
             .catch((error) =>
@@ -819,7 +823,7 @@ if(user.role===UserRole.USER){
 
       if(user.role===UserRole.USER){
       const totalTokens= finalResult?.usage_metadata.total_tokens 
-      await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, totalTokens);  
+      await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package.id, totalTokens);  
       await this.subscriptionService.trackTokenUsage(user.id,input.currentContent?`${input.contentType}ParagraphRegenerate`: input.contentType,UsageType.TOKEN, {[input.contentType]:totalTokens});
      }
 

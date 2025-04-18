@@ -6,7 +6,7 @@ import {
   InternalServerErrorException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, LessThan, MoreThanOrEqual, EntityManager } from "typeorm";
+import { Repository, LessThan,  EntityManager } from "typeorm";
 import { Package } from "./entities/package.entity";
 import {
   UserSubscription,
@@ -19,6 +19,8 @@ import { CreatePackageDto } from "./dto/create-package.dto";
 import { SubscribePackageDto } from "./dto/subscribe-package.dto";
 import { UpdatePackageDto } from "./dto/update-package.dto";
 import { EventEmitter2 } from "@nestjs/event-emitter";
+import { BookGeneration } from "src/book-generation/entities/book-generation.entity";
+import { BookChapter } from "src/book-chapter/entities/book-chapter.entity";
 
 @Injectable()
 export class SubscriptionService {
@@ -94,11 +96,7 @@ export class SubscriptionService {
   }
     // Step 3: Update the tokensUsed field
     subscription.tokensUsed += totalTokens; // Increment the tokens used
-const userActiveSubscription= await this.getUserActiveSubscription(userId)
-    if(subscription.tokensUsed>userActiveSubscription[0].package.tokenLimit)
-    {
-      throw new BadRequestException("Token limit exceeded")
-    }
+
     await this.userSubscriptionRepository.save(subscription); // Save the updated subscription
   
     return subscription; // Return the updated subscription
@@ -196,6 +194,8 @@ const userActiveSubscription= await this.getUserActiveSubscription(userId)
         const subscription = entityManager.create(UserSubscription, {
           user,
           package: packageEntity,
+          totalTokens:packageEntity.tokenLimit,
+          totalImages:packageEntity.imageLimit,
           startDate,
           endDate,
           status: SubscriptionStatus.ACTIVE,
@@ -252,8 +252,13 @@ const userActiveSubscription= await this.getUserActiveSubscription(userId)
     userId: number,
     resource: string,
     type:UsageType,
-    metadata?: Record<string, any>
+    metadata?: Record<string, any>,
+    book?: BookGeneration,
+    bookChapters?:number
   ): Promise<void> {
+   try {
+    
+   
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException("User not found");
@@ -279,61 +284,59 @@ const userActiveSubscription= await this.getUserActiveSubscription(userId)
       resource,
       metadata
     });
-
-    await this.usageRepository.save(usage);
-  }
-
-  // Track image generation
-  async trackImageUsage(
-    userId: number,
-    amount: number,
-    resource: string,
-    metadata?: Record<string, any>
-  ): Promise<void> {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException("User not found");
+    if(book){
+      usage.bookGeneration=book
     }
+if(bookChapters){
+  usage.chapterNo=bookChapters
+}
+    await this.usageRepository.save(usage);
+  } catch (error) {
+    throw new Error(error.message)
+  }
+  }
+  async updateTrackTokenUsage(
+    user: User,
+    packages:Package,
+    book?: BookGeneration,
+    chapterNo?:number
+
+  ): Promise<void> {
+   try {
 
     // Find active subscription
     const subscription = await this.userSubscriptionRepository.findOne({
       where: {
-        user: { id: userId },
+        user: { id: user.id },
+        package:{id:packages.id},
         status: SubscriptionStatus.ACTIVE,
       },
     });
-
     if (!subscription) {
       throw new BadRequestException("User has no active subscription");
     }
-
-    // Check if user has enough image credits
-    if (
-      subscription.imagesGenerated + amount >
-      (
-        await this.packageRepository.findOne({
-          where: { id: subscription.package.id },
-        })
-      ).imageLimit
-    ) {
-      throw new BadRequestException("Image generation limit exceeded");
+    const usage = await this.usageRepository.findOne({
+      where: {
+        user: { id: user.id },
+        subscription:{id:subscription.id},  
+      },
+      order: {
+        createdAt: 'DESC', // Replace 'createdAt' with the actual field you want to order by
+      },
+    });
+    if (!usage) {
+      throw new BadRequestException("Usage not found");
     }
 
-    // Update subscription image usage
-    subscription.imagesGenerated += amount;
-    await this.userSubscriptionRepository.save(subscription);
-
-    // Log usage
-    const usage = this.usageRepository.create({
-      user,
-      subscription,
-      type: UsageType.IMAGE,
-      resource,
-      metadata,
-    });
-
-    await this.usageRepository.save(usage);
+    usage.bookGeneration=book
+    if(chapterNo)usage.chapterNo=chapterNo
+    await this.usageRepository.update(usage.id, usage);
+  } catch (error) {
+   throw new Error(error.message) 
   }
+  }
+
+
 
   // Get user's active subscription
   async getUserActiveSubscription(userId: number): Promise<UserSubscription[]> {
@@ -359,9 +362,9 @@ const userActiveSubscription= await this.getUserActiveSubscription(userId)
     return subscriptions.map(subscription => ({
       package: subscription.package,
       tokensUsed: subscription.tokensUsed,
-      tokenLimit: subscription.package.tokenLimit,
+      tokenLimit: subscription.totalTokens,
       imagesGenerated: subscription.imagesGenerated,
-      imageLimit: subscription.package.imageLimit,
+      imageLimit: subscription.totalImages,
       startDate: subscription.startDate,
       endDate: subscription.endDate,
       daysRemaining: Math.ceil(

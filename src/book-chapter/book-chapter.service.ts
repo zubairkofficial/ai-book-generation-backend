@@ -91,13 +91,13 @@ export class BookChapterService {
     }
     
       this.apiKeyRecord = await this.apiKeyRepository.find();
-      this.userKeyRecord = await this.subscriptionService.getUserActiveSubscription(userId);
+      [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
       
       if (!this.apiKeyRecord) {
         throw new Error("No API keys found in the database.");
       }
       
-      if(this.userInfo.role===UserRole.USER &&( this.userKeyRecord[0].package.imageLimit<this.userKeyRecord[0].imagesGenerated || ((this.userKeyRecord[0].package.imageLimit-this.userKeyRecord[0].imagesGenerated)< noOfImages) ) ){
+      if(this.userInfo.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.totalImages-this.userKeyRecord.imagesGenerated)< noOfImages) ) ){
         throw new UnauthorizedException("exceeded maximum image generation limit")
       }
 
@@ -107,7 +107,7 @@ export class BookChapterService {
       }
       if(this.userInfo.role===UserRole.USER) {
       // Calculate a reasonable maxTokens value
-      const remainingTokens = this.userKeyRecord[0].package.tokenLimit - this.userKeyRecord[0].tokensUsed;
+      const remainingTokens = this.userKeyRecord.totalTokens - this.userKeyRecord.tokensUsed;
       if(remainingTokens<200)
         {
           throw new BadRequestException("Token limit exceeded")
@@ -118,7 +118,7 @@ export class BookChapterService {
       this.textModel = new ChatOpenAI({
         openAIApiKey: this.apiKeyRecord[0].openai_key,
         temperature: 0.4,
-        modelName:this.userInfo.role===UserRole.ADMIN?this.apiKeyRecord[0].modelType :this.userKeyRecord[0].package.modelType,
+        modelName:this.userInfo.role===UserRole.ADMIN?this.apiKeyRecord[0].modelType :this.userKeyRecord.package.modelType,
         maxTokens: this.userInfo.role === UserRole.ADMIN ? undefined : maxCompletionTokens // Set maxTokens conditionally
 
       });
@@ -163,10 +163,7 @@ export class BookChapterService {
 
       // Save image
       fs.writeFileSync(imagePath, imageResponse.data);
-      if(this.userInfo.role===UserRole.USER){
-      await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, 0,1);  
-      await this.subscriptionService.trackTokenUsage(userId,"chapterImage",UsageType.IMAGE);
-     }
+    
       return `${baseUrl}/uploads/chapters/${fullFileName}`;
     } catch (error) {
       console.error(`Error saving chapter image: ${error.message}`);
@@ -387,7 +384,7 @@ export class BookChapterService {
       const response = await this.textModel.invoke(prompt);
     if(this.userInfo.role===UserRole.USER){
        const totalTokens= await this.getUsage(response)
-      await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, totalTokens);  
+      await this.subscriptionService.updateSubscription(userId, this.userKeyRecord.package.id, totalTokens);  
       await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN,{summaryTokens:totalTokens});
     }  
       // Log the response for debugging
@@ -490,10 +487,11 @@ export class BookChapterService {
           updatedText += chunk.content;
           onTextUpdate(chunk.content);
         }
+        if(this.userInfo.role===UserRole.USER){
         const totalTokens= finalResult?.usage_metadata.total_tokens 
-        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, totalTokens);  
+        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord.package.id, totalTokens);  
         await this.subscriptionService.trackTokenUsage(userId,"chapterParagraphRegenerate",UsageType.TOKEN, {chapterParagraphRegenerate:totalTokens});
-       
+       }
         // Save the updated context for this paragraph only, not clearing the whole chapter.
         await memory.saveContext(
           { input: promptData.selectedText },
@@ -560,7 +558,7 @@ export class BookChapterService {
         }
         if(this.userInfo.role===UserRole.USER){
         const useTotalTokens= finalResult?.usage_metadata.total_tokens 
-        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, useTotalTokens);  
+        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord.package.id, useTotalTokens);  
         await this.subscriptionService.trackTokenUsage(userId,"generateChapter",UsageType.TOKEN, {generateChapter:useTotalTokens});
        }
         if (!chapterText.trim()) {
@@ -583,7 +581,7 @@ export class BookChapterService {
         const keyPointResponse = await this.textModel.invoke(keyPointPrompt);
        if(this.userInfo.role===UserRole.USER){
         const totalTokens= await this.getUsage(keyPointResponse)
-        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, totalTokens);  
+        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord.package.id, totalTokens);  
         await this.subscriptionService.trackTokenUsage(userId,"chapterKeyPoint",UsageType.TOKEN,{chapterKeyPoint:totalTokens});
        }
         const keyPoints = keyPointResponse.content
@@ -615,11 +613,9 @@ export class BookChapterService {
 
           const imagePromptData = { prompt: imagePrompt };
           try {
-            if(this.userInfo.role===UserRole.USER && this.userKeyRecord[0].imagesGenerated >= this.userKeyRecord[0].package.imageLimit ){
-              throw new UnauthorizedException("exceeded maximum image generation limit")
-            }
+           
             const postResponse = await axios.post(
-          this.userInfo.role===UserRole.USER?this.userKeyRecord[0].package.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+          this.userInfo.role===UserRole.USER?this.userKeyRecord.package.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
           imagePromptData,
               {
                 headers: {
@@ -639,6 +635,10 @@ export class BookChapterService {
               chapterImages,
               userId
             );
+            if(this.userInfo.role===UserRole.USER){
+              await this.subscriptionService.updateSubscription(userId, this.userKeyRecord.package.id, 0,1);  
+              await this.subscriptionService.trackTokenUsage(userId,"chapterImage",UsageType.IMAGE,{chapterImage:imageResponseUrl},bookInfo,promptData.chapterNo);
+             }
           } catch (error) {
             throw new Error(error.message)
            
@@ -676,7 +676,7 @@ export class BookChapterService {
     onTextUpdate: (text: string) => void
   ) {
     try {
-      let chapterSummaryResponse: string;
+      // let chapterSummaryResponse: string;
 
       await this.initializeAIModels(userId,input.noOfImages);
 
@@ -707,10 +707,10 @@ export class BookChapterService {
         onTextUpdate
       );
 
-      if (!input.selectedText){
-        chapterSummaryResponse =
-          await this.generateChapterSummary(formattedChapter,bookInfo,userId);
-}
+//       if (!input.selectedText){
+//         chapterSummaryResponse =
+//           await this.generateChapterSummary(formattedChapter,bookInfo,userId);
+// }
       if (input.selectedText || input.instruction) {
         return formattedChapter;
       }
@@ -720,7 +720,7 @@ export class BookChapterService {
         bookChapter.chapterInfo = formattedChapter;
         bookChapter.maxWords = input.maxWords;
         bookChapter.minWords = input.minWords;
-        bookChapter.chapterSummary = chapterSummaryResponse;
+        // bookChapter.chapterSummary = chapterSummaryResponse;
       } else {
         // If chapter does not exist, create a new record
         bookChapter = new BookChapter();
@@ -729,12 +729,15 @@ export class BookChapterService {
         bookChapter.chapterInfo = formattedChapter;
         bookChapter.maxWords = input.maxWords;
         bookChapter.minWords = input.minWords;
-        bookChapter.chapterSummary = chapterSummaryResponse;
+        // bookChapter.chapterSummary = chapterSummaryResponse;
         bookChapter.chapterName = input.chapterName;
       }
        // Save (either insert or update)
       const savedChapter = await this.bookChapterRepository.save(bookChapter);
-          
+      if(this.userInfo.role===UserRole.USER){ 
+        await this.subscriptionService.updateTrackTokenUsage(this.userInfo,this.userKeyRecord.package, bookInfo,input.chapterNo)
+        }
+ 
       return savedChapter;
     } catch (error) {
       console.error("Error generating book chapter:", error);
@@ -857,7 +860,7 @@ export class BookChapterService {
 
         if(this.userInfo.role===UserRole.USER){
         const totalTokens= finalResult?.usage_metadata.total_tokens 
-        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, totalTokens);  
+        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord.package.id, totalTokens);  
         await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN, {chapterSummary:totalTokens});
        }
   
@@ -890,7 +893,7 @@ export class BookChapterService {
    onTextUpdate(stream.content)
    if(this.userInfo.role===UserRole.USER){
    const totalTokens= await this.getUsage(stream)
-   await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, totalTokens);  
+   await this.subscriptionService.updateSubscription(userId, this.userKeyRecord.package.id, totalTokens);  
    await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN,{chapterSummary:totalTokens});
   }
             // let chapterSummary = "";
@@ -977,7 +980,7 @@ export class BookChapterService {
 
           if(this.userInfo.role===UserRole.USER){
           const totalTokens= await this.getUsage(stream)
-          await this.subscriptionService.updateSubscription(userId, this.userKeyRecord[0].package.id, totalTokens);  
+          await this.subscriptionService.updateSubscription(userId, this.userKeyRecord.package.id, totalTokens);  
           await this.subscriptionService.trackTokenUsage(userId,"chapterSlides",UsageType.TOKEN,{chapterSlides:totalTokens});
          }
           return stream.content;

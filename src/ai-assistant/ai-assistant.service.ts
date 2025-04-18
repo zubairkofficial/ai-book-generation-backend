@@ -32,7 +32,6 @@ export class AiAssistantService {
   constructor(
     @InjectRepository(AiAssistant)
     private readonly aiAssistantRepository: Repository<AiAssistant>,
-    private readonly apiKeyService: ApiKeysService,
     private readonly usersService: UsersService,
     private readonly configService: ConfigService,
     private readonly settingsService: SettingsService,
@@ -70,13 +69,13 @@ export class AiAssistantService {
        }
        
          this.apiKeyRecord = await this.apiKeyRepository.find();
-         this.userKeyRecord = await this.subscriptionService.getUserActiveSubscription(userId);
+         [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
          
          if (!this.apiKeyRecord) {
            throw new Error("No API keys found in the database.");
          }
          
-         if(!this.userKeyRecord[0].package.imageModelURL||!this.userKeyRecord[0].package.modelType){
+         if(!this.userKeyRecord.package.imageModelURL||!this.userKeyRecord.package.modelType){
           throw new Error("Model type not exist");
          }
          this.settingPrompt = await this.settingsService.getAllSettings();
@@ -84,14 +83,14 @@ export class AiAssistantService {
            throw new Error("No setting prompt found in the database.");
          }
 
-         if(this.userInfo.role===UserRole.USER &&( this.userKeyRecord[0].package.imageLimit<this.userKeyRecord[0].imagesGenerated || ((this.userKeyRecord[0].package.imageLimit-this.userKeyRecord[0].imagesGenerated)< noOfImages) ) ){
+         if(this.userInfo.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.package.imageLimit-this.userKeyRecord.imagesGenerated)< noOfImages) ) ){
           throw new UnauthorizedException("exceeded maximum image generation limit")
         }
          
 
          if(this.userInfo.role===UserRole.USER) {
          // Calculate a reasonable maxTokens value
-         const remainingTokens = this.userKeyRecord[0].package.tokenLimit - this.userKeyRecord[0].tokensUsed;
+         const remainingTokens = this.userKeyRecord.totalTokens - this.userKeyRecord.tokensUsed;
          if(remainingTokens<500)
            {
              throw new BadRequestException("Token limit exceeded")
@@ -102,7 +101,7 @@ export class AiAssistantService {
          this.textModel = new ChatOpenAI({
            openAIApiKey: this.apiKeyRecord[0].openai_key,
            temperature: 0.4,
-           modelName:this.userInfo.role===UserRole.ADMIN?this.apiKeyRecord[0].modelType :this.userKeyRecord[0].package.modelType,
+           modelName:this.userInfo.role===UserRole.ADMIN?this.apiKeyRecord[0].modelType :this.userKeyRecord.package.modelType,
            maxTokens: this.userInfo.role === UserRole.ADMIN ? undefined : maxCompletionTokens // Set maxTokens conditionally
    
          });
@@ -157,7 +156,7 @@ export class AiAssistantService {
         };
      
         const postResponse = await axios.post(
-          this.userInfo.role===UserRole.USER?this.userKeyRecord[0].package.imageModelURL  : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+          this.userInfo.role===UserRole.USER?this.userKeyRecord.package.imageModelURL  : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
           requestData,
           {
             headers: {
@@ -238,7 +237,7 @@ export class AiAssistantService {
                     input.bookCoverInfo.bookTitle
                   );
                   if(this.userInfo.role===UserRole.USER){ 
-                  await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, 0,1);  
+                  await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package.id, 0,1);  
                   await this.subscriptionService.trackTokenUsage(user.id,input.bookCoverInfo.bookTitle,UsageType.IMAGE,{aiAssistantCoverImage:imageUrl});
                  }
                   imageUrls.push(imageUrl);
@@ -268,7 +267,7 @@ export class AiAssistantService {
       const response = await this.textModel.invoke(prompt);
  if(this.userInfo.role===UserRole.USER){
       const totalTokens=await this.bookChapterService.getUsage(response)
-      await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord[0].package.id, totalTokens);  
+      await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package.id, totalTokens);  
       await this.subscriptionService.trackTokenUsage(user.id,_.camelCase(input.type),UsageType.TOKEN,{[_.camelCase(input.type)]:totalTokens});
        }
       // ✅ Store AI response in the database

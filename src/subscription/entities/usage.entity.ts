@@ -25,10 +25,13 @@ export class Usage extends BaseEntity {
   @JoinColumn({ name: 'bookGenerationId' })
   bookGeneration?: BookGeneration; // Relation to BookGeneration
 
-  @ManyToOne(() => BookChapter, { nullable: true })
-  @JoinColumn({ name: 'bookChapterId' })
-  bookChapter?: BookChapter; // Relation to BookChapter
 
+  
+  @Column({
+    type: 'int',
+   nullable:true
+  })
+  chapterNo?: number;
   
   @Column({
     type: 'enum',
