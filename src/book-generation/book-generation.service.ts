@@ -67,7 +67,7 @@ export class BookGenerationService {
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
   }
-  private async initializeAIModels(userId:number) {
+  private async initializeAIModels(userId:number,images?:number) {
     try {
      let maxCompletionTokens:number
      const user=await this.userService.getProfile(userId)
@@ -81,7 +81,7 @@ export class BookGenerationService {
         throw new Error("No API keys found in the database.");
       }
       
-      if(user.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.package.imageLimit-this.userKeyRecord.imagesGenerated)< 1) ) ){
+      if(user.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.package.imageLimit-this.userKeyRecord.imagesGenerated)< images) ) ){
         throw new UnauthorizedException("exceeded maximum image generation limit")
       }
 
@@ -550,7 +550,7 @@ if(user.role===UserRole.USER){
   ): Promise<BookGeneration> {
     try {
      
-      await this.initializeAIModels(userId); // Ensure API keys are loaded before generating content
+      await this.initializeAIModels(userId,1); // Ensure API keys are loaded before generating content
 
       const user=await this.userService.getProfile(userId)
       if(!user){
@@ -1013,7 +1013,7 @@ if(user.role===UserRole.USER){
   }
 
   async regenerateBookImage(user:UserInterface,input: RegenerateImage) {
-    await this.initializeAIModels(user.id); // Ensure API keys are loaded before generating content
+    await this.initializeAIModels(user.id,1); // Ensure API keys are loaded before generating content
 
     const getBook = await this.bookGenerationRepository.findOne({
       where: { id: input.bookId },
