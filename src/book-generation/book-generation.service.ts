@@ -75,11 +75,16 @@ export class BookGenerationService {
       throw new NotFoundException('user not exist')
     }
       this.apiKeyRecord = await this.apiKeyRepository.find();
-      [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
-      
       if (!this.apiKeyRecord) {
         throw new Error("No API keys found in the database.");
       }
+      [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
+      if(!this.userKeyRecord){
+        throw new Error("No subscribe any package");
+      }
+      if(user.role===UserRole.USER && !this.userKeyRecord.package.imageModelURL||!this.userKeyRecord.package.modelType){
+        throw new Error("Model type not exist");
+       }
       
       if(user.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.package.imageLimit-this.userKeyRecord.imagesGenerated)< images) ) ){
         throw new UnauthorizedException("exceeded maximum image generation limit")

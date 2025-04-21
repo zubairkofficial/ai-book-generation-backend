@@ -69,15 +69,19 @@ export class AiAssistantService {
        }
        
          this.apiKeyRecord = await this.apiKeyRepository.find();
-         [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
-         
          if (!this.apiKeyRecord) {
-           throw new Error("No API keys found in the database.");
-         }
+          throw new Error("No API keys found in the database.");
+        }
+         [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
+         if (!this.apiKeyRecord) {
+          throw new Error("No API keys found in the database.");
+        }
          
-         if(!this.userKeyRecord.package.imageModelURL||!this.userKeyRecord.package.modelType){
+         
+        if(this.userInfo.role===UserRole.USER && !this.userKeyRecord.package.imageModelURL||!this.userKeyRecord.package.modelType){
           throw new Error("Model type not exist");
          }
+         
          this.settingPrompt = await this.settingsService.getAllSettings();
          if (!this.settingPrompt) {
            throw new Error("No setting prompt found in the database.");
