@@ -42,16 +42,16 @@ export class OtpService implements OnModuleInit {
 
   // Verify OTP
   async verifyOtp(email: string, code: string): Promise<boolean> {
-    // const otp = await this.otpRepository.findOne({
-    //   where: { email, code, isUsed: false },
-    // });
+    const otp = await this.otpRepository.findOne({
+      where: { email, code, isUsed: false },
+    });
 
-    // if (!otp) return false; // OTP not found
-    // if (new Date() > otp.expiresAt) return false; // OTP expired
+    if (!otp) return false; // OTP not found
+    if (new Date() > otp.expiresAt) return false; // OTP expired
 
     // // Mark OTP as used
-    // otp.isUsed = true;
-    // await this.otpRepository.save(otp);
+    otp.isUsed = true;
+    await this.otpRepository.save(otp);
 
     return true;
   }
