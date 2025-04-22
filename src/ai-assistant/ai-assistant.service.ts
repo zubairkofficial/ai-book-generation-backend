@@ -69,12 +69,10 @@ export class AiAssistantService {
        }
        
          this.apiKeyRecord = await this.apiKeyRepository.find();
+       
+         [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
          if(!this.userKeyRecord){
           throw new Error("No subscribe any package");
-        }
-         [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
-         if (!this.apiKeyRecord) {
-          throw new Error("No API keys found in the database.");
         }
          
          
