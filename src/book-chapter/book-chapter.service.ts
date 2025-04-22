@@ -103,9 +103,7 @@ export class BookChapterService {
       if(this.userInfo.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.totalImages-this.userKeyRecord.imagesGenerated)< noOfImages) ) ){
         throw new UnauthorizedException("exceeded maximum image generation limit")
       }
-      if(this.userInfo.role===UserRole.USER && !this.userKeyRecord.package.imageModelURL||!this.userKeyRecord.package.modelType){
-        throw new Error("Model type not exist");
-       }
+    
       this.settingPrompt = await this.settingsService.getAllSettings();
       if (!this.settingPrompt) {
         throw new Error("No setting prompt found in the database.");

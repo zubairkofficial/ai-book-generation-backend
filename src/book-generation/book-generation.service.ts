@@ -82,9 +82,7 @@ export class BookGenerationService {
       if(user.role===UserRole.USER && !this.userKeyRecord){
         throw new Error("No subscribe any package");
       }
-      if(user.role===UserRole.USER && !this.userKeyRecord.package.imageModelURL||!this.userKeyRecord.package.modelType){
-        throw new Error("Model type not exist");
-       }
+      
       
       if(user.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.package.imageLimit-this.userKeyRecord.imagesGenerated)< images) ) ){
         throw new UnauthorizedException("exceeded maximum image generation limit")
