@@ -71,7 +71,7 @@ export class AiAssistantService {
          this.apiKeyRecord = await this.apiKeyRepository.find();
        
          [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
-         if(!this.userKeyRecord){
+         if(this.userInfo.role===UserRole.USER && !this.userKeyRecord){
           throw new Error("No subscribe any package");
         }
          

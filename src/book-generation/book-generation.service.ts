@@ -79,7 +79,7 @@ export class BookGenerationService {
         throw new Error("No API keys found in the database.");
       }
       [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
-      if(!this.userKeyRecord){
+      if(user.role===UserRole.USER && !this.userKeyRecord){
         throw new Error("No subscribe any package");
       }
       if(user.role===UserRole.USER && !this.userKeyRecord.package.imageModelURL||!this.userKeyRecord.package.modelType){

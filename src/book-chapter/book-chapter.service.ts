@@ -95,9 +95,9 @@ export class BookChapterService {
         throw new Error("No API keys found in the database.");
       }
       [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
-      if(!this.userKeyRecord){
-        throw new Error("No subscribe any package");
-      }
+     if(this.userInfo.role===UserRole.USER && !this.userKeyRecord){
+               throw new Error("No subscribe any package");
+             }
       
       
       if(this.userInfo.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.totalImages-this.userKeyRecord.imagesGenerated)< noOfImages) ) ){
