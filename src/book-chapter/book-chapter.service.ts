@@ -537,11 +537,10 @@ export class BookChapterService {
           ${promptData.additionalInfo || "Follow the established style, tone, and pacing from previous chapters."}
     
           ---
-          ## 📝 Previous Chapter Summary:
-          ${memory || "No previous summary available."}
-    
+        
           **📝 Begin Chapter ${promptData.chapterNo}:**
           **Always return chapter content in Paragraph format**
+          **Chapter Name show in heading formate
         `;
 
         const stream = await this.textModel.stream(chapterPrompt);
