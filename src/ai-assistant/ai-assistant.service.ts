@@ -83,7 +83,7 @@ export class AiAssistantService {
            throw new Error("No setting prompt found in the database.");
          }
 
-         if(this.userInfo.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.imageLimit-this.userKeyRecord.imagesGenerated)< noOfImages) ) ){
+         if(this.userInfo.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.totalImages-this.userKeyRecord.imagesGenerated)< noOfImages) ) ){
           throw new UnauthorizedException("exceeded maximum image generation limit")
         }
          
