@@ -12,12 +12,14 @@ import { BookGeneration } from './entities/book-generation.entity';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
 import { BookChapterService } from 'src/book-chapter/book-chapter.service';
 import { BookChapter } from 'src/book-chapter/entities/book-chapter.entity';
+import { SharedModule } from 'src/shared/shared.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([BookGeneration, ApiKey,BookChapter]),
     UsersModule,
     SettingsModule,
+    SharedModule,
     forwardRef(() => BookHtmlContentModule), // Use forwardRef to avoid circular dependency
  SubscriptionModule,
   ],

@@ -14,7 +14,7 @@ import { Package } from "src/subscription/entities/package.entity";
 import { UserSubscription } from "src/subscription/entities/user-subscription.entity";
 import { Usage } from "src/subscription/entities/usage.entity";
 import { User } from "src/users/entities/user.entity";
-import { ApiKey } from "src/api-keys/entities/api-key.entity";
+import { SharedModule } from "src/shared/shared.module";
 
 @Module({
   imports: [
@@ -22,7 +22,7 @@ import { ApiKey } from "src/api-keys/entities/api-key.entity";
     ApiKeysModule,  
     UsersModule, // Ensure correct indentation
     SettingsModule,
-    ApiKeysModule
+    SharedModule
   ],
   controllers: [AiAssistantController],
   providers: [AiAssistantService,BookChapterService,SubscriptionService], // Remove UsersService, as it is provided by UsersModule

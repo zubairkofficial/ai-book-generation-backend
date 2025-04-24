@@ -2,6 +2,7 @@ import { AiAssistant } from 'src/ai-assistant/entities/ai-assistant.entity';
 import { BookGeneration } from 'src/book-generation/entities/book-generation.entity';
 import { BaseEntity } from 'src/common/entities/base.entity';
 import { Settings } from 'src/settings/entities/settings.entity';
+import { UserSubscription } from 'src/subscription/entities/user-subscription.entity';
 import { Entity, Column, OneToMany, OneToOne } from 'typeorm';
 
 export enum UserRole {
@@ -47,4 +48,7 @@ availableAmount: number;
 
   @OneToOne(() => Settings, (settings) => settings.user)
   settings: Settings
+
+  @OneToMany(() => UserSubscription, (userSubscription) => userSubscription.user)
+  userSubscriptions: UserSubscription[];
 }

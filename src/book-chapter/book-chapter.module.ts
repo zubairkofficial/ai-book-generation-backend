@@ -11,6 +11,7 @@ import { ApiKey } from 'src/api-keys/entities/api-key.entity';
 import { SettingsModule } from 'src/settings/settings.module';
 import { UsersModule } from 'src/users/users.module';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
+import { SharedModule } from 'src/shared/shared.module';
 
 @Module({
   imports: [
@@ -18,7 +19,8 @@ import { SubscriptionModule } from 'src/subscription/subscription.module';
     TypeOrmModule.forFeature([BookGeneration, BookChapter, ApiKey]),
     SettingsModule,
     SubscriptionModule,
-    UsersModule
+    UsersModule,
+    SharedModule
   ],
   controllers: [BookChapterController],
   providers: [BookChapterService, EventsChain,],

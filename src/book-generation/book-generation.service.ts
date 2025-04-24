@@ -40,6 +40,8 @@ import { SubscriptionService } from "src/subscription/subscription.service";
 import { UsageType } from "src/subscription/entities/usage.entity";
 import { BookChapterService } from "src/book-chapter/book-chapter.service";
 import { User, UserRole } from "src/users/entities/user.entity";
+import { AiService } from "src/shared/services/ai.service";
+import { ImageService } from "src/shared/services/image.service";
 
 @Injectable()
 export class BookGenerationService {
@@ -63,59 +65,22 @@ export class BookGenerationService {
     private readonly userService: UsersService,
     private readonly settingsService: SettingsService,
     private readonly subscriptionService: SubscriptionService,
-    private readonly bookChapterService: BookChapterService
+    private readonly bookChapterService: BookChapterService,
+    private readonly aiService: AiService,
+    private readonly imageService: ImageService
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
   }
-  private async initializeAIModels(userId:number,images?:number) {
+  private async initializeAIModels(userId: number, images?: number) {
     try {
-     let maxCompletionTokens:number
-     const user=await this.userService.getProfile(userId)
-     if(!user){
-      throw new NotFoundException('user not exist')
-    }
-      this.apiKeyRecord = await this.apiKeyRepository.find();
-      if (!this.apiKeyRecord) {
-        throw new Error("No API keys found in the database.");
-      }
-      [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
-      if(user.role===UserRole.USER && !this.userKeyRecord){
-        throw new Error("No subscribe any package");
-      }
-      
-      
-      if(user.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.package.imageLimit-this.userKeyRecord.imagesGenerated)< images) ) ){
-        throw new UnauthorizedException("exceeded maximum image generation limit")
-      }
-
-      this.settingPrompt = await this.settingsService.getAllSettings();
-      if (!this.settingPrompt) {
-        throw new Error("No setting prompt found in the database.");
-      }
-      if(user.role===UserRole.USER) {
-      // Calculate a reasonable maxTokens value
-      const remainingTokens = this.userKeyRecord.totalTokens - this.userKeyRecord.tokensUsed;
-      if(remainingTokens<500)
-        {
-          throw new BadRequestException("Token limit exceeded")
-        } 
-      // Set a reasonable upper limit for completion tokens
-       maxCompletionTokens = Math.min(remainingTokens, 4000); 
-      }
-      this.textModel = new ChatOpenAI({
-        openAIApiKey: this.apiKeyRecord[0].openai_key,
-        temperature: 0.4,
-        modelName:user.role===UserRole.ADMIN?this.apiKeyRecord[0].modelType :this.userKeyRecord.package.modelType,
-        maxTokens: user.role === UserRole.ADMIN ? undefined : maxCompletionTokens // Set maxTokens conditionally
-
-      });
-
-      this.logger.log(
-        `AI Models initialized successfully with model: ${this.apiKeyRecord[0].model}`
-      );
+      const aiConfig = await this.aiService.initializeAIModel(userId, images);
+      this.textModel = aiConfig.textModel;
+      this.apiKeyRecord = aiConfig.apiKeyRecord;
+      this.userKeyRecord = aiConfig.userKeyRecord;
+      this.settingPrompt = aiConfig.settingPrompt;
+      return aiConfig.user;
     } catch (error) {
-      this.logger.error(`Failed to initialize AI models: ${error.message}`);
-      throw new Error(error.message);
+      throw error;
     }
   }
   private setupUploadsDirectory(): string {
@@ -145,53 +110,14 @@ export class BookGenerationService {
 
   private async generateBookImage(responseUrl, promptData): Promise<string> {
     try {
-      const maxRetries = 12;
-      const delayMs = 10000; // 10 seconds between retries
-
-      let imageUrl: string | null = null;
-
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          const getResponse = await axios.get(responseUrl, {
-            headers: {
-              Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
-              "Content-Type": "application/json",
-            },
-          });
-
-          if (getResponse.data.images?.length > 0) {
-            imageUrl = getResponse.data.images[0].url;
-            break;
-          }
-        } catch (error) {
-          this.logger.warn(
-            `⏳ Image not ready (Attempt ${attempt}/${maxRetries})`
-          );
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, delayMs)); // Wait before retrying
-      }
-
-      if (!imageUrl)
-        throw new Error("❌ Image generation failed after retries.");
-
-      // Download & Save Image
-      const imageResponse = await axios.get(imageUrl, {
-        responseType: "arraybuffer",
-      });
-
-      const sanitizedFileName = promptData.bookTitle
-        .replace(/[^a-z0-9]/gi, "_")
-        .toLowerCase();
-      const fullFileName = `${sanitizedFileName}_${Date.now()}.png`;
-      const imagePath = path.join(this.uploadsDir, "covers", fullFileName);
-
-      fs.mkdirSync(path.dirname(imagePath), { recursive: true });
-      fs.writeFileSync(imagePath, imageResponse.data);
-
-      return `covers/${fullFileName}`;
+      return await this.imageService.pollAndSaveImage(
+        responseUrl,
+        this.apiKeyRecord[0].fal_ai,
+        promptData.bookTitle,
+        'covers'
+      );
     } catch (error) {
-      this.logger.error(`❌ Error downloading book image: ${error.message}`);
+      this.logger.error(`❌ Error generating book image: ${error.message}`);
       throw new Error(error.message);
     }
   }
@@ -288,69 +214,31 @@ export class BookGenerationService {
   private async generateBookCover(
     promptData: BookGenerationDto,
     user: User
-    
   ): Promise<string> {
     try {
-      const maxRetries = 5; // Retry up to 5 times
-      const delayMs = 3000; // Wait 3 seconds between retries
-
       const coverPrompt = `Design a visually striking and professional front cover for "${promptData.bookTitle}"
-          - **Core Idea**:${promptData.bookInformation || "Subtle business-related icons for a sleek finish"}
-          - **Target Audience**:${promptData.targetAudience || "General"}
-          - **Language**:${promptData.language || "All Ages"}
-          - **System Prompt**:${this.settingPrompt.coverImagePrompt}
-          `
+        - **Core Idea**:${promptData.bookInformation || "Subtle business-related icons for a sleek finish"}
+        - **Target Audience**:${promptData.targetAudience || "General"}
+        - **Language**:${promptData.language || "All Ages"}
+        - **System Prompt**:${this.settingPrompt.coverImagePrompt}
+        `;
 
-      const requestData = {
-        prompt: coverPrompt,
-        num_images: 1,
-        enable_safety_checker: true,
-        safety_tolerance: "2",
-        output_format: "jpeg",
-        aspect_ratio: "9:16",
-        raw: false,
-      };
+      const modelUrl = this.aiService.getImageModelUrl(
+        user, 
+        this.userKeyRecord, 
+        this.settingPrompt
+      );
 
-      let responseUrl: string | null = null;
-
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          if(user.role===UserRole.USER && this.userKeyRecord.imagesGenerated >= this.userKeyRecord.package.imageLimit ){
-            throw new UnauthorizedException("exceeded maximum image generation limit")
-          }
-          const postResponse = await axios.post(
-          user.role===UserRole.USER?this.userKeyRecord.package.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
-         requestData,
-            {
-              headers: {
-                Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
-                "Content-Type": "application/json",
-              },
-            }
-          );
-
-          responseUrl = postResponse.data.response_url;
-          if (responseUrl) break; // ✅ Stop retrying if successful
-        } catch (error) {
-          this.logger.warn(
-            `⚠️ Attempt ${attempt}/${maxRetries} failed: ${error.message}`
-          );
-          if (attempt < maxRetries)
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
-        }
-      }
-
-      if (!responseUrl)
-        throw new Error("❌ Failed to generate book cover after retries.");
-
-      return responseUrl;
+      return await this.imageService.generateImage(
+        modelUrl,
+        this.apiKeyRecord[0].fal_ai,
+        coverPrompt
+      );
     } catch (error) {
       this.logger.error(`❌ Error generating book cover: ${error.message}`);
       throw new Error(error.message);
     }
   }
-
-
 
   private async introductionContent(promptData: BookGenerationDto, user) {
     try {
@@ -472,7 +360,7 @@ if(user.role===UserRole.USER){
          tableOfContentsResponse: getUsage(tableOfContentsResponse)
         }
       await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package.id, totalTokens);  
-      await this.subscriptionService.trackTokenUsage(user.id,"bookContent",UsageType.TOKEN,metadata);
+      await this.aiService.trackTokenUsage(user.id, this.userKeyRecord, "bookContent", totalTokens, metadata);
       }
       return {
         coverPageResponse: coverPageResponse.content,
@@ -488,12 +376,6 @@ if(user.role===UserRole.USER){
       throw new Error(error.message);
     }
   }
-
-
-
-
-
- 
 
   private async createBookContent(promptData: BookGenerationDto,user) {
     try {
@@ -637,7 +519,7 @@ if(user.role===UserRole.USER){
               });
               if(user.role===UserRole.USER){
                await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package.id, 0,1);  
-               await this.subscriptionService.trackTokenUsage(user.id,"coverImage",UsageType.IMAGE,{coverImageUrl:coverImagePath},book);
+               await this.aiService.trackImageUsage(user.id, this.userKeyRecord, "coverImage", 1, {coverImageUrl: coverImagePath}, book);
       }
             })
             .catch((error) =>
@@ -827,7 +709,8 @@ if(user.role===UserRole.USER){
       if(user.role===UserRole.USER){
       const totalTokens= finalResult?.usage_metadata.total_tokens 
       await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package.id, totalTokens);  
-      await this.subscriptionService.trackTokenUsage(user.id,input.currentContent?`${input.contentType}ParagraphRegenerate`: input.contentType,UsageType.TOKEN, {[input.contentType]:totalTokens});
+      await this.aiService.trackTokenUsage(user.id, input.currentContent?`${input.contentType}ParagraphRegenerate`: input.contentType, UsageType.TOKEN, totalTokens, // this should be the number of tokens used
+        { [input.contentType]: totalTokens });
      }
 
       generatedContent = finalSummary;

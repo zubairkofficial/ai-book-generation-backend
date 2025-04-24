@@ -27,6 +27,7 @@ import { UsersService } from 'src/users/users.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import { UsageType } from 'src/subscription/entities/usage.entity';
 import { UserRole } from 'src/users/entities/user.entity';
+import { AiService } from 'src/shared/services/ai.service';
 
 @Injectable()
 export class BookChapterService {
@@ -52,8 +53,8 @@ export class BookChapterService {
 
     private settingsService: SettingsService,
     private userService: UsersService,
-    private readonly subscriptionService: SubscriptionService
-
+    private readonly subscriptionService: SubscriptionService,
+    private aiService: AiService
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
   }
@@ -82,56 +83,16 @@ export class BookChapterService {
       throw new Error("Failed to setup uploads directory");
     }
   }
-  private async initializeAIModels(userId:number,noOfImages?:number) {
+  private async initializeAIModels(userId: number, noOfImages?: number) {
     try {
-     let maxCompletionTokens:number
-      this.userInfo=await this.userService.getProfile(userId)
-     if(!this.userInfo){
-      throw new NotFoundException('user not exist')
-    }
-    
-      this.apiKeyRecord = await this.apiKeyRepository.find();
-      if (!this.apiKeyRecord) {
-        throw new Error("No API keys found in the database.");
-      }
-      [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
-     if(this.userInfo.role===UserRole.USER && !this.userKeyRecord){
-               throw new Error("No subscribe any package");
-             }
-      
-      
-      if(this.userInfo.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.totalImages-this.userKeyRecord.imagesGenerated)< noOfImages) ) ){
-        throw new UnauthorizedException("exceeded maximum image generation limit")
-      }
-    
-      this.settingPrompt = await this.settingsService.getAllSettings();
-      if (!this.settingPrompt) {
-        throw new Error("No setting prompt found in the database.");
-      }
-      if(this.userInfo.role===UserRole.USER) {
-      // Calculate a reasonable maxTokens value
-      const remainingTokens = this.userKeyRecord.totalTokens - this.userKeyRecord.tokensUsed;
-      if(remainingTokens<200)
-        {
-          throw new BadRequestException("Token limit exceeded")
-        } 
-      // Set a reasonable upper limit for completion tokens
-       maxCompletionTokens = Math.min(remainingTokens, 4000); 
-      }
-      this.textModel = new ChatOpenAI({
-        openAIApiKey: this.apiKeyRecord[0].openai_key,
-        temperature: 0.4,
-        modelName:this.userInfo.role===UserRole.ADMIN?this.apiKeyRecord[0].modelType :this.userKeyRecord.package.modelType,
-        maxTokens: this.userInfo.role === UserRole.ADMIN ? undefined : maxCompletionTokens // Set maxTokens conditionally
-
-      });
-
-      this.logger.log(
-        `AI Models initialized successfully with model: ${this.apiKeyRecord[0].model}`
-      );
+      const aiConfig = await this.aiService.initializeAIModel(userId, noOfImages);
+      this.textModel = aiConfig.textModel;
+      this.apiKeyRecord = aiConfig.apiKeyRecord;
+      this.userKeyRecord = aiConfig.userKeyRecord;
+      this.settingPrompt = aiConfig.settingPrompt;
+      this.userInfo = aiConfig.user;
     } catch (error) {
-      this.logger.error(`Failed to initialize AI models: ${error.message}`);
-      throw new Error(error.message);
+      throw error;
     }
   }
 
@@ -367,13 +328,12 @@ export class BookChapterService {
     }
   }
 
-  private async generateChapterSummary(chapterText: string,bookInfo: BookGeneration,userId:number): Promise<string> {
+  private async generateChapterSummary(chapterText: string, bookInfo: BookGeneration, userId: number): Promise<string> {
     try {
       if (!chapterText || chapterText.trim().length === 0) {
         throw new Error("Chapter text is empty or invalid.");
       }
 
-      // Create the prompt for summarization
       const prompt = `
         Summarize the following chapter content into a concise and engaging summary:
         -**Language**:${bookInfo.language}
@@ -383,27 +343,22 @@ export class BookChapterService {
         Provide a summary that is no more than 3-4 sentences long, highlighting the main points of the chapter.
       `;
 
-      // Use the model from this.textModel dynamically
       const response = await this.textModel.invoke(prompt);
-    if(this.userInfo.role===UserRole.USER){
-       const totalTokens= await this.getUsage(response)
-      await this.subscriptionService.updateSubscription(userId, this.userKeyRecord.package.id, totalTokens);  
-      await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN,{summaryTokens:totalTokens});
-    }  
-      // Log the response for debugging
-      this.logger.log(
-        "OpenAI API Response:",
-        JSON.stringify(response, null, 2)
-      );
+      
+      if (this.userInfo.role === UserRole.USER) {
+        const totalTokens = this.aiService.getTokenUsage(response);
+        await this.aiService.trackTokenUsage(
+          userId,
+          this.userKeyRecord,
+          "chapterSummary",
+          totalTokens,
+          { summaryTokens: totalTokens }
+        );
+      }
 
-      // Extract and return the generated summary
       return response.content;
     } catch (error) {
-      // Log detailed error information
-      this.logger.error(
-        `Error generating chapter summary: ${error.message}`,
-        error.stack
-      );
+      this.logger.error(`Error generating chapter summary: ${error.message}`, error.stack);
       throw new Error(`Failed to generate chapter summary: ${error.message}`);
     }
   }
@@ -582,7 +537,7 @@ export class BookChapterService {
 
         const keyPointResponse = await this.textModel.invoke(keyPointPrompt);
        if(this.userInfo.role===UserRole.USER){
-        const totalTokens= await this.getUsage(keyPointResponse)
+        const totalTokens= await this.aiService.getTokenUsage(keyPointResponse)
         await this.subscriptionService.updateSubscription(userId, this.userKeyRecord.package.id, totalTokens);  
         await this.subscriptionService.trackTokenUsage(userId,"chapterKeyPoint",UsageType.TOKEN,{chapterKeyPoint:totalTokens});
        }
@@ -894,7 +849,7 @@ export class BookChapterService {
             const stream = await this.textModel.invoke(chapterSummaryPrompt);
    onTextUpdate(stream.content)
    if(this.userInfo.role===UserRole.USER){
-   const totalTokens= await this.getUsage(stream)
+   const totalTokens= await this.aiService.getTokenUsage(stream)
    await this.subscriptionService.updateSubscription(userId, this.userKeyRecord.package.id, totalTokens);  
    await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN,{chapterSummary:totalTokens});
   }
@@ -981,7 +936,7 @@ export class BookChapterService {
           const stream = await this.textModel.invoke(slidePrompt);
 
           if(this.userInfo.role===UserRole.USER){
-          const totalTokens= await this.getUsage(stream)
+          const totalTokens= await this.aiService.getTokenUsage(stream)
           await this.subscriptionService.updateSubscription(userId, this.userKeyRecord.package.id, totalTokens);  
           await this.subscriptionService.trackTokenUsage(userId,"chapterSlides",UsageType.TOKEN,{chapterSlides:totalTokens});
          }
@@ -1003,12 +958,7 @@ export class BookChapterService {
       throw new Error(`Failed to generate chapter slides: ${error.message}`);
     }
   }
-  async getUsage  (response) {
-    // Check if response has usage_metadata and it has a total_tokens property
-    if (response?.usage_metadata?.total_tokens !== undefined) {
-      return response.usage_metadata.total_tokens;
-    }
-    // Fallback to a reasonable estimate if not available
-    return response?.content?.length ? Math.ceil(response.content.length / 4) : 0;
-  };
+  async getUsage(response) {
+    return this.aiService.getTokenUsage(response);
+  }
 }

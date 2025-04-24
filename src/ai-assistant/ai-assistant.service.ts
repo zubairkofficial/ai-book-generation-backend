@@ -18,6 +18,8 @@ import { SubscriptionService } from "src/subscription/subscription.service";
 import { UsageType } from "src/subscription/entities/usage.entity";
 import { UserRole } from "src/users/entities/user.entity";
 import { ApiKey } from "src/api-keys/entities/api-key.entity";
+import { AiService } from "src/shared/services/ai.service";
+import { ImageService } from "src/shared/services/image.service";
 @Injectable()
 export class AiAssistantService {
   private readonly model: OpenAI;
@@ -39,8 +41,8 @@ export class AiAssistantService {
     private readonly subscriptionService: SubscriptionService,
     @InjectRepository(ApiKey)
      private apiKeyRepository: Repository<ApiKey>,
-    
-    
+    private readonly aiService: AiService,
+    private readonly imageService: ImageService,
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
   }
@@ -60,116 +62,45 @@ export class AiAssistantService {
       throw new Error("Failed to setup uploads directory");
     }
   }
-    private async initializeAIModels(userId:number,noOfImages?:number) {
-       try {
-        let maxCompletionTokens:number
-         this.userInfo=await this.usersService.getProfile(userId)
-        if(!this.userInfo){
-         throw new NotFoundException('user not exist')
-       }
-       
-         this.apiKeyRecord = await this.apiKeyRepository.find();
-       
-         [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
-         if(this.userInfo.role===UserRole.USER && !this.userKeyRecord){
-          throw new Error("No subscribe any package");
-        }
-         
-         
-       
-         
-         this.settingPrompt = await this.settingsService.getAllSettings();
-         if (!this.settingPrompt) {
-           throw new Error("No setting prompt found in the database.");
-         }
-
-         if(this.userInfo.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.totalImages-this.userKeyRecord.imagesGenerated)< noOfImages) ) ){
-          throw new UnauthorizedException("exceeded maximum image generation limit")
-        }
-         
-
-         if(this.userInfo.role===UserRole.USER) {
-         // Calculate a reasonable maxTokens value
-         const remainingTokens = this.userKeyRecord.totalTokens - this.userKeyRecord.tokensUsed;
-         if(remainingTokens<500)
-           {
-             throw new BadRequestException("Token limit exceeded")
-           } 
-         // Set a reasonable upper limit for completion tokens
-          maxCompletionTokens = Math.min(remainingTokens, 4000); 
-         }
-         this.textModel = new ChatOpenAI({
-           openAIApiKey: this.apiKeyRecord[0].openai_key,
-           temperature: 0.4,
-           modelName:this.userInfo.role===UserRole.ADMIN?this.apiKeyRecord[0].modelType :this.userKeyRecord.package.modelType,
-           maxTokens: this.userInfo.role === UserRole.ADMIN ? undefined : maxCompletionTokens // Set maxTokens conditionally
-   
-         });
-   
-         this.logger.log(
-           `AI Models initialized successfully with model: ${this.apiKeyRecord[0].model}`
-         );
-       } catch (error) {
-         this.logger.error(`Failed to initialize AI models: ${error.message}`);
-         throw new Error(error.message);
-       }
-     }
+    private async initializeAIModels(userId: number, noOfImages?: number) {
+      try {
+        const aiConfig = await this.aiService.initializeAIModel(userId, noOfImages);
+        this.textModel = aiConfig.textModel;
+        this.apiKeyRecord = aiConfig.apiKeyRecord;
+        this.userKeyRecord = aiConfig.userKeyRecord;
+        this.settingPrompt = aiConfig.settingPrompt;
+        this.userInfo = aiConfig.user;
+      } catch (error) {
+        throw error;
+      }
+    }
 
 
     private async pollImageGeneration(responseUrl: string, bookTitle: string): Promise<string> {
-      const maxRetries = 12;
-      const delayMs = 10000;
-  
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
-        try {
-          const getResponse = await axios.get(responseUrl, {
-            headers: {
-              Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
-              "Content-Type": "application/json",
-            },
-          });
-  
-          if (getResponse.data.images?.length > 0) {
-            return this.saveGeneratedImage(
-              getResponse.data.images[0].url,
-              bookTitle
-            );
-          }
-        } catch (error) {
-          this.logger.warn(`Image not ready (Attempt ${attempt + 1}/${maxRetries})`);
-        }
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-      }
-      throw new Error("Image generation timed out.");
+      return await this.imageService.pollAndSaveImage(
+        responseUrl,
+        this.apiKeyRecord[0].fal_ai,
+        bookTitle,
+        'covers'
+      );
     }
 
 
     private async generateCoverImage(prompt: string, bookTitle: string): Promise<string> {
       try {
-        const requestData = { prompt ,
-          num_images: 1,
-        enable_safety_checker: true,
-        safety_tolerance: "2",
-        output_format: "jpeg",
-        aspect_ratio: "9:16",
-        raw: false,
-        };
-     
-        const postResponse = await axios.post(
-          this.userInfo.role===UserRole.USER?this.userKeyRecord.package.imageModelURL  : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
-          requestData,
-          {
-            headers: {
-              Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
-              "Content-Type": "application/json",
-            },
-          }
+        const modelUrl = this.aiService.getImageModelUrl(
+          this.userInfo,
+          this.userKeyRecord,
+          this.settingPrompt
         );
-  
-        return this.pollImageGeneration(
-          postResponse.data.response_url,
-          bookTitle
+        
+        const responseUrl = await this.imageService.generateImage(
+          modelUrl,
+          this.apiKeyRecord[0].fal_ai,
+          prompt
         );
+        
+        return this.pollImageGeneration(responseUrl, bookTitle);
       } catch (error) {
         this.logger.error(`Image generation failed: ${error.message}`);
         throw new Error(error.message);
