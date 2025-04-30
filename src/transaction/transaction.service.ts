@@ -57,9 +57,9 @@ export class TransactionService {
     transaction.newBalance = +user.availableAmount;
     
     // Save the updated user and transaction
-    await this.usersService.updateUserPayment({ 
-      amount: user.availableAmount - previousBalance 
-    } as any, user);
+    // await this.usersService.updateUserPayment({ 
+    //   amount: Number(user.availableAmount) - Number(previousBalance) 
+    // } as any, user);
     
     return await this.transactionRepository.save(transaction);
   }

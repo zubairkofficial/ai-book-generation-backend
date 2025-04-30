@@ -16,11 +16,15 @@ import { Usage, UsageType } from "./entities/usage.entity";
 import { User } from "src/users/entities/user.entity";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { CreatePackageDto } from "./dto/create-package.dto";
-import { SubscribePackageDto } from "./dto/subscribe-package.dto";
+import { FreeSubscriptionPackageDto, SubscribePackageDto } from "./dto/subscribe-package.dto";
 import { UpdatePackageDto } from "./dto/update-package.dto";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { BookGeneration } from "src/book-generation/entities/book-generation.entity";
 import { BookChapter } from "src/book-chapter/entities/book-chapter.entity";
+import { CardPaymentService } from "src/card-payment/card-payment.service";
+import { Transaction, TransactionType } from "src/transaction/entities/transaction.entity";
+import { TransactionService } from "src/transaction/transaction.service";
+import { EmailService } from "src/auth/services/email.service";
 
 @Injectable()
 export class SubscriptionService {
@@ -39,7 +43,9 @@ export class SubscriptionService {
     @InjectRepository(User)
     private userRepository: Repository<User>,
 
-    private eventEmitter: EventEmitter2
+    private eventEmitter: EventEmitter2,
+    private cardPaymentService: CardPaymentService,
+    private emailService: EmailService,
 
   ) {}
 
@@ -69,7 +75,7 @@ export class SubscriptionService {
   }
   async updateSubscription(
     userId: number,
-    packageId: number,
+    packageId: number|null,
     totalTokens: number,
     images?:number
   ): Promise<UserSubscription> {
@@ -146,7 +152,7 @@ export class SubscriptionService {
               package:{id:subscribeDto.packageId}
 
             },
-            // relations: ["package"],
+           
           }
         );
 
@@ -308,7 +314,7 @@ if(bookChapters){
     const subscription = await this.userSubscriptionRepository.findOne({
       where: {
         user: { id: user.id },
-        package:{id:packages.id},
+        package:{id:packages?.id},
         status: SubscriptionStatus.ACTIVE,
       },
     });
@@ -374,6 +380,25 @@ if(bookChapters){
   }));
   }
 
+
+  async tryAutoRecharge(user: User, amount: number): Promise<boolean> {
+    try {
+      // You'd probably use Stripe or another payment API here
+      const payment = await this.cardPaymentService.chargeWallet({
+        userId: user.id,
+        amount,
+        currency: 'USD',
+      });
+  
+    
+      return true;
+    } catch (error) {
+      this.logger.error(`Auto recharge error for user ${user.id}: ${error.message}`);
+      return false;
+    }
+  }
+  
+
   // CRON: Check for expired subscriptions daily
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handleExpiredSubscriptions() {
@@ -389,13 +414,36 @@ if(bookChapters){
     });
 
     for (const subscription of expiredSubscriptions) {
+      let updatedUser: User
       if (subscription.autoRenew) {
         // Handle auto-renewal logic here, potentially integrating with a payment service
         this.logger.log(
           `Auto-renewing subscription ${subscription.id} for user ${subscription.user.id}`
         );
+    const user = await this.userRepository.findOne({ where: { id:subscription.user.id } });
+    if (!user) {
+      throw new NotFoundException("User  not found");
+    }
 
-        // Create new subscription period
+    if(Number(user.availableAmount)<Number(subscription.package.price)){
+      
+      const paymentSucceeded = await this.tryAutoRecharge(user, Number(subscription.package.price));
+
+  if (!paymentSucceeded) {
+    this.logger.warn(`Auto recharge failed for user ${user.id}. Sending notification.`);
+    await this.emailService.sendInsufficientFundsEmail(user.email);
+return {message:"email send successfully"}
+  }
+   updatedUser = await this.userRepository.findOne({ where: { id: user.id } });
+  if (Number(updatedUser.availableAmount) < Number(subscription.package.price)) {
+    this.logger.error(`Recharge succeeded but balance still insufficient for user ${user.id}`);
+    continue;
+  }
+}
+    
+   const deduction= Number(updatedUser.availableAmount)-Number(subscription.package.price)
+  await this.userRepository.update(user.id,{availableAmount:deduction})
+    // Create new subscription period
         const newEndDate = new Date(subscription.endDate);
         newEndDate.setDate(
           newEndDate.getDate() + subscription.package.durationDays
@@ -449,5 +497,77 @@ if(bookChapters){
     
     return updatedPackage;
   }
+  
+  async createFreeSubscription(input: FreeSubscriptionPackageDto): Promise<UserSubscription> {
+    try {
+      return await this.userRepository.manager.transaction(
+        async (entityManager: EntityManager) => {
+          // Find the user
+          const user = await entityManager.findOne(User, {
+            where: { id: input.userId },
+          });
+          
+          if (!user) {
+            throw new NotFoundException("User not found");
+          }
+         
+        //  user.fullModelAccess=input.fullModelAccess??user.fullModelAccess
+        await entityManager.save(user)
+          
+          // Check for existing active subscription
+          const existingSubscription = await entityManager.findOne(
+            UserSubscription,
+            {
+              where: {
+                user: { id: input.userId },
+                status: SubscriptionStatus.ACTIVE,
+              },
+            }
+          );
+
+          // Create start and end dates
+          const startDate = new Date();
+          const endDate = new Date(startDate);
+          endDate.setDate(endDate.getDate() + (typeof input.endDate === 'number' ? input.endDate : 30)); // Default 30 days if not provided or not a number
+
+          if (existingSubscription) {
+            // Update existing subscription
+            existingSubscription.totalTokens = input.tokenLimit ?? existingSubscription.totalTokens;
+            existingSubscription.totalImages = input.imageLimit ?? existingSubscription.totalImages;
+            existingSubscription.startDate = startDate;
+            existingSubscription.endDate = endDate;
+            existingSubscription.status =input.status?? SubscriptionStatus.ACTIVE;
+           
+            // existingSubscription.fullModelAccess=input.fullModelAccess ?? false
+            // Reset usage counters if requested (optional)
+            existingSubscription.tokensUsed = 0;
+            existingSubscription.imagesGenerated = 0;
+            existingSubscription.package=null
+            return await entityManager.save(UserSubscription, existingSubscription);
+          }
+
+
+          // Create the new subscription
+          const subscription = entityManager.create(UserSubscription, {
+            user,
+            totalTokens: input.tokenLimit ,
+            totalImages: input.imageLimit ,
+            startDate,
+            endDate,
+            status: SubscriptionStatus.ACTIVE,
+            // fullModelAccess:input.fullModelAccess??false,
+            autoRenew: false, // Free subscriptions typically don't auto-renew
+          });
+
+          return await entityManager.save(UserSubscription, subscription);
+        }
+      );
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Failed to create free subscription: ${error.message}`
+      );
+    }
+  }
+
   
 }

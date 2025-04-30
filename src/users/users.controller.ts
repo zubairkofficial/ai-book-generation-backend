@@ -60,4 +60,21 @@ export class UsersController {
     }
     return user;
   }
+
+  @Get('free-subscription')
+  @ApiOperation({ summary: 'Update current user profile' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the updated user profile',
+    type: User,
+  })
+  async getFreeSubscription(
+
+  ) {
+    const user = await this.usersService.getFreeSubscription();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return user;
+  }
 }

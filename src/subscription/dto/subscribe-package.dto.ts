@@ -1,5 +1,7 @@
-import { IsNumber, IsBoolean, IsOptional } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsNumber, IsBoolean, IsOptional, Min, IsDateString, IsEnum, IsInt, IsNotEmpty, IsPositive } from 'class-validator';
+import { ApiProperty, PartialType } from '@nestjs/swagger';
+import { CreatePackageDto } from './create-package.dto';
+import { SubscriptionStatus } from '../entities/user-subscription.entity';
 
 export class SubscribePackageDto {
   @ApiProperty({ description: 'Package ID to subscribe to' })
@@ -17,4 +19,35 @@ export class SubscribePackageDto {
   autoRenew?: boolean;
 
   
+} 
+export class FreeSubscriptionPackageDto {
+  @IsNotEmpty()
+  @ApiProperty({ description: 'User ID to subscribe to' })
+  @IsNumber()
+  userId: number; // Assuming userId is a string, adjust if it's a different type
+
+  @IsDateString()
+  startDate: Date;
+
+  @IsDateString()
+  endDate: Date;
+
+  @IsInt()
+  @IsNumber()
+  @IsOptional()
+  tokenLimit: number;
+
+  @IsInt()
+  @IsNumber()
+  @IsOptional()
+  imageLimit: number;
+
+  @IsEnum(SubscriptionStatus)
+  status: SubscriptionStatus;
+
+  @IsOptional()
+  autoRenew?: boolean;
+   
+  @IsOptional()
+  fullModelAccess?: boolean; 
 } 

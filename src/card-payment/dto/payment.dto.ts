@@ -83,3 +83,13 @@ export class CreateCardTokenDto {
   @IsString()
   cardHolderName?: string;
 }
+export class ChargeCardDto {
+  @IsNumber()
+ userId:number
+ 
+ @IsNumber()
+ amount:number
+
+ @IsNumber()
+ currency:string
+}

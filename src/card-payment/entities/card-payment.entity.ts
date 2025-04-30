@@ -5,7 +5,7 @@ import { Transaction } from 'src/transaction/entities/transaction.entity';
 
 @Entity()
 export class CardPayment extends BaseEntity {
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User,(user)=>user.cardPayment, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'userId' })
   user: User;
   

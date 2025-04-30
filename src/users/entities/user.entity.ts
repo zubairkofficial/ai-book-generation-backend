@@ -1,7 +1,9 @@
 import { AiAssistant } from 'src/ai-assistant/entities/ai-assistant.entity';
 import { BookGeneration } from 'src/book-generation/entities/book-generation.entity';
+import { CardPayment } from 'src/card-payment/entities/card-payment.entity';
 import { BaseEntity } from 'src/common/entities/base.entity';
 import { Settings } from 'src/settings/entities/settings.entity';
+import { UserSubscription } from 'src/subscription/entities/user-subscription.entity';
 import { Entity, Column, OneToMany, OneToOne } from 'typeorm';
 
 export enum UserRole {
@@ -37,13 +39,22 @@ export class User extends BaseEntity {
   role: UserRole;
 
   @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
-availableAmount: number;
+  availableAmount: number;
 
+  // @Column({ type: 'boolean', default: false })
+  // fullModelAccess: boolean;
+  
   @OneToMany(() => AiAssistant, (aiAssistant) => aiAssistant.user, { cascade: true })
   aiAssistants: AiAssistant[];
 
   @OneToMany(() => BookGeneration, (bookGeneration) => bookGeneration.user)
   bookGenerations: BookGeneration[];
+  
+  @OneToMany(() => UserSubscription, (userSubscription) => userSubscription.user)
+  userSubscription: UserSubscription[];
+  
+  @OneToMany(() => CardPayment, (cardPayment) => cardPayment.user)
+  cardPayment: CardPayment[];
 
   @OneToOne(() => Settings, (settings) => settings.user)
   settings: Settings

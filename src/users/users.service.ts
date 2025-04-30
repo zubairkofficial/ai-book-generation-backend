@@ -7,6 +7,7 @@ import { compare } from 'bcryptjs';
 import { CryptoService } from 'src/utils/crypto.service';
 import { BookType } from 'src/book-generation/entities/book-generation.entity';
 import { CreateCardTokenDto } from 'src/card-payment/dto/payment.dto';
+import { SubscriptionStatus } from 'src/subscription/entities/user-subscription.entity';
 
 @Injectable()
 export class UsersService {
@@ -116,6 +117,23 @@ async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<User> {
     .getRawMany(); // Fetch raw data without full entities
 
   return usersWithBookCount;
+  } catch (error) {
+    throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+       
+  }
+  }
+  async getFreeSubscription(): Promise<any> {
+   try {
+
+    const usersWithFreeSubscription = await this.userRepository
+  .createQueryBuilder('user')
+  .leftJoinAndSelect('user.userSubscription', 'userSubscription') // Assuming you have a relation defined
+  .orderBy('userSubscription.createdAt', 'DESC')
+  // .where('userSubscription.status = :status', { status: SubscriptionStatus.ACTIVE }) // Adjust based on your criteria for "free"
+  // .andWhere('subscription.packageId IS NULL') // Assuming free subscriptions have no associated package
+  .getMany(); // Fetch raw data without full entities
+
+  return usersWithFreeSubscription;
   } catch (error) {
     throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
        

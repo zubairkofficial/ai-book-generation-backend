@@ -12,7 +12,7 @@ export enum SubscriptionStatus {
 
 @Entity()
 export class UserSubscription extends BaseEntity {
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User,(user)=>{user.userSubscription}, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'userId' })
   user: User;
 

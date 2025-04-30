@@ -10,6 +10,7 @@ import { SubscriptionEventListeners } from './subscription.listeners';
 import { CardPaymentModule } from 'src/card-payment/card-payment.module';
 import { NotificationModule } from 'src/notification/notification.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { EmailService } from 'src/auth/services/email.service';
 
 @Module({
   imports: [
@@ -20,7 +21,9 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
   ],
   providers: [
     SubscriptionService,
-    SubscriptionEventListeners
+    SubscriptionEventListeners,
+    EmailService
+
   ],
   controllers: [SubscriptionController],
   exports: [SubscriptionService],

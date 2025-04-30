@@ -218,4 +218,25 @@ export class EmailService {
       throw new Error('Error sending email'); // Rethrow the error for the caller to handle
     }
   }
+
+  async sendInsufficientFundsEmail(userEmail: string) {
+    const subject = 'Insufficient Balance for Auto-Renewal';
+    const text = `Your subscription could not be renewed due to insufficient balance. Please recharge your wallet.`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f8f8f8;">
+        <div style="max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
+          <h2 style="color: #031a2e;">Subscription Renewal Failed</h2>
+          <p>Dear user,</p>
+          <p>Your subscription could not be renewed because of insufficient balance in your wallet.</p>
+          <p>Please <strong>recharge your wallet</strong> to continue enjoying our services.</p>
+          <p>If you need help, contact us at <a href="mailto:aibook@gmail.com">aibook@gmail.com</a>.</p>
+          <p>Thank you,<br/>The ai book Team</p>
+        </div>
+      </div>
+    `;
+  
+    await this.sendEmail(userEmail, subject, text, html);
+  }
+  
+  
 }

@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 
 import { CardPayment } from './entities/card-payment.entity';
-import { CreateCardTokenDto } from './dto/payment.dto';
+import { ChargeCardDto, CreateCardTokenDto } from './dto/payment.dto';
 import { UsersService } from 'src/users/users.service';
 import { ApiKey } from 'src/api-keys/entities/api-key.entity';
 import { TransactionService } from 'src/transaction/transaction.service';
@@ -123,7 +123,7 @@ export class CardPaymentService {
   
       // Update user payment and create transaction
       await Promise.all([
-        this.usersService.updateUserPayment(cardData.amount, user),
+        this.usersService.updateUserPayment(+cardData.amount, user),
         this.transactionService.createTransaction({
           type: TransactionType.PAYMENT,
           amount: Number(cardData.amount),
@@ -176,13 +176,13 @@ export class CardPaymentService {
         expiryMonth: String(cardPayment.expiryMonth),
         expiryYear: String(cardPayment.expiryYear),
         cvc: cardPayment.cvc,
-        amount: input.amount,
+        amount: +input.amount,
         saveCard: input.saveCard, // Set this based on your logic
       };
      const cardToken= await this.createCardToken(payload)
      const  paymentIntent=  await this.createPaymentIntent(Math.round(input.amount * 100), 'usd', cardToken.id)
      await Promise.all([
-        this.usersService.updateUserPayment(input.amount, user),
+        this.usersService.updateUserPayment(Number(input.amount), user),
         this.transactionService.createTransaction({
           type: TransactionType.PAYMENT,
           amount: Number(input.amount),
@@ -206,6 +206,20 @@ export class CardPaymentService {
     try {
       return await this.cardPaymentRepository.delete({ id:cardId 
       });  
+    } catch (error) {
+      throw new Error(error.message);
+    }
+  }
+  async chargeWallet(input:ChargeCardDto) {
+    try {
+      const [userCards]= await this.cardPaymentRepository.find({where:{ user:{id:input.userId} 
+      }});  
+      const inputData={
+        amount:input.amount,
+        saveCard:true
+      }
+    return await  this.deductAmountToken(inputData,userCards.id,input.userId)
+
     } catch (error) {
       throw new Error(error.message);
     }

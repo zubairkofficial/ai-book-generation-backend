@@ -60,60 +60,91 @@ export class AiAssistantService {
       throw new Error("Failed to setup uploads directory");
     }
   }
-    private async initializeAIModels(userId:number,noOfImages?:number) {
-       try {
-        let maxCompletionTokens:number
-         this.userInfo=await this.usersService.getProfile(userId)
-        if(!this.userInfo){
-         throw new NotFoundException('user not exist')
-       }
-       
-         this.apiKeyRecord = await this.apiKeyRepository.find();
-       
-         [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
-         if(this.userInfo.role===UserRole.USER && !this.userKeyRecord){
-          throw new Error("No subscribe any package");
-        }
-         
-         
-       
-         
-         this.settingPrompt = await this.settingsService.getAllSettings();
-         if (!this.settingPrompt) {
-           throw new Error("No setting prompt found in the database.");
-         }
+  
+  private validateUserSubscription(noOfImages?: number): void {
+    if (!this.userKeyRecord) {
+      throw new Error('No subscription package found.');
+    }
+  
+    const { totalImages, imagesGenerated } = this.userKeyRecord;
+  
+    if (
+      totalImages < imagesGenerated ||
+      (noOfImages && totalImages - imagesGenerated < noOfImages)
+    ) {
+      throw new UnauthorizedException('Exceeded maximum image generation limit');
+    }
+  }
 
-         if(this.userInfo.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.totalImages-this.userKeyRecord.imagesGenerated)< noOfImages) ) ){
-          throw new UnauthorizedException("exceeded maximum image generation limit")
-        }
-         
+  private calculateMaxTokens(): number {
+    const { totalTokens, tokensUsed } = this.userKeyRecord;
+    const remainingTokens = totalTokens - tokensUsed;
+  
+    if (remainingTokens < 500) {
+      throw new BadRequestException('Token limit exceeded');
+    }
+  
+    return Math.min(remainingTokens, 4000);
+  }
 
-         if(this.userInfo.role===UserRole.USER) {
-         // Calculate a reasonable maxTokens value
-         const remainingTokens = this.userKeyRecord.totalTokens - this.userKeyRecord.tokensUsed;
-         if(remainingTokens<500)
-           {
-             throw new BadRequestException("Token limit exceeded")
-           } 
-         // Set a reasonable upper limit for completion tokens
-          maxCompletionTokens = Math.min(remainingTokens, 4000); 
-         }
-         this.textModel = new ChatOpenAI({
-           openAIApiKey: this.apiKeyRecord[0].openai_key,
-           temperature: 0.4,
-           modelName:this.userInfo.role===UserRole.ADMIN?this.apiKeyRecord[0].modelType :this.userKeyRecord.package.modelType,
-           maxTokens: this.userInfo.role === UserRole.ADMIN ? undefined : maxCompletionTokens // Set maxTokens conditionally
-   
-         });
-   
-         this.logger.log(
-           `AI Models initialized successfully with model: ${this.apiKeyRecord[0].model}`
-         );
-       } catch (error) {
-         this.logger.error(`Failed to initialize AI models: ${error.message}`);
-         throw new Error(error.message);
-       }
-     }
+  private selectModelName(): string {
+    const isAdmin = this.userInfo.role === UserRole.ADMIN;
+    const hasNoPackage = !this.userKeyRecord?.package;
+  
+    return (isAdmin || hasNoPackage)
+      ? this.apiKeyRecord.modelType
+      : this.userKeyRecord.package.modelType;
+  }
+  
+  
+  
+  private async initializeAIModels(userId: number, noOfImages?: number) {
+    try {
+      // Fetch user profile
+      this.userInfo = await this.usersService.getProfile(userId);
+      if (!this.userInfo) {
+        throw new NotFoundException('User does not exist');
+      }
+  
+      // Fetch API key
+      [this.apiKeyRecord] = await this.apiKeyRepository.find();
+      if (!this.apiKeyRecord) {
+        throw new Error('No API keys found in the database.');
+      }
+  
+      // Fetch user's active subscription
+      [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
+  
+      // Validate subscription (only for USER role)
+      if (this.userInfo.role === UserRole.USER) {
+        this.validateUserSubscription(noOfImages);
+      }
+  
+      // Load settings
+      this.settingPrompt = await this.settingsService.getAllSettings();
+      if (!this.settingPrompt) {
+        throw new Error('No setting prompt found in the database.');
+      }
+  
+      // Determine max completion tokens if not admin
+      const maxCompletionTokens = this.userInfo.role === UserRole.USER
+        ? this.calculateMaxTokens()
+        : undefined;
+  
+      // Initialize text model
+      this.textModel = new ChatOpenAI({
+        openAIApiKey: this.apiKeyRecord.openai_key,
+        temperature: 0.4,
+        modelName: this.selectModelName(),
+        maxTokens: maxCompletionTokens,
+      });
+  
+      this.logger.log(`AI Models initialized successfully with model: ${this.selectModelName()}`);
+    } catch (error) {
+      this.logger.error(`Failed to initialize AI models: ${error.message}`);
+      throw new Error(error.message);
+    }
+  }
 
 
     private async pollImageGeneration(responseUrl: string, bookTitle: string): Promise<string> {
@@ -124,7 +155,7 @@ export class AiAssistantService {
         try {
           const getResponse = await axios.get(responseUrl, {
             headers: {
-              Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
+              Authorization: `Key ${this.apiKeyRecord.fal_ai}`,
               "Content-Type": "application/json",
             },
           });
@@ -156,11 +187,11 @@ export class AiAssistantService {
         };
      
         const postResponse = await axios.post(
-          this.userInfo.role===UserRole.USER?this.userKeyRecord.package.imageModelURL  : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+          this.userInfo.role===UserRole.USER?!this.userKeyRecord.package?this.settingPrompt.coverImageDomainUrl :this.userKeyRecord.package.imageModelURL  : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
           requestData,
           {
             headers: {
-              Authorization: `Key ${this.apiKeyRecord[0].fal_ai}`,
+              Authorization: `Key ${this.apiKeyRecord.fal_ai}`,
               "Content-Type": "application/json",
             },
           }
@@ -237,7 +268,7 @@ export class AiAssistantService {
                     input.bookCoverInfo.bookTitle
                   );
                   if(this.userInfo.role===UserRole.USER){ 
-                  await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package.id, 0,1);  
+                  await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package?.id??null, 0,1);  
                   await this.subscriptionService.trackTokenUsage(user.id,input.bookCoverInfo.bookTitle,UsageType.IMAGE,{aiAssistantCoverImage:imageUrl});
                  }
                   imageUrls.push(imageUrl);
@@ -266,8 +297,8 @@ export class AiAssistantService {
    if(input.type!==AiAssistantType.BOOK_COVER_IMAGE) {
       const response = await this.textModel.invoke(prompt);
  if(this.userInfo.role===UserRole.USER){
-      const totalTokens=await this.bookChapterService.getUsage(response)
-      await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package.id, totalTokens);  
+      const { totalTokens } = await this.bookChapterService.getUsage(response);
+      await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package?.id??null, totalTokens);  
       await this.subscriptionService.trackTokenUsage(user.id,_.camelCase(input.type),UsageType.TOKEN,{[_.camelCase(input.type)]:totalTokens});
        }
       // ✅ Store AI response in the database

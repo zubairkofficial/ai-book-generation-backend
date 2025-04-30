@@ -16,7 +16,7 @@ import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/types/request-with-user.interface';
 import { SubscriptionService } from './subscription.service';
 import { CreatePackageDto } from './dto/create-package.dto';
-import { SubscribePackageDto } from './dto/subscribe-package.dto';
+import { FreeSubscriptionPackageDto, SubscribePackageDto } from './dto/subscribe-package.dto';
 import { Roles } from 'src/decorators/roles.decorator';
 import { RolesGuard } from 'src/guards/roles.guard';
 import { Role } from 'src/utils/roles.enum';
@@ -98,4 +98,18 @@ async updatePackage(
   const userId = request.user.id;
   return this.subscriptionService.updatePackage(+id, +userId, updatePackageDto);
 }
+
+@Post('free-subscription')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.ADMIN)
+@ApiOperation({ summary: 'Create a free subscription package (Admin only)' })
+@ApiResponse({ status: 200, description: 'Package create successfully' })
+async createFreeSubscription(
+  @Body() input: FreeSubscriptionPackageDto
+) {
+ 
+  return this.subscriptionService.createFreeSubscription(input);
+}
+
+  
 } 

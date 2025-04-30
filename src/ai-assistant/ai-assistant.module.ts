@@ -14,18 +14,22 @@ import { Package } from "src/subscription/entities/package.entity";
 import { UserSubscription } from "src/subscription/entities/user-subscription.entity";
 import { Usage } from "src/subscription/entities/usage.entity";
 import { User } from "src/users/entities/user.entity";
-import { ApiKey } from "src/api-keys/entities/api-key.entity";
+import { CardPaymentService } from "src/card-payment/card-payment.service";
+import { EmailService } from "src/auth/services/email.service";
+import { CardPayment } from "src/card-payment/entities/card-payment.entity";
+import { TransactionService } from "src/transaction/transaction.service";
+import { Transaction } from "src/transaction/entities/transaction.entity";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([AiAssistant,BookChapter,BookGeneration,Package,UserSubscription,Usage,User]), 
+    TypeOrmModule.forFeature([AiAssistant,BookChapter,BookGeneration,Package,UserSubscription,Usage,User,CardPayment,Transaction]), 
     ApiKeysModule,  
     UsersModule, // Ensure correct indentation
     SettingsModule,
     ApiKeysModule
   ],
   controllers: [AiAssistantController],
-  providers: [AiAssistantService,BookChapterService,SubscriptionService], // Remove UsersService, as it is provided by UsersModule
+  providers: [AiAssistantService,BookChapterService,SubscriptionService,CardPaymentService,EmailService,TransactionService], // Remove UsersService, as it is provided by UsersModule
   exports: [AiAssistantService],
 })
 export class AiAssistantModule {}
