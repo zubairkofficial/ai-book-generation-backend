@@ -471,45 +471,97 @@ export class BookChapterService {
 
       // Step 2: Regenerate paragraph (if 'selectedText' is present) with or without instruction
       if (promptData.selectedText) {
-        if (promptData.instruction) {
-          updatePrompt = `
-            You are an expert book writer. Improve the following paragraph of the book "${bookInfo.bookTitle}" while maintaining its context and coherence:
-      
-            **Original Paragraph:**
-            "${promptData.selectedText}"
-            **Instructions:**
-            "${promptData.instruction}"
-            **Guidelines:**
-            - Enhance the clarity and flow.
-            - Maintain the same context and meaning.
-            - Avoid generating completely new or irrelevant content.
-            - Keep it engaging and refined.
-      
-            **Improved Paragraph (do not enclose in quotes):**
-          `;
-          const memoryVariables = await memory.loadMemoryVariables({});
-          if (memoryVariables?.history) {
-            updatePrompt += `
-              **Previous Chapter Context:**
-              ${memoryVariables.history}
+        const isHeading = (text) => {
+          const lines = text.split('\n').filter(line => line.trim() !== '');
+          return lines.length === 1 && text.length <= 100 && !/[.!?]$/.test(text.trim());
+        };
+        
+        const headingCheck = isHeading(promptData.selectedText);
+        
+        if (headingCheck) {
+          // Handle heading improvement
+          if (promptData.instruction) {
+            updatePrompt = `
+              You are an expert book writer. Improve the following heading of the book "${bookInfo.bookTitle}" while maintaining its context and coherence:
+              
+              **Original Heading:**
+              "${promptData.selectedText}"
+              **Instructions:**
+              ${promptData.instruction}
+              **Guidelines:**
+              - Enhance clarity and conciseness.
+              - Maintain the same context and meaning.
+              - Keep it as a heading; do not generate a paragraph.
+              - Ensure it is engaging and appropriately styled.
+              
+              **Improved Heading (do not enclose in quotes):**
+            `;
+            const memoryVariables = await memory.loadMemoryVariables({});
+            if (memoryVariables?.history) {
+              updatePrompt += `
+                **Previous Chapter Context:**
+                ${memoryVariables.history}
+              `;
+            }
+          } else {
+            updatePrompt = `
+              You are an expert book writer. Improve the following heading of the book "${bookInfo.bookTitle}" while maintaining its context and coherence:
+              
+              **Original Heading:**
+              ${promptData.selectedText}
+              
+              **Guidelines:**
+              - Enhance clarity and conciseness.
+              - Maintain the same context and meaning.
+              - Keep it as a heading; do not generate a paragraph.
+              - Ensure it is engaging and appropriately styled.
+              
+              **Improved Heading (do not enclose in quotes):**
             `;
           }
         } else {
-          updatePrompt = `
-            You are an expert book writer. Improve the following paragraph of the book "${bookInfo.bookTitle}" while maintaining its context and coherence:
-      
-            **Original Paragraph:**
-            "${promptData.selectedText}"
-      
-            **Guidelines:**
-            - Enhance the clarity and flow.
-            - Maintain the same context and meaning.
-            - Avoid generating completely new or irrelevant content.
-            - Keep it engaging and refined.
-      
-            **Improved Paragraph (do not enclose in quotes):**
-          `;
+          // Handle paragraph improvement (original code)
+          if (promptData.instruction) {
+            updatePrompt = `
+              You are an expert book writer. Improve the following paragraph of the book "${bookInfo.bookTitle}" while maintaining its context and coherence:
+              
+              **Original Paragraph:**
+              "${promptData.selectedText}"
+              **Instructions:**
+              "${promptData.instruction}"
+              **Guidelines:**
+              - Enhance the clarity and flow.
+              - Maintain the same context and meaning.
+              - Avoid generating completely new or irrelevant content.
+              - Keep it engaging and refined.
+              
+              **Improved Paragraph (do not enclose in quotes):**
+            `;
+            const memoryVariables = await memory.loadMemoryVariables({});
+            if (memoryVariables?.history) {
+              updatePrompt += `
+                **Previous Chapter Context:**
+                ${memoryVariables.history}
+              `;
+            }
+          } else {
+            updatePrompt = `
+              You are an expert book writer. Improve the following paragraph of the book "${bookInfo.bookTitle}" while maintaining its context and coherence:
+              
+              **Original Paragraph:**
+              "${promptData.selectedText}"
+              
+              **Guidelines:**
+              - Enhance the clarity and flow.
+              - Maintain the same context and meaning.
+              - Avoid generating completely new or irrelevant content.
+              - Keep it engaging and refined.
+              
+              **Improved Paragraph (do not enclose in quotes):**
+            `;
+          }
         }
+        
 
         let updateResponse = await this.textModel.stream(updatePrompt);
         let updatedText = "";
