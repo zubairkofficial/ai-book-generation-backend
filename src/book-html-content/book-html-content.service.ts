@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as puppeteer from 'puppeteer';
 import { BookGenerationService } from 'src/book-generation/book-generation.service';
 import { ConfigService } from '@nestjs/config';
+import * as pdfLib from 'pdfjs-lib'
 @Injectable()
 export class BookHtmlContentService {
     constructor(
@@ -22,17 +23,17 @@ export class BookHtmlContentService {
     async generatePdf(id: number) {
       const book = await this.bookGenerationService.findOneWithHtmlContent(+id);
   
-    //   const browser = await puppeteer.launch();
-       const browser = await puppeteer.launch({
+      const browser = await puppeteer.launch();
+//        const browser = await puppeteer.launch({
  
-  args: [
-    '--no-sandbox',
-    '--disable-setuid-sandbox',
-    '--disable-dev-shm-usage',
-    '--single-process'
-  ],
-  timeout: 60000, // Increase to 60 seconds
-});
+//   args: [
+//     '--no-sandbox',
+//     '--disable-setuid-sandbox',
+//     '--disable-dev-shm-usage',
+//     '--single-process'
+//   ],
+//   timeout: 60000, // Increase to 60 seconds
+// });
       const page = await browser.newPage();
   
       try {
@@ -50,7 +51,7 @@ export class BookHtmlContentService {
         await page.emulateMediaType('screen');
   
         // Step 4: Generate PDF with proper page numbering
-        const pdfBuffer = await page.pdf({
+        let pdfBuffer = await page.pdf({
           margin: { top: '40px', right: '10px', bottom: '40px', left: '10px' },
           printBackground: true,
           format: 'A4',
@@ -61,13 +62,47 @@ export class BookHtmlContentService {
                              <span class="pageNumber"></span> 
                           </span>
                         </div>`,
-          timeout: 0
+          timeout: 0,
+          outline:true
         });
   
         if (!pdfBuffer || pdfBuffer.length === 0) {
           throw new Error('Failed to generate PDF content');
         }
-  
+    const pdfPromise= pdfLib.getDocument(pdfBuffer)
+  const pdf=await pdfPromise.promise
+  const outline=await pdf.getOutline();
+  const tocPageNumbers = [];
+for (const item of outline) {
+  if (item.title === 'Table of Contents') continue;
+  const pageIndex = await pdf.getPageIndex(item.dest[0]);
+  tocPageNumbers.push({
+    title: item.title,
+    pageNumber: pageIndex + 1 // PDF pages are 0-indexed
+  });
+}
+
+// Regenerate PDF with updated TOC
+if (tocPageNumbers.length > 0) {
+  const finalHtml = this.generateBookHtml(book, true, tocPageNumbers);
+  await page.setContent(finalHtml, { waitUntil: 'networkidle0' });
+  pdfBuffer = await page.pdf(
+    {
+        margin: { top: '40px', right: '10px', bottom: '40px', left: '10px' },
+        printBackground: true,
+        format: 'A4',
+        displayHeaderFooter: true,
+        headerTemplate: '<div style="padding-top: 5px;"></div>',
+        footerTemplate: `<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; padding-top: 30px; font-size: 12px; color: #777;">
+                        <span style="margin-top: 20px; text-align: center;">
+                           <span class="pageNumber"></span> 
+                        </span>
+                      </div>`,
+        timeout: 0,
+        outline:true
+      }
+  );
+}
         return { book, pdfBuffer };
       } finally {
         await page.close();
@@ -322,22 +357,23 @@ export class BookHtmlContentService {
     }
 
     private generateTableOfContents(chapterPageNumbers) {
-      if (!chapterPageNumbers || chapterPageNumbers.length === 0) {
-        return '';
-      }
-
-      const tocEntries = chapterPageNumbers.map(chapter => 
-        `<div class="toc-entry">
-          <a href="#${chapter.id}">${chapter.title}</a>
+        if (!chapterPageNumbers || chapterPageNumbers.length === 0) {
+          return '';
+        }
+      
+        const tocEntries = chapterPageNumbers.map(chapter => 
+          `<div class="toc-entry">
+            <a href="#${chapter.id}">${chapter.title}</a>
+            <span class="toc-page-number">Page ${chapter.pageNumber}</span>
           </div>`
-      ).join('');
-
-      return `
-      <div class="section page-break" id="toc-section">
-        <h2>Table of Contents</h2>
-        <div class="toc">
-          ${tocEntries}
-        </div>
-      </div>`;
-    }
+        ).join('');
+      
+        return `
+        <div class="section page-break" id="toc-section">
+          <h2>Table of Contents</h2>
+          <div class="toc">
+            ${tocEntries}
+          </div>
+        </div>`;
+      }
 }
