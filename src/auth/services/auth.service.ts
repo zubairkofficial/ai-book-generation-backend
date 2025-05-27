@@ -15,6 +15,7 @@ import { SignInDto, SignUpDto } from "../dto";
 import { CryptoService } from "src/utils/crypto.service";
 import { OtpService } from "src/otp/otp.service";
 import { UserRole } from "src/users/entities/user.entity";
+import { Roles } from "src/decorators/roles.decorator";
 
 @Injectable()
 export class AuthService {
@@ -105,7 +106,14 @@ export class AuthService {
       if (!isPasswordValid) {
         throw new UnauthorizedException("Invalid email or password");
       }
+if(user.role=='admin'){
+   const payload = { email: user.email, id: user.id, role: user.role };
+      const accessToken = this.jwtService.sign(payload, {
+        expiresIn: this.configService.get<string>("ACCESS_TOKEN_EXPIRES_IN"),
+      });
 
+      return { user, accessToken };
+}
       // Generate OTP
       const otp = await this.otpService.generateOtp(email);
 
