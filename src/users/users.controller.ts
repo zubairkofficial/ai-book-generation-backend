@@ -1,5 +1,5 @@
 // users.controller.ts
-import { Controller, Get, Patch, UseGuards, NotFoundException, Body } from '@nestjs/common';
+import { Controller, Get, Patch, UseGuards, NotFoundException, Body, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -69,9 +69,10 @@ export class UsersController {
     type: User,
   })
   async getFreeSubscription(
-
+@Req() request
   ) {
-    const user = await this.usersService.getFreeSubscription();
+    const userId = request.user?.id;
+    const user = await this.usersService.getFreeSubscription(userId);
     if (!user) {
       throw new NotFoundException('User not found');
     }

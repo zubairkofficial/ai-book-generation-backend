@@ -106,13 +106,14 @@ async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<User> {
   async markEmailAsVerified(id: number): Promise<void> {
     await this.userRepository.update(id, { isEmailVerified: true });
   }
-  async getUserWithBookInfo(): Promise<any> {
+  async getUserWithBookInfo(excludeUserId): Promise<any> {
    try {
     
     const usersWithBookCount = await this.userRepository
     .createQueryBuilder('user')
     .leftJoin('user.bookGenerations', 'bookGeneration') // Join bookGenerations
     .addSelect('COUNT(bookGeneration.id)', 'bookCount') // Count bookGenerations
+     .where('user.id != :excludeUserId', { excludeUserId })
     .groupBy('user.id') // Group by user id to get the count per user
     .getRawMany(); // Fetch raw data without full entities
 
@@ -122,12 +123,13 @@ async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<User> {
        
   }
   }
-  async getFreeSubscription(): Promise<any> {
+  async getFreeSubscription(excludeUserId): Promise<any> {
    try {
 
     const usersWithFreeSubscription = await this.userRepository
   .createQueryBuilder('user')
   .leftJoinAndSelect('user.userSubscription', 'userSubscription') // Assuming you have a relation defined
+   .where('user.id != :excludeUserId', { excludeUserId })
   .orderBy('userSubscription.createdAt', 'DESC')
   // .where('userSubscription.status = :status', { status: SubscriptionStatus.ACTIVE }) // Adjust based on your criteria for "free"
   // .andWhere('subscription.packageId IS NULL') // Assuming free subscriptions have no associated package

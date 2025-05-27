@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { AnalyticsService } from './analytics.service';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { Roles } from 'src/decorators/roles.decorator';
@@ -14,7 +14,8 @@ export class AnalyticsController {
  
   @Roles(Role.ADMIN)
   @Get('/admin')
-  getAllUserAnalytics() {
-    return this.analyticsService.getAllUserAnalytics();
+  getAllUserAnalytics(@Req() request) {
+    const userId = request.user?.id;
+    return this.analyticsService.getAllUserAnalytics(userId);
   }
 }

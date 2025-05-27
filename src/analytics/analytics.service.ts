@@ -7,7 +7,7 @@ constructor(
     private readonly userService: UsersService,      
   ) {}
 
- async getAllUserAnalytics() {
-   return await this.userService.getUserWithBookInfo()
+ async getAllUserAnalytics(userId) {
+   return await this.userService.getUserWithBookInfo(userId)
   }
 }
