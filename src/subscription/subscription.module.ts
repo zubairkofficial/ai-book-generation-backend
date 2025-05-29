@@ -11,10 +11,12 @@ import { CardPaymentModule } from 'src/card-payment/card-payment.module';
 import { NotificationModule } from 'src/notification/notification.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { EmailService } from 'src/auth/services/email.service';
+import { SettingsService } from 'src/settings/settings.service';
+import { Settings } from 'src/settings/entities/settings.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Package, UserSubscription, Usage, User]),
+    TypeOrmModule.forFeature([Package, UserSubscription, Usage, User,Settings]),
     EventEmitterModule.forRoot(),
     CardPaymentModule,
     NotificationModule,
@@ -22,7 +24,8 @@ import { EmailService } from 'src/auth/services/email.service';
   providers: [
     SubscriptionService,
     SubscriptionEventListeners,
-    EmailService
+    EmailService,
+    SettingsService
 
   ],
   controllers: [SubscriptionController],

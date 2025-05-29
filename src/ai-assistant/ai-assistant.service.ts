@@ -67,10 +67,12 @@ export class AiAssistantService {
     }
   
     const { totalImages, imagesGenerated } = this.userKeyRecord;
+    const convertedTotalImages = totalImages * this.settingPrompt.creditsPerImageToken;
+    const convertedImagesGenerated = imagesGenerated * this.settingPrompt.creditsPerImageToken;
   
     if (
-      totalImages < imagesGenerated ||
-      (noOfImages && totalImages - imagesGenerated < noOfImages)
+      convertedTotalImages < convertedImagesGenerated ||
+      (noOfImages && convertedTotalImages - convertedImagesGenerated < noOfImages * this.settingPrompt.creditsPerImageToken)
     ) {
       throw new UnauthorizedException('Exceeded maximum image generation limit');
     }
@@ -78,7 +80,7 @@ export class AiAssistantService {
 
   private calculateMaxTokens(): number {
     const { totalTokens, tokensUsed } = this.userKeyRecord;
-    const remainingTokens = totalTokens - tokensUsed;
+    const remainingTokens = (totalTokens*this.settingPrompt.creditsPerModelToken ) - (tokensUsed);
   
     if (remainingTokens < 500) {
       throw new BadRequestException('Token limit exceeded');
@@ -114,17 +116,17 @@ export class AiAssistantService {
   
       // Fetch user's active subscription
       [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
-  
+    // Load settings
+    this.settingPrompt = await this.settingsService.getAllSettings();
+    if (!this.settingPrompt) {
+      throw new Error('No setting prompt found in the database.');
+    }
       // Validate subscription (only for USER role)
       if (this.userInfo.role === UserRole.USER) {
         this.validateUserSubscription(noOfImages);
       }
   
-      // Load settings
-      this.settingPrompt = await this.settingsService.getAllSettings();
-      if (!this.settingPrompt) {
-        throw new Error('No setting prompt found in the database.');
-      }
+    
   
       // Determine max completion tokens if not admin
       const maxCompletionTokens = this.userInfo.role === UserRole.USER
@@ -177,17 +179,18 @@ export class AiAssistantService {
 
     private async generateCoverImage(prompt: string, bookTitle: string): Promise<string> {
       try {
-        const requestData = { prompt ,
+        const requestData = {
+          prompt,
           num_images: 1,
-        enable_safety_checker: true,
-        safety_tolerance: "2",
-        output_format: "jpeg",
-        aspect_ratio: "9:16",
-        raw: false,
+          enable_safety_checker: true,
+          safety_tolerance: "2",
+          output_format: "jpeg",
+          aspect_ratio: "9:16",
+          raw: false,
         };
      
         const postResponse = await axios.post(
-          this.userInfo.role===UserRole.USER?!this.userKeyRecord.package?this.settingPrompt.coverImageDomainUrl :this.userKeyRecord.package.imageModelURL  : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+          "https://queue.fal.run/fal-ai/flux/dev",
           requestData,
           {
             headers: {

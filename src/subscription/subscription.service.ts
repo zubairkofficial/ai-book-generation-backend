@@ -69,7 +69,8 @@ export class SubscriptionService {
     if (packageData.name) packages.name = packageData.name;
     if (packageData.price) packages.price = packageData.price;
     if (packageData.tokenLimit) packages.tokenLimit = packageData.tokenLimit;
-
+if(packageData.imageModelURL)packages.imageModelURL=packageData.imageModelURL
+if(packageData.description)packages.description=packageData.description
     const newPackage = this.packageRepository.create(packages);
     return this.packageRepository.save(newPackage);
   }

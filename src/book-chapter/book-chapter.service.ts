@@ -89,10 +89,12 @@ export class BookChapterService {
     }
   
     const { totalImages, imagesGenerated } = this.userKeyRecord;
+    const convertedTotalImages = totalImages * this.settingPrompt.creditsPerImageToken;
+    const convertedImagesGenerated = imagesGenerated * this.settingPrompt.creditsPerImageToken;
   
     if (
-      totalImages < imagesGenerated ||
-      (noOfImages && totalImages - imagesGenerated < noOfImages)
+      convertedTotalImages < convertedImagesGenerated ||
+      (noOfImages && convertedTotalImages - convertedImagesGenerated < noOfImages * this.settingPrompt.creditsPerImageToken)
     ) {
       throw new UnauthorizedException('Exceeded maximum image generation limit');
     }
@@ -100,7 +102,7 @@ export class BookChapterService {
 
   private calculateMaxTokens(): number {
     const { totalTokens, tokensUsed } = this.userKeyRecord;
-    const remainingTokens = totalTokens - tokensUsed;
+    const remainingTokens = (totalTokens * this.settingPrompt.creditsPerModelToken) - (tokensUsed);
   
     if (remainingTokens < 500) {
       throw new BadRequestException('Token limit exceeded');
@@ -136,17 +138,17 @@ export class BookChapterService {
   
       // Fetch user's active subscription
       [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
-  
+   // Load settings
+   this.settingPrompt = await this.settingsService.getAllSettings();
+   if (!this.settingPrompt) {
+     throw new Error('No setting prompt found in the database.');
+   }
       // Validate subscription (only for USER role)
       if (this.userInfo.role === UserRole.USER) {
         this.validateUserSubscription(noOfImages);
       }
   
-      // Load settings
-      this.settingPrompt = await this.settingsService.getAllSettings();
-      if (!this.settingPrompt) {
-        throw new Error('No setting prompt found in the database.');
-      }
+     
   
       // Determine max completion tokens if not admin
       const maxCompletionTokens = this.userInfo.role === UserRole.USER

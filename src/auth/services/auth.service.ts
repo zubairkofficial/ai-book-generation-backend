@@ -16,17 +16,19 @@ import { CryptoService } from "src/utils/crypto.service";
 import { OtpService } from "src/otp/otp.service";
 import { UserRole } from "src/users/entities/user.entity";
 import { Roles } from "src/decorators/roles.decorator";
-
+import { AdminCreateUserDto } from '../dto/admin-create-user.dto';
+import { SubscriptionStatus } from "src/subscription/entities/user-subscription.entity";
+import { SubscriptionService } from "src/subscription/subscription.service";
 @Injectable()
 export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly otpService: OtpService,
-
     private readonly jwtService: JwtService,
     private readonly emailService: EmailService,
     private readonly cryptoService: CryptoService, // Inject CryptoService
-    private readonly configService: ConfigService // Inject ConfigService
+    private readonly configService: ConfigService, // Inject ConfigService
+    private readonly userSubscriptionService:SubscriptionService,
   ) {}
 
   async signUp(signUpDto: SignUpDto) {
@@ -106,21 +108,38 @@ export class AuthService {
       if (!isPasswordValid) {
         throw new UnauthorizedException("Invalid email or password");
       }
-if(user.role=='admin'){
-   const payload = { email: user.email, id: user.id, role: user.role };
-      const accessToken = this.jwtService.sign(payload, {
-        expiresIn: this.configService.get<string>("ACCESS_TOKEN_EXPIRES_IN"),
-      });
 
-      return { user, accessToken };
-}
-      // Generate OTP
+      // Check if user is admin
+      if(user.role=='admin'){
+        const payload = { email: user.email, id: user.id, role: user.role };
+        const accessToken = this.jwtService.sign(payload, {
+          expiresIn: this.configService.get<string>("ACCESS_TOKEN_EXPIRES_IN"),
+        });
+        return { user, accessToken };
+      }
+
+      // Check if email is verified
+      if (!user.isEmailVerified) {
+        // Generate new verification token and send email
+        const token = this.jwtService.sign({ email });
+        const baseUrl = this.configService.get<string>("BASE_URL");
+        const verifyLink = `${baseUrl}/auth/verify-email?token=${token}`;
+        await this.emailService.sendVerificationEmail(user, verifyLink);
+
+        return { 
+          status: "UNVERIFIED_EMAIL",
+          message: "Please verify your email first. A verification email has been sent." 
+        };
+      }
+
+      // Generate OTP only if email is verified
       const otp = await this.otpService.generateOtp(email);
-
-      // Send OTP via email
       await this.emailService.sendOtpEmail(email, otp.code);
 
-      return { message: "OTP sent to your email. Please verify to log in." };
+      return { 
+        status: "OTP_REQUIRED",
+        message: "OTP sent to your email. Please verify to log in." 
+      };
     } catch (error) {
       throw new Error(error.message);
     }
@@ -313,11 +332,44 @@ if(user.role=='admin'){
       // Mark the user as verified
       await this.usersService.markEmailAsVerified(+user.id);
 
+      const payload = { email: user.email, id: user.id, role: user.role };
+      const accessToken = this.jwtService.sign(payload, {
+        expiresIn: this.configService.get<string>("ACCESS_TOKEN_EXPIRES_IN"),
+      });
       // Return the frontend URL for redirection
       const frontendUrl = this.configService.get<string>("FRONTEND_URL");
-      return `${frontendUrl}`; // Redirect to a success page
+      return `${frontendUrl}${user.role==='admin'?'/':'/subscription'}?accessToken=${accessToken}&user=${JSON.stringify(user)}`; // Redirect to a success page
     } catch (error) {
       throw new UnauthorizedException(error.message);
+    }
+  }
+
+  async resendVerification(email: string) {
+    try {
+      // Find the user
+      const user = await this.usersService.findByEmail(email);
+      if (!user) {
+        throw new BadRequestException("User not found");
+      }
+
+      // Check if email is already verified
+      if (user.isEmailVerified) {
+        throw new BadRequestException("Email is already verified");
+      }
+
+      // Generate new verification token
+      const token = this.jwtService.sign({ email });
+      const baseUrl = this.configService.get<string>("BASE_URL");
+      const verifyLink = `${baseUrl}/auth/verify-email?token=${token}`;
+
+      // Send verification email
+      await this.emailService.sendVerificationEmail(user, verifyLink);
+
+      return {
+        message: "Verification email has been sent",
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
     }
   }
 
@@ -396,5 +448,61 @@ if(user.role=='admin'){
     });
 
     return { accessToken, refreshToken };
+  }
+
+  async adminCreateUser(dto: AdminCreateUserDto) {
+    try {
+      const { name, email, password, imageToken, modelToken, isEmailVerified } = dto;
+      
+      // Check if user exists
+      const existingUser = await this.usersService.findByEmail(email);
+      if (existingUser) {
+        throw new ConflictException("User with this email already exists");
+      }
+
+      // Hash the password
+      const hashedPassword = await this.cryptoService.encrypt(password);
+
+      // Create the user
+      const user = await this.usersService.create({
+        name,
+        email,
+        password: hashedPassword,
+        isEmailVerified,
+      });
+
+      // Create a subscription for the user with the provided tokens
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() + 30); // 30 days subscription
+
+      await this.userSubscriptionService.createFreeSubscription({
+        userId: user.id,
+        startDate,
+        endDate,
+        status: SubscriptionStatus.ACTIVE,
+        tokenLimit: parseInt(modelToken),
+        imageLimit: parseInt(imageToken),
+        // tokensUsed: 0,
+        // imagesGenerated: 0,
+        autoRenew: false
+      });
+
+      return {
+        message: "User created successfully",
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          isEmailVerified: user.isEmailVerified,
+          subscription: {
+            totalTokens: modelToken,
+            totalImages: imageToken
+          }
+        }
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
   }
 }

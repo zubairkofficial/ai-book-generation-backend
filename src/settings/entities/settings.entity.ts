@@ -25,6 +25,12 @@ export class Settings extends BaseEntity {
   @Column()
   userID: number;
   
+  @Column({ type: 'int', default: 1 })
+  creditsPerModelToken: number;
+
+  @Column({ type: 'int', default: 1 })
+  creditsPerImageToken: number;
+
   @OneToOne(() => User, (user) => user.settings, {
     onDelete: "CASCADE",
   })

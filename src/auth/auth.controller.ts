@@ -1,5 +1,5 @@
-
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { AdminCreateUserDto } from './dto/admin-create-user.dto';
 
 import {
   Controller,
@@ -29,6 +29,9 @@ import {
 } from './dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { GetUser } from './decorators/get-user.decorator';
+import { Roles } from '../decorators/roles.decorator';
+import { RolesGuard } from '../guards/roles.guard';
+import { Role } from '../utils/roles.enum';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -156,6 +159,18 @@ export class AuthController {
     }
   }
 
+  @Post('resend-verification')
+  @ApiOperation({ summary: 'Resend verification email' })
+  @ApiResponse({ status: 200, description: 'Verification email sent' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  async resendVerification(@Body('email') email: string) {
+    try {
+      return await this.authService.resendVerification(email);
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+    }
+  }
+
   @Post('refresh-token')
   @ApiOperation({ summary: 'Refresh access token' })
   @ApiResponse({ status: 200, description: 'Access token refreshed' })
@@ -200,6 +215,19 @@ export class AuthController {
       return {
         url: `${process.env.FRONTEND_URL}/verification-failure?reason=` + encodeURIComponent(error.message),
       };
+    }
+  }
+
+  @Post('admin-create-user')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Create a new user (Admin only)' })
+  @ApiResponse({ status: 201, description: 'User successfully created' })
+  async adminCreateUser(@Body() dto: AdminCreateUserDto) {
+    try {
+      return await this.authService.adminCreateUser(dto);
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
   }
 }

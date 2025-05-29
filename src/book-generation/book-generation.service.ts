@@ -125,10 +125,12 @@ export class BookGenerationService {
     }
   
     const { totalImages, imagesGenerated } = this.userKeyRecord;
+    const convertedTotalImages = totalImages * this.settingPrompt.creditsPerImageToken;
+    const convertedImagesGenerated = imagesGenerated * this.settingPrompt.creditsPerImageToken;
   
     if (
-      totalImages < imagesGenerated ||
-      (noOfImages && totalImages - imagesGenerated < noOfImages)
+      convertedTotalImages < convertedImagesGenerated ||
+      (noOfImages && convertedTotalImages - convertedImagesGenerated < noOfImages * this.settingPrompt.creditsPerImageToken)
     ) {
       throw new UnauthorizedException('Exceeded maximum image generation limit');
     }
@@ -136,7 +138,7 @@ export class BookGenerationService {
 
   private calculateMaxTokens(): number {
     const { totalTokens, tokensUsed } = this.userKeyRecord;
-    const remainingTokens = totalTokens - tokensUsed;
+    const remainingTokens = (totalTokens * this.settingPrompt.creditsPerModelToken) - (tokensUsed);
   
     if (remainingTokens < 500) {
       throw new BadRequestException('Token limit exceeded');
@@ -174,16 +176,17 @@ export class BookGenerationService {
       // Fetch user's active subscription
       [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
   
+       // Load settings
+       this.settingPrompt = await this.settingsService.getAllSettings();
+       if (!this.settingPrompt) {
+         throw new Error('No setting prompt found in the database.');
+       }
       // Validate subscription (only for USER role)
       if (user.role === UserRole.USER) {
         this.validateUserSubscription(noOfImages);
       }
   
-      // Load settings
-      this.settingPrompt = await this.settingsService.getAllSettings();
-      if (!this.settingPrompt) {
-        throw new Error('No setting prompt found in the database.');
-      }
+     
   
       // Determine max completion tokens if not admin
       const maxCompletionTokens = user.role === UserRole.USER
@@ -232,7 +235,7 @@ export class BookGenerationService {
   private async generateBookImage(responseUrl, promptData): Promise<string> {
     try {
       const maxRetries = 12;
-      const delayMs = 10000; // 10 seconds between retries
+      const delayMs = 10000;
 
       let imageUrl: string | null = null;
 
@@ -255,11 +258,12 @@ export class BookGenerationService {
           );
         }
 
-        await new Promise((resolve) => setTimeout(resolve, delayMs)); // Wait before retrying
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
 
-      if (!imageUrl)
+      if (!imageUrl) {
         throw new Error("❌ Image generation failed after retries.");
+      }
 
       // Download & Save Image
       const imageResponse = await axios.get(imageUrl, {
