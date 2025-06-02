@@ -96,8 +96,8 @@ export class SettingsService {
   async updateTokenConversionSettings(dto: TokenConversionDto) {
     let settings = await this.getAllSettings();
 
-    settings.creditsPerModelToken = dto.creditsPerModelToken;
-    settings.creditsPerImageToken = dto.creditsPerImageToken;
+    settings.creditsPerModelToken = +dto.creditsPerModelToken;
+    settings.creditsPerImageToken = +dto.creditsPerImageToken;
 
     await this.settingsRepository.save(settings);
 
