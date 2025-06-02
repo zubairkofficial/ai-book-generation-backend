@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Settings } from './entities/settings.entity';
@@ -19,41 +19,73 @@ export class SettingsService {
     });
     return this.settingsRepository.save(settings);
   }
+
   async getAllSettings(): Promise<Settings> {
-    const setting=await this.settingsRepository.find();
-   return setting[0]
+    const settings = await this.settingsRepository.find({
+      order: { createdAt: 'DESC' },
+      take: 1
+    });
+
+    if (!settings || settings.length === 0) {
+      // Create default settings if none exist
+      const defaultSettings = this.settingsRepository.create({
+        creditsPerModelToken: 1,
+        creditsPerImageToken: 1,
+        coverImagePrompt: '',
+        chapterImagePrompt: '',
+        bookIdeaMasterPrompt: '',
+        bookCoverMasterPrompt: '',
+        writingAssistantMasterPrompt: '',
+        chapterSummaryMasterPrompt: '',
+        presentationSlidesMasterPrompt: ''
+      });
+      return this.settingsRepository.save(defaultSettings);
+    }
+
+    return settings[0];
   }
 
   async createOrUpdate(userId: number, settingsDto: UpdateSettingsDto): Promise<Settings> {
-    let settings = await this.settingsRepository.findOne({
-      where: { user: { id: userId } },
-    });
-
-    if (!settings) {
-      settings = this.settingsRepository.create({
-        user: { id: userId },
-        ...settingsDto,
+    try {
+      // First try to find existing settings
+      let settings = await this.settingsRepository.findOne({
+        where: {},
+        order: { createdAt: 'DESC' }
       });
-    } else {
-      this.settingsRepository.merge(settings, settingsDto);
-    }
 
-    return this.settingsRepository.save(settings);
+      if (!settings) {
+        // If no settings exist, create new
+        settings = this.settingsRepository.create({
+          ...settingsDto,
+          userID: userId
+        });
+      } else {
+        // Update existing settings
+        // Only update fields that are provided in the DTO
+        Object.keys(settingsDto).forEach(key => {
+          if (settingsDto[key] !== undefined) {
+            settings[key] = settingsDto[key];
+          }
+        });
+        settings.userID = userId;
+      }
+
+      // Save the settings
+      const savedSettings = await this.settingsRepository.save(settings);
+      
+      if (!savedSettings) {
+        throw new Error('Failed to save settings');
+      }
+
+      return savedSettings;
+    } catch (error) {
+      console.error('Error in createOrUpdate settings:', error);
+      throw new Error(`Failed to update settings: ${error.message}`);
+    }
   }
 
   async getTokenConversionSettings() {
-    const settings = await this.settingsRepository.findOne({
-      where: {},
-      order: { createdAt: 'DESC' }
-    });
-
-    if (!settings) {
-      // Return default values if no settings exist
-      return {
-        creditsPerModelToken: 1,
-        creditsPerImageToken: 1
-      };
-    }
+    const settings = await this.getAllSettings();
 
     return {
       creditsPerModelToken: settings.creditsPerModelToken,
@@ -62,17 +94,10 @@ export class SettingsService {
   }
 
   async updateTokenConversionSettings(dto: TokenConversionDto) {
-    let settings = await this.settingsRepository.findOne({
-      where: {},
-      order: { createdAt: 'DESC' }
-    });
+    let settings = await this.getAllSettings();
 
-    if (!settings) {
-      settings = this.settingsRepository.create(dto);
-    } else {
-      settings.creditsPerModelToken = dto.creditsPerModelToken;
-      settings.creditsPerImageToken = dto.creditsPerImageToken;
-    }
+    settings.creditsPerModelToken = dto.creditsPerModelToken;
+    settings.creditsPerImageToken = dto.creditsPerImageToken;
 
     await this.settingsRepository.save(settings);
 

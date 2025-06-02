@@ -37,13 +37,15 @@ import { TransactionModule } from './transaction/transaction.module';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
-        host: configService.get<string>('DATABASE_HOST'), // Local PostgreSQL host
-        port: configService.get<number>('DATABASE_PORT'), // Default is 5432
-        username: configService.get<string>('DATABASE_USERNAME'), // PostgreSQL username
-        password: configService.get<string>('DATABASE_PASSWORD'), // PostgreSQL password
-        database: configService.get<string>('DATABASE_NAME'), // Database name
-        entities: [__dirname + '/**/*.entity{.ts,.js}'], // Add your entities here
-        synchronize: true, // Set to false in production
+        host: configService.get<string>('DATABASE_HOST'),
+        port: configService.get<number>('DATABASE_PORT'),
+        username: configService.get<string>('DATABASE_USERNAME'),
+        password: configService.get<string>('DATABASE_PASSWORD'),
+        database: configService.get<string>('DATABASE_NAME'),
+        entities: [__dirname + '/**/*.entity{.ts,.js}'],
+        migrations: [__dirname + '/migrations/*{.ts,.js}'],
+        migrationsRun: true, // Automatically run migrations
+        synchronize: false, // Disable synchronize to use migrations instead
       }),
     }),
 

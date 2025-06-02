@@ -125,12 +125,10 @@ export class BookGenerationService {
     }
   
     const { totalImages, imagesGenerated } = this.userKeyRecord;
-    const convertedTotalImages = totalImages * this.settingPrompt.creditsPerImageToken;
-    const convertedImagesGenerated = imagesGenerated * this.settingPrompt.creditsPerImageToken;
   
     if (
-      convertedTotalImages < convertedImagesGenerated ||
-      (noOfImages && convertedTotalImages - convertedImagesGenerated < noOfImages * this.settingPrompt.creditsPerImageToken)
+      totalImages < imagesGenerated ||
+      (noOfImages && totalImages - imagesGenerated < noOfImages)
     ) {
       throw new UnauthorizedException('Exceeded maximum image generation limit');
     }
@@ -138,7 +136,7 @@ export class BookGenerationService {
 
   private calculateMaxTokens(): number {
     const { totalTokens, tokensUsed } = this.userKeyRecord;
-    const remainingTokens = (totalTokens * this.settingPrompt.creditsPerModelToken) - (tokensUsed);
+    const remainingTokens = totalTokens - tokensUsed;
   
     if (remainingTokens < 500) {
       throw new BadRequestException('Token limit exceeded');

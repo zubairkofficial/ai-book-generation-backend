@@ -67,12 +67,10 @@ export class AiAssistantService {
     }
   
     const { totalImages, imagesGenerated } = this.userKeyRecord;
-    const convertedTotalImages = totalImages * this.settingPrompt.creditsPerImageToken;
-    const convertedImagesGenerated = imagesGenerated * this.settingPrompt.creditsPerImageToken;
   
     if (
-      convertedTotalImages < convertedImagesGenerated ||
-      (noOfImages && convertedTotalImages - convertedImagesGenerated < noOfImages * this.settingPrompt.creditsPerImageToken)
+      totalImages < imagesGenerated ||
+      (noOfImages && totalImages - imagesGenerated < noOfImages)
     ) {
       throw new UnauthorizedException('Exceeded maximum image generation limit');
     }
@@ -80,7 +78,7 @@ export class AiAssistantService {
 
   private calculateMaxTokens(): number {
     const { totalTokens, tokensUsed } = this.userKeyRecord;
-    const remainingTokens = (totalTokens*this.settingPrompt.creditsPerModelToken ) - (tokensUsed);
+    const remainingTokens = totalTokens - tokensUsed;
   
     if (remainingTokens < 500) {
       throw new BadRequestException('Token limit exceeded');
@@ -405,8 +403,17 @@ export class AiAssistantService {
   }
 
   private generatePrompt(type: AiAssistantType, info: Record<string, any>): string {
+    // Check if master prompts exist and use them regardless of role
     switch (type) {
       case AiAssistantType.BOOK_IDEA:
+        if (this.settingPrompt.bookIdeaMasterPrompt) {
+          return this.settingPrompt.bookIdeaMasterPrompt
+            .replace('${genre}', info?.genre || "Any")
+            .replace('${themeOrTopic}', info?.themeOrTopic || "Innovative, insightful, and thought-provoking")
+            .replace('${targetAudience}', info?.targetAudience || "All age groups")
+            .replace('${description}', info?.description || "Develop a powerful and insightful book concept that explores impactful ideas and real-world transformations.");
+        }
+        // Fallback to default prompt if no master prompt exists
         return `Generate a compelling and unique **3-5 unique book concepts** **core idea** for a book based on the following details:
           
         - **Genre**: ${info?.genre || "Any"}
@@ -420,8 +427,17 @@ export class AiAssistantService {
         
         The response should be **concise, profound, and engaging**, capturing the essence of the book in a way that excites potential readers and publishers.`;
         
-        case AiAssistantType.BOOK_COVER_IMAGE:
-          return `Design a book front cover image 
+      case AiAssistantType.BOOK_COVER_IMAGE:
+        if (this.settingPrompt.bookCoverMasterPrompt) {
+          return this.settingPrompt.bookCoverMasterPrompt
+            .replace('${bookTitle}', info?.bookTitle || "Untitled")
+            .replace('${genre}', info?.genre || "General")
+            .replace('${targetAudience}', info?.targetAudience || "All Ages")
+            .replace('${coreIdea}', info?.coreIdea || "Subtle business-related icons for a sleek finish")
+            .replace('${systemPrompt}', this.settingPrompt.coverImagePrompt || "");
+        }
+        // Fallback to default prompt
+        return `Design a book front cover image 
         - Book Titled "${info?.bookTitle || "Untitled"}". 
         - Genre: ${info?.genre || "General"}
         - Target Audience: ${info?.targetAudience || "All Ages"}
@@ -429,8 +445,17 @@ export class AiAssistantService {
         - **System Prompt**:${this.settingPrompt.coverImagePrompt}
         The front cover should be visually engaging and appropriate for the target audience.`;
           
-      
       case AiAssistantType.WRITING_ASSISTANT:
+        if (this.settingPrompt.writingAssistantMasterPrompt) {
+          return this.settingPrompt.writingAssistantMasterPrompt
+            .replace('${genre}', info?.genre || "General")
+            .replace('${writingGoal}', info?.writingGoal || "Improve writing quality")
+            .replace('${writingLevel}', info?.writingLevel || "Beginner")
+            .replace('${targetAudience}', info?.targetAudience || "All Ages")
+            .replace('${specificArea}', info?.specificArea || "General storytelling")
+            .replace('${currentChallenges}', info?.currentChallenges || "None specified");
+        }
+        // Fallback to default prompt
         return `### Writing Assistant: Expert Guidance
 
         Act as an **expert writing coach** and provide professional guidance for an author working on their book project.
@@ -475,7 +500,6 @@ export class AiAssistantService {
         ---
         
         Ensure the output is **highly contextual and tailored** to the provided data without generic advice.`;
-        
 
       default:
         throw new Error(`Unknown AI Assistant type: ${type}`);

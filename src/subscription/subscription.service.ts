@@ -25,6 +25,7 @@ import { CardPaymentService } from "src/card-payment/card-payment.service";
 import { Transaction, TransactionType } from "src/transaction/entities/transaction.entity";
 import { TransactionService } from "src/transaction/transaction.service";
 import { EmailService } from "src/auth/services/email.service";
+import { SettingsService } from 'src/settings/settings.service';
 
 @Injectable()
 export class SubscriptionService {
@@ -46,7 +47,7 @@ export class SubscriptionService {
     private eventEmitter: EventEmitter2,
     private cardPaymentService: CardPaymentService,
     private emailService: EmailService,
-
+    private settingsService: SettingsService,
   ) {}
 
   // ADMIN: Create package
@@ -123,98 +124,97 @@ if(packageData.description)packages.description=packageData.description
     subscribeDto: SubscribePackageDto
   ): Promise<UserSubscription> {
     try {
-      
-    
-    return await this.userRepository.manager.transaction(
-      async (entityManager: EntityManager) => {
-        const user = await entityManager.findOne(User, {
-          where: { id: userId },
-        });
-        if (!user) {
-          throw new NotFoundException("User  not found");
-        }
-
-        const packageEntity = await entityManager.findOne(Package, {
-          where: { id: subscribeDto.packageId, isActive: true },
-        });
-        if (!packageEntity) {
-          throw new NotFoundException("Package not found or inactive");
-        }else if(Number(packageEntity.price)>Number(user.availableAmount)){
-          throw new BadRequestException("Recharge your account")
-        }
-
-        // Check for existing active subscription and handle accordingly
-        const existingSubscription = await entityManager.findOne(
-          UserSubscription,
-          {
-            where: {
-              user: { id: userId },
-              status: SubscriptionStatus.ACTIVE,
-              package:{id:subscribeDto.packageId}
-
-            },
-           
-          }
-        );
-
-        if (existingSubscription) {
-          // Cancel existing subscription if requested
-          if (subscribeDto.cancelExisting) {
-            existingSubscription.status = SubscriptionStatus.CANCELLED;
-            await entityManager.save(UserSubscription, existingSubscription);
-          } else {
-            throw new BadRequestException(
-              "User already has an active subscription"
-            );
-          }
-        }
-
-        const alreadyExistingSubscription = await entityManager.findOne(
-          UserSubscription,
-          {
-            where: {
-              user: { id: userId },
-              status: SubscriptionStatus.ACTIVE,
-             
-
-            },
-            
-          }
-        );
-
-        if(alreadyExistingSubscription){
-          throw new BadRequestException(
-            "User already has an active subscription"
-          );
-        }
-        // Create new subscription
-        const startDate = new Date();
-        const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + packageEntity.durationDays);
-
-        // Update user's available amount
-        user.availableAmount = user.availableAmount - packageEntity.price;
-        await entityManager.update(User, user.id, {
-          availableAmount: user.availableAmount,
-        });
-
-        const subscription = entityManager.create(UserSubscription, {
-          user,
-          package: packageEntity,
-          totalTokens:packageEntity.tokenLimit,
-          totalImages:packageEntity.imageLimit,
-          startDate,
-          endDate,
-          status: SubscriptionStatus.ACTIVE,
-          autoRenew: subscribeDto.autoRenew || false,
-        });
-
-        return await entityManager.save(UserSubscription, subscription);
+      // Get settings for token multiplication
+      const settings = await this.settingsService.getAllSettings();
+      if (!settings) {
+        throw new Error('Settings not found');
       }
-    );
-  } catch (error) {
-      throw new InternalServerErrorException(error.message)
-  }
+      
+      return await this.userRepository.manager.transaction(
+        async (entityManager: EntityManager) => {
+          const user = await entityManager.findOne(User, {
+            where: { id: userId },
+          });
+          if (!user) {
+            throw new NotFoundException("User not found");
+          }
+
+          const packageEntity = await entityManager.findOne(Package, {
+            where: { id: subscribeDto.packageId, isActive: true },
+          });
+          if (!packageEntity) {
+            throw new NotFoundException("Package not found or inactive");
+          } else if(Number(packageEntity.price) > Number(user.availableAmount)) {
+            throw new BadRequestException("Recharge your account");
+          }
+
+          // Check for existing active subscription
+          const existingSubscription = await entityManager.findOne(
+            UserSubscription,
+            {
+              where: {
+                user: { id: userId },
+                status: SubscriptionStatus.ACTIVE,
+                package: { id: subscribeDto.packageId }
+              },
+            }
+          );
+
+          if (existingSubscription) {
+            if (subscribeDto.cancelExisting) {
+              existingSubscription.status = SubscriptionStatus.CANCELLED;
+              await entityManager.save(UserSubscription, existingSubscription);
+            } else {
+              throw new BadRequestException("User already has an active subscription");
+            }
+          }
+
+          const alreadyExistingSubscription = await entityManager.findOne(
+            UserSubscription,
+            {
+              where: {
+                user: { id: userId },
+                status: SubscriptionStatus.ACTIVE,
+              },
+            }
+          );
+
+          if(alreadyExistingSubscription) {
+            throw new BadRequestException("User already has an active subscription");
+          }
+
+          // Create new subscription with multiplied tokens
+          const startDate = new Date();
+          const endDate = new Date(startDate);
+          endDate.setDate(endDate.getDate() + packageEntity.durationDays);
+
+          // Update user's available amount
+          user.availableAmount = user.availableAmount - packageEntity.price;
+          await entityManager.update(User, user.id, {
+            availableAmount: user.availableAmount,
+          });
+
+          // Multiply tokens and images with settings values
+          const totalTokens = packageEntity.tokenLimit * settings.creditsPerModelToken;
+          const totalImages = packageEntity.imageLimit * settings.creditsPerImageToken;
+
+          const subscription = entityManager.create(UserSubscription, {
+            user,
+            package: packageEntity,
+            totalTokens,
+            totalImages,
+            startDate,
+            endDate,
+            status: SubscriptionStatus.ACTIVE,
+            autoRenew: subscribeDto.autoRenew || false,
+          });
+
+          return await entityManager.save(UserSubscription, subscription);
+        }
+      );
+    } catch (error) {
+      throw new InternalServerErrorException(error.message);
+    }
   }
   async unSubscribeToPackage(
     id:number,
@@ -501,72 +501,48 @@ return {message:"email send successfully"}
   
   async createFreeSubscription(input: FreeSubscriptionPackageDto): Promise<UserSubscription> {
     try {
-      return await this.userRepository.manager.transaction(
-        async (entityManager: EntityManager) => {
-          // Find the user
-          const user = await entityManager.findOne(User, {
-            where: { id: input.userId },
-          });
-          
-          if (!user) {
-            throw new NotFoundException("User not found");
-          }
-         
-        //  user.fullModelAccess=input.fullModelAccess??user.fullModelAccess
-        await entityManager.save(user)
-          
-          // Check for existing active subscription
-          const existingSubscription = await entityManager.findOne(
-            UserSubscription,
-            {
-              where: {
-                user: { id: input.userId },
-                status: SubscriptionStatus.ACTIVE,
-              },
-            }
-          );
+      // Get settings for token multiplication
+      const settings = await this.settingsService.getAllSettings();
+      if (!settings) {
+        throw new Error('Settings not found');
+      }
 
-          // Create start and end dates
-          const startDate = new Date();
-          const endDate = new Date(startDate);
-          endDate.setDate(endDate.getDate() + (typeof input.endDate === 'number' ? input.endDate : 30)); // Default 30 days if not provided or not a number
+      const user = await this.userRepository.findOne({
+        where: { id: input.userId },
+      });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
 
-          if (existingSubscription) {
-            // Update existing subscription
-            existingSubscription.totalTokens = input.tokenLimit ?? existingSubscription.totalTokens;
-            existingSubscription.totalImages = input.imageLimit ?? existingSubscription.totalImages;
-            existingSubscription.startDate = startDate;
-            existingSubscription.endDate = endDate;
-            existingSubscription.status =input.status?? SubscriptionStatus.ACTIVE;
-           
-            // existingSubscription.fullModelAccess=input.fullModelAccess ?? false
-            // Reset usage counters if requested (optional)
-            existingSubscription.tokensUsed = 0;
-            existingSubscription.imagesGenerated = 0;
-            existingSubscription.package=null
-            return await entityManager.save(UserSubscription, existingSubscription);
-          }
+      // Check for existing active subscription
+      const existingSubscription = await this.userSubscriptionRepository.findOne({
+        where: {
+          user: { id: input.userId },
+          status: SubscriptionStatus.ACTIVE,
+        },
+      });
 
+      if (existingSubscription) {
+        throw new BadRequestException('User already has an active subscription');
+      }
 
-          // Create the new subscription
-          const subscription = entityManager.create(UserSubscription, {
-            user,
-            totalTokens: input.tokenLimit ,
-            totalImages: input.imageLimit ,
-            startDate,
-            endDate,
-            status: SubscriptionStatus.ACTIVE,
-            // fullModelAccess:input.fullModelAccess??false,
-            autoRenew: false, // Free subscriptions typically don't auto-renew
-          });
+      // Multiply tokens and images with settings values
+      const totalTokens = input.tokenLimit * settings.creditsPerModelToken;
+      const totalImages = input.imageLimit * settings.creditsPerImageToken;
 
-          return await entityManager.save(UserSubscription, subscription);
-        }
-      );
+      const subscription = this.userSubscriptionRepository.create({
+        user,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        status: input.status,
+        totalTokens,
+        totalImages,
+        autoRenew: input.autoRenew || false,
+      });
+
+      return await this.userSubscriptionRepository.save(subscription);
     } catch (error) {
-      throw new InternalServerErrorException(
-        `Failed to create free subscription: ${error.message}`
-      );
+      throw new InternalServerErrorException(error.message);
     }
   }
 

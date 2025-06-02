@@ -89,12 +89,10 @@ export class BookChapterService {
     }
   
     const { totalImages, imagesGenerated } = this.userKeyRecord;
-    const convertedTotalImages = totalImages * this.settingPrompt.creditsPerImageToken;
-    const convertedImagesGenerated = imagesGenerated * this.settingPrompt.creditsPerImageToken;
   
     if (
-      convertedTotalImages < convertedImagesGenerated ||
-      (noOfImages && convertedTotalImages - convertedImagesGenerated < noOfImages * this.settingPrompt.creditsPerImageToken)
+      totalImages < imagesGenerated ||
+      (noOfImages && totalImages - imagesGenerated < noOfImages)
     ) {
       throw new UnauthorizedException('Exceeded maximum image generation limit');
     }
@@ -102,7 +100,7 @@ export class BookChapterService {
 
   private calculateMaxTokens(): number {
     const { totalTokens, tokensUsed } = this.userKeyRecord;
-    const remainingTokens = (totalTokens * this.settingPrompt.creditsPerModelToken) - (tokensUsed);
+    const remainingTokens = totalTokens - tokensUsed;
   
     if (remainingTokens < 500) {
       throw new BadRequestException('Token limit exceeded');
@@ -916,22 +914,26 @@ export class BookChapterService {
           combinedText += `${chapter.chapterInfo}\n\n`;
         }
   
-        // Generate the summary for all combined chapters
-        const summaryPrompt = `
-          You are creating a concise, engaging summary for the entire book "${bookInfo.bookTitle}".
-    
-          Combined Content of All Chapters:
-          ${combinedText}
-    
-          Instructions:
-          1. Write exactly ${summaryRequest.noOfWords} words well-crafted sentences that capture the essence of the entire book.
-          2. Include the most significant plot points, character developments, or key concepts.
-          3. Use vivid, engaging language that captures the tone of the original text.
-          4. Make the summary flow naturally from sentence to sentence.
-    
-          Proceed with your ${summaryRequest.noOfWords} words sentence summary.
-          Do not use bullet points or include any other text beyond the summary itself.
-        `;
+        // Use master prompt if available, otherwise use default
+        let summaryPrompt = this.settingPrompt.chapterSummaryMasterPrompt
+          ? this.settingPrompt.chapterSummaryMasterPrompt
+              .replace('${noOfWords}', summaryRequest.noOfWords.toString())
+              .replace('${chapterContent}', combinedText)
+          : `
+            You are creating a concise, engaging summary for the entire book "${bookInfo.bookTitle}".
+      
+            Combined Content of All Chapters:
+            ${combinedText}
+      
+            Instructions:
+            1. Write exactly ${summaryRequest.noOfWords} words well-crafted sentences that capture the essence of the entire book.
+            2. Include the most significant plot points, character developments, or key concepts.
+            3. Use vivid, engaging language that captures the tone of the original text.
+            4. Make the summary flow naturally from sentence to sentence.
+      
+            Proceed with your ${summaryRequest.noOfWords} words sentence summary.
+            Do not use bullet points or include any other text beyond the summary itself.
+          `;
   
         // Stream the summary generation
         const stream = await this.textModel.stream(summaryPrompt);
@@ -949,49 +951,45 @@ export class BookChapterService {
         }
 
         if(this.userInfo.role===UserRole.USER){
-        const { totalTokens } = await this.getUsage(finalResult)
-        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id??null, totalTokens);  
-        await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN, {chapterSummary:totalTokens});
-       }
+          const { totalTokens } = await this.getUsage(finalResult)
+          await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id??null, totalTokens);  
+          await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN, {chapterSummary:totalTokens});
+        }
   
       } else {
         // If isCombined is false, generate chapter-wise summaries
         for (const chapter of validChapters) {
           try {
-            // Get the chapter content
             const chapterText = chapter.chapterInfo;
   
-            // Generate the chapter summary
-            const chapterSummaryPrompt = `
-              You are creating a concise, engaging summary 
-              Chapter Content:
-              ${chapterText}
-      
-              Instructions:
-              1. Write exactly ${summaryRequest.noOfWords} words well-crafted sentences that capture the essence of this chapter.
-              2. Include the most significant plot points, character developments, or key concepts from this chapter.
-              3. Use vivid, engaging language that captures the tone of the original text.
-              4. Make the summary flow naturally from sentence to sentence.
-      
-              Proceed with your ${summaryRequest.noOfWords} words sentence summary for this chapter.
-              Do not use bullet points or include any other text beyond the summary itself.
-              Do not include chapter name and chapter number
-            `;
+            // Use master prompt if available, otherwise use default
+            let chapterSummaryPrompt = this.settingPrompt.chapterSummaryMasterPrompt
+              ? this.settingPrompt.chapterSummaryMasterPrompt
+                  .replace('${noOfWords}', summaryRequest.noOfWords.toString())
+                  .replace('${chapterContent}', chapterText)
+              : `
+                You are creating a concise, engaging summary 
+                Chapter Content:
+                ${chapterText}
+        
+                Instructions:
+                1. Write exactly ${summaryRequest.noOfWords} words well-crafted sentences that capture the essence of this chapter.
+                2. Include the most significant plot points, character developments, or key concepts from this chapter.
+                3. Use vivid, engaging language that captures the tone of the original text.
+                4. Make the summary flow naturally from sentence to sentence.
+        
+                Proceed with your ${summaryRequest.noOfWords} words sentence summary for this chapter.
+                Do not use bullet points or include any other text beyond the summary itself.
+                Do not include chapter name and chapter number
+              `;
   
-            // Stream the chapter summary generation
             const stream = await this.textModel.invoke(chapterSummaryPrompt);
-   onTextUpdate(stream.content)
-   if(this.userInfo.role===UserRole.USER){
-   const { totalTokens } = await this.getUsage(stream)
-   await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id??null, totalTokens);  
-   await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN,{chapterSummary:totalTokens});
-  }
-            // let chapterSummary = "";
-            // for await (const chunk of stream) {
-            //   chapterSummary += chunk.content;
-            //   onTextUpdate(chunk.content);
-            // }
-  
+            onTextUpdate(stream.content)
+            if(this.userInfo.role===UserRole.USER){
+              const { totalTokens } = await this.getUsage(stream)
+              await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id??null, totalTokens);  
+              await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN,{chapterSummary:totalTokens});
+            }
   
           } catch (error) {
             onTextUpdate(`Error generating summary for Chapter ${chapter.chapterNo}: ${error.message}`);
@@ -1010,13 +1008,12 @@ export class BookChapterService {
     bookId: number,
     chapterIds: number[],
     numberOfSlides: number,
-    userId:number,
+    userId: number,
     onTextUpdate: (text: string) => void
   ) {
     try {
       await this.initializeAIModels(userId);
 
-      // Validate book exists
       const bookInfo = await this.bookGenerationRepository.findOne({
         where: { id: bookId },
       });
@@ -1025,63 +1022,55 @@ export class BookChapterService {
         throw new Error(`Book generation record not found for id: ${bookId}`);
       }
 
-      // Process each chapter one by one
       for (const chapterId of chapterIds) {
         try {
-          // Find the chapter
           const chapter = await this.bookChapterRepository.findOne({
             where: { id: chapterId, bookGeneration: { id: bookId } },
           });
 
           if (!chapter) {
-            onTextUpdate(
-              `Chapter ID ${chapterId} not found for this book. Skipping.`
-            );
+            onTextUpdate(`Chapter ID ${chapterId} not found for this book. Skipping.`);
             continue;
           }
 
-          // Get the chapter content
           const chapterText = chapter.chapterInfo;
 
-          // Generate the slides
+          // Use master prompt if available, otherwise use default
+          let slidePrompt = this.settingPrompt.presentationSlidesMasterPrompt
+            ? this.settingPrompt.presentationSlidesMasterPrompt
+                .replace('${numberOfSlides}', numberOfSlides.toString())
+                .replace('${chapterContent}', chapterText)
+            : `
+              Create exactly ${numberOfSlides} presentation slides for the following chapter content:
+              
+              Chapter Text:
+              ${chapterText}
+    
+              Requirements:
+              - Create exactly ${numberOfSlides} slides
+              - Each slide should have a clear title and bullet points
+              - Keep content concise and focused
+              - Use markdown format for slides
+              - Format each slide as:
+                # Slide Title
+                - Bullet point 1
+                - Bullet point 2
+                - Bullet point 3
+              
+              Generate ${numberOfSlides} slides now:
+            `;
 
-          const slidePrompt = `
-            Create exactly ${numberOfSlides} presentation slides for the following chapter content:
-            
-            Chapter Text:
-            ${chapterText}
-  
-            Requirements:
-            - Create exactly ${numberOfSlides} slides
-            - Each slide should have a clear title and bullet points
-            - Keep content concise and focused
-            - Use markdown format for slides
-            - Format each slide as:
-              # Slide Title
-              - Bullet point 1
-              - Bullet point 2
-              - Bullet point 3
-            
-            Generate ${numberOfSlides} slides now:
-          `;
-
-          // Stream the slides generation
           const stream = await this.textModel.invoke(slidePrompt);
 
           if(this.userInfo.role===UserRole.USER){
-          const { totalTokens } = await this.getUsage(stream)
-          await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id??null, totalTokens);  
-          await this.subscriptionService.trackTokenUsage(userId,"chapterSlides",UsageType.TOKEN,{chapterSlides:totalTokens});
-         }
+            const { totalTokens } = await this.getUsage(stream)
+            await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id??null, totalTokens);  
+            await this.subscriptionService.trackTokenUsage(userId,"chapterSlides",UsageType.TOKEN,{chapterSlides:totalTokens});
+          }
           return stream.content;
         } catch (error) {
-          onTextUpdate(
-            `\n\nError generating slides for Chapter ID ${chapterId}: ${error.message}\n\n`
-          );
-          this.logger.error(
-            `Error generating slides for Chapter ID ${chapterId}:`,
-            error
-          );
+          onTextUpdate(`\n\nError generating slides for Chapter ID ${chapterId}: ${error.message}\n\n`);
+          this.logger.error(`Error generating slides for Chapter ID ${chapterId}:`, error);
         }
       }
 

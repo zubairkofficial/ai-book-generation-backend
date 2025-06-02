@@ -35,4 +35,29 @@ export class CreateSettingsDto {
   @IsOptional()
   @IsString()
   chapterImageDomainUrl?: string;
+
+  @ApiProperty({ required: false, description: 'Master prompt for book idea generation' })
+  @IsOptional()
+  @IsString()
+  bookIdeaMasterPrompt?: string;
+
+  @ApiProperty({ required: false, description: 'Master prompt for book cover design' })
+  @IsOptional()
+  @IsString()
+  bookCoverMasterPrompt?: string;
+
+  @ApiProperty({ required: false, description: 'Master prompt for writing assistant' })
+  @IsOptional()
+  @IsString()
+  writingAssistantMasterPrompt?: string;
+
+  @ApiProperty({ required: false, description: 'Master prompt for chapter summary' })
+  @IsOptional()
+  @IsString()
+  chapterSummaryMasterPrompt?: string;
+
+  @ApiProperty({ required: false, description: 'Master prompt for presentation slides' })
+  @IsOptional()
+  @IsString()
+  presentationSlidesMasterPrompt?: string;
 }

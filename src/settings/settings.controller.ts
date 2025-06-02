@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Put } from '@nestjs/common';
 import { SettingsService } from './settings.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { TokenConversionDto } from './dto/token-conversion.dto';
@@ -26,6 +26,21 @@ export class SettingsController {
       throw new Error('User not authenticated');
     }
     return this.settingsService.createOrUpdate(userId, settingsDto);
+  }
+
+  @Put()
+  async update(@Body() settingsDto: UpdateSettingsDto, @GetUser() user: { id: number }): Promise<Settings> {
+    const userId = user?.id;
+    if (!userId) {
+      throw new Error('User not authenticated');
+    }
+    return this.settingsService.createOrUpdate(userId, settingsDto);
+  }
+
+  @Roles(Role.USER, Role.ADMIN)
+  @Get()
+  async getSettings() {
+    return this.settingsService.getAllSettings();
   }
 
   @Roles(Role.USER,Role.ADMIN)

@@ -22,6 +22,21 @@ export class Settings extends BaseEntity {
   @Column({ nullable: true })
   chapterImageDomainUrl: string;
 
+  @Column({ type: 'text', nullable: true })
+  bookIdeaMasterPrompt: string;
+
+  @Column({ type: 'text', nullable: true })
+  bookCoverMasterPrompt: string;
+
+  @Column({ type: 'text', nullable: true })
+  writingAssistantMasterPrompt: string;
+
+  @Column({ type: 'text', nullable: true })
+  chapterSummaryMasterPrompt: string;
+
+  @Column({ type: 'text', nullable: true })
+  presentationSlidesMasterPrompt: string;
+
   @Column()
   userID: number;
   

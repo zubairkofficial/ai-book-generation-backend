@@ -19,7 +19,8 @@ export class AiAssistant extends BaseEntity {
   @Column({
     type: "enum",
     enum: AiAssistantType,
-    nullable: false,
+    nullable: true, // Temporarily allow null values until migration runs
+    default: AiAssistantType.BOOK_IDEA
   })
   type: AiAssistantType; // AI Task Type using Enum
 
