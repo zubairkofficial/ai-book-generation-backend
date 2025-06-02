@@ -9,7 +9,7 @@ export enum AiAssistantType {
   WRITING_ASSISTANT = "writing_assistant",
 }
 
-@Entity()
+@Entity({ name: 'ai_assistant' })
 export class AiAssistant extends BaseEntity {
   
   @ManyToOne(() => User, (user) => user.aiAssistants, { onDelete: 'CASCADE' }) 
