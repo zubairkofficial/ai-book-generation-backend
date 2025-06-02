@@ -78,9 +78,10 @@ export class SettingsService {
       }
 
       return savedSettings;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in createOrUpdate settings:', error);
-      throw new Error(`Failed to update settings: ${error.message}`);
+      const errorMessage = error.data?.message || error.message || 'Unknown error occurred';
+      throw new Error(`Failed to update settings: ${errorMessage}`);
     }
   }
 
@@ -94,6 +95,9 @@ export class SettingsService {
   }
 
   async updateTokenConversionSettings(dto: TokenConversionDto) {
+  try {
+    
+  
     let settings = await this.getAllSettings();
 
     settings.creditsPerModelToken = +dto.creditsPerModelToken;
@@ -108,5 +112,9 @@ export class SettingsService {
         creditsPerImageToken: settings.creditsPerImageToken
       }
     };
+  } catch (error) {
+    console.error('Error in updateTokenConversionSettings:', error);
+    throw new Error('Failed to update token conversion settings'); 
+  }
   }
 }
