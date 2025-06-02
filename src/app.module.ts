@@ -45,7 +45,7 @@ import { TransactionModule } from './transaction/transaction.module';
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         migrations: [__dirname + '/migrations/*{.ts,.js}'],
         migrationsRun: true, // Automatically run migrations
-        synchronize: false, // Disable synchronize to use migrations instead
+        synchronize: true, // Disable synchronize to use migrations instead
       }),
     }),
 
