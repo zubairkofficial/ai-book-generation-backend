@@ -41,6 +41,9 @@ export class User extends BaseEntity {
   @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
   availableAmount: number;
 
+  @Column({ type: 'boolean', default: true })
+  isNewUser: boolean;
+
   // @Column({ type: 'boolean', default: false })
   // fullModelAccess: boolean;
   

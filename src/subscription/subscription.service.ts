@@ -22,7 +22,7 @@ import { EventEmitter2 } from "@nestjs/event-emitter";
 import { BookGeneration } from "src/book-generation/entities/book-generation.entity";
 import { BookChapter } from "src/book-chapter/entities/book-chapter.entity";
 import { CardPaymentService } from "src/card-payment/card-payment.service";
-import { Transaction, TransactionType } from "src/transaction/entities/transaction.entity";
+import { Transaction, TransactionType, TransactionStatus } from "src/transaction/entities/transaction.entity";
 import { TransactionService } from "src/transaction/transaction.service";
 import { EmailService } from "src/auth/services/email.service";
 import { SettingsService } from 'src/settings/settings.service';
@@ -124,49 +124,31 @@ if(packageData.description)packages.description=packageData.description
     subscribeDto: SubscribePackageDto
   ): Promise<UserSubscription> {
     try {
-      // Get settings for token multiplication
       const settings = await this.settingsService.getAllSettings();
       if (!settings) {
         throw new Error('Settings not found');
       }
-      
+
       return await this.userRepository.manager.transaction(
         async (entityManager: EntityManager) => {
           const user = await entityManager.findOne(User, {
             where: { id: userId },
           });
+
           if (!user) {
-            throw new NotFoundException("User not found");
+            throw new NotFoundException('User not found');
           }
 
           const packageEntity = await entityManager.findOne(Package, {
-            where: { id: subscribeDto.packageId, isActive: true },
+            where: { id: subscribeDto.packageId },
           });
+
           if (!packageEntity) {
-            throw new NotFoundException("Package not found or inactive");
-          } else if(Number(packageEntity.price) > Number(user.availableAmount)) {
-            throw new BadRequestException("Recharge your account");
+            throw new NotFoundException('Package not found');
           }
 
-          // Check for existing active subscription
-          const existingSubscription = await entityManager.findOne(
-            UserSubscription,
-            {
-              where: {
-                user: { id: userId },
-                status: SubscriptionStatus.ACTIVE,
-                package: { id: subscribeDto.packageId }
-              },
-            }
-          );
-
-          if (existingSubscription) {
-            if (subscribeDto.cancelExisting) {
-              existingSubscription.status = SubscriptionStatus.CANCELLED;
-              await entityManager.save(UserSubscription, existingSubscription);
-            } else {
-              throw new BadRequestException("User already has an active subscription");
-            }
+          if (!packageEntity.isActive) {
+            throw new BadRequestException('Package is not active');
           }
 
           const alreadyExistingSubscription = await entityManager.findOne(
@@ -188,11 +170,15 @@ if(packageData.description)packages.description=packageData.description
           const endDate = new Date(startDate);
           endDate.setDate(endDate.getDate() + packageEntity.durationDays);
 
-          // Update user's available amount
-          user.availableAmount = user.availableAmount - packageEntity.price;
-          await entityManager.update(User, user.id, {
-            availableAmount: user.availableAmount,
-          });
+          // Only deduct amount if it's not a free package
+          if (!packageEntity.isFree) {
+            // Update user's available amount
+            user.availableAmount = user.availableAmount - packageEntity.price;
+            await entityManager.update(User, user.id, {
+              availableAmount: user.availableAmount,
+              isNewUser: false
+            });
+          }
 
           // Multiply tokens and images with settings values
           const totalTokens = packageEntity.tokenLimit * settings.creditsPerModelToken;
@@ -209,11 +195,33 @@ if(packageData.description)packages.description=packageData.description
             autoRenew: subscribeDto.autoRenew || false,
           });
 
-          return await entityManager.save(UserSubscription, subscription);
+          const savedSubscription = await entityManager.save(subscription);
+
+          // Create transaction record if it's not a free package
+          if (!packageEntity.isFree) {
+            const transaction = entityManager.create(Transaction, {
+              user,
+              amount: packageEntity.price,
+              type: TransactionType.SUBSCRIPTION,
+              description: `Subscription to ${packageEntity.name} package`,
+              status: TransactionStatus.COMPLETED,
+            });
+            await entityManager.save(transaction);
+          }
+
+          // Emit subscription event
+          this.eventEmitter.emit('subscription.created', {
+            userId: user.id,
+            packageId: packageEntity.id,
+            subscriptionId: savedSubscription.id,
+          });
+
+          return savedSubscription;
         }
       );
     } catch (error) {
-      throw new InternalServerErrorException(error.message);
+      this.logger.error(`Error in subscribeToPackage: ${error.message}`);
+      throw error;
     }
   }
   async unSubscribeToPackage(
@@ -529,6 +537,9 @@ return {message:"email send successfully"}
       // Multiply tokens and images with settings values
       const totalTokens = input.tokenLimit * settings.creditsPerModelToken;
       const totalImages = input.imageLimit * settings.creditsPerImageToken;
+
+      // Update user's isNewUser status
+      await this.userRepository.update(user.id, { isNewUser: false });
 
       const subscription = this.userSubscriptionRepository.create({
         user,

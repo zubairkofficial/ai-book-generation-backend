@@ -71,13 +71,18 @@ export class CreateCardTokenDto {
 
   @IsNotEmpty()
   @IsInt()
-  @IsPositive()
+  @IsNumber()
   amount: number;
 
   @IsNotEmpty()
   @IsBoolean()
   saveCard: boolean;
 
+  @IsNotEmpty()
+  @IsBoolean()
+  isFree: boolean;
+
+  
   @ApiProperty({ description: "Card holder name", required: false })
   @IsOptional()
   @IsString()

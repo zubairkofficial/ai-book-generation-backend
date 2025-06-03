@@ -12,4 +12,13 @@ export class UpdatePackageDto extends PartialType(CreatePackageDto) {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @ApiProperty({ 
+    description: 'Set package free active or inactive status', 
+    required: false,
+    example: true 
+  })
+  @IsBoolean()
+  @IsOptional()
+  isFree?: boolean;
 } 

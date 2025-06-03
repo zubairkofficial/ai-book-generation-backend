@@ -51,6 +51,11 @@ export class CreatePackageDto {
   @IsOptional()
   isActive?: boolean;
 
+  @ApiProperty({ description: 'Whether this is a free package' })
+  @IsBoolean()
+  @IsOptional()
+  isFree?: boolean;
+
   @ApiProperty({ description: 'Additional features' })
   @IsOptional()
   features?: Record<string, any>;

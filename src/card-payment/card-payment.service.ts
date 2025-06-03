@@ -111,10 +111,12 @@ export class CardPaymentService {
         status: "pending",
         user: user, // Directly assign user object
       };
-  
+      let  paymentIntent
+      if(cardToken.id && (!cardData.isFree || !user.isNewUser)){
+         paymentIntent = await this.createPaymentIntent(Math.round(cardData.amount * 100), 'usd', cardToken.id);
+ }
       // Save card payment and create payment intent in parallel
-      const paymentIntent = await this.createPaymentIntent(Math.round(cardData.amount * 100), 'usd', cardToken.id);
-
+     
       // If saveCard is true, save the card payment to the database
       let savedCardPayment;
       if (cardData.saveCard) {
@@ -130,7 +132,7 @@ export class CardPaymentService {
           description: 'Card payment',
           userId: user.id,
           cardId:savedCardPayment?.id,
-          referenceId: paymentIntent.id,
+          referenceId: paymentIntent?.id??null,
           metadata: {
             cardLastFour: cardData.cardNumber.slice(-4),
             paymentMethod: 'card',
@@ -138,7 +140,7 @@ export class CardPaymentService {
           },
         }),
       ]);
-  
+  await this.usersService.updateUser(user.id, { isNewUser: false });
       // Update card payment status to succeeded
     if(cardData.saveCard)  await this.cardPaymentRepository.update(savedCardPayment.id, { status: "succeeded" });
   
@@ -178,6 +180,7 @@ export class CardPaymentService {
         cvc: cardPayment.cvc,
         amount: +input.amount,
         saveCard: input.saveCard, // Set this based on your logic
+        isFree: input.isFree??false,
       };
      const cardToken= await this.createCardToken(payload)
      const  paymentIntent=  await this.createPaymentIntent(Math.round(input.amount * 100), 'usd', cardToken.id)

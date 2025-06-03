@@ -34,6 +34,9 @@ export class Package extends BaseEntity {
   @Column({ default: true })
   isActive: boolean;
 
+  @Column({ default: false })
+  isFree: boolean;
+
   @Column('jsonb', { nullable: true })
   features: Record<string, any>;
 
