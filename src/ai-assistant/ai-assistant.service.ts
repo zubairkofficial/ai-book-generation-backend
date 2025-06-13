@@ -431,19 +431,33 @@ export class AiAssistantService {
         if (this.settingPrompt.bookCoverMasterPrompt) {
           return this.settingPrompt.bookCoverMasterPrompt
             .replace('${bookTitle}', info?.bookTitle || "Untitled")
-            .replace('${genre}', info?.genre || "General")
+            .replace('${genre}', info?.genre || "")
             .replace('${targetAudience}', info?.targetAudience || "All Ages")
             .replace('${coreIdea}', info?.coreIdea || "Subtle business-related icons for a sleek finish")
-            .replace('${systemPrompt}', this.settingPrompt.coverImagePrompt || "");
+            .replace('${systemPrompt}', this.settingPrompt.coverImagePrompt || "")
+            .replace('${authorName}', info?.authorName || "")
+            .replace('${subtitle}', info?.subtitle || "");
         }
         // Fallback to default prompt
-        return `Design a book front cover image 
-        - Book Titled "${info?.bookTitle || "Untitled"}". 
-        - Genre: ${info?.genre || "General"}
-        - Target Audience: ${info?.targetAudience || "All Ages"}
+        return `Design a visually striking and professional front cover for "${info.bookTitle}"
+        - **Core Idea**:${info?.bookInformation}
+        - **Target Audience**:${info?.targetAudience}
+        - Genre: ${info?.genre || ""}
+        - **SubTitle**: ${info?.subtitle || ""}
+        - **Author**: ${info?.authorName || ""}
         - Core Idea: ${info?.coreIdea || "Subtle business-related icons for a sleek finish"}
         - **System Prompt**:${this.settingPrompt.coverImagePrompt}
-        The front cover should be visually engaging and appropriate for the target audience.`;
+        - Show Front cover image (no show back cover image)
+        `
+        // `Design a book front cover image 
+        // - Book Titled "${info?.bookTitle || "Untitled"}". 
+        // - Genre: ${info?.genre || "General"}
+        // - **SubTitle**: ${info?.subtitle || ""}
+        // - **Author**: ${info?.authorName || ""}
+        // - Target Audience: ${info?.targetAudience || "All Ages"}
+        // - Core Idea: ${info?.coreIdea || "Subtle business-related icons for a sleek finish"}
+        // - **System Prompt**:${this.settingPrompt.coverImagePrompt}
+        // The front cover should be visually engaging and appropriate for the target audience.`;
           
       case AiAssistantType.WRITING_ASSISTANT:
         if (this.settingPrompt.writingAssistantMasterPrompt) {

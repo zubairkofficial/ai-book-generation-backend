@@ -23,7 +23,7 @@ export class BookHtmlContentService {
     async generatePdf(id: number) {
       const book = await this.bookGenerationService.findOneWithHtmlContent(+id);
   
-    //   const browser = await puppeteer.launch();
+      // const browser = await puppeteer.launch();
        const browser = await puppeteer.launch({
  
   args: [
@@ -224,6 +224,24 @@ if (tocPageNumbers.length > 0) {
               .chapter-content p {
                   margin-bottom: 15px;
               }
+              .chapter-content p:first-of-type::first-letter {
+                  float: left;
+                  font-size: 4em;
+                  line-height: 0.8;
+                  padding-right: 0.1em;
+                  padding-top: 0.1em;
+                  color: #b25800;
+                  font-family: 'Playfair Display', serif;
+              }
+              .section p:first-of-type::first-letter {
+                  float: left;
+                  font-size: 4em;
+                  line-height: 0.8;
+                  padding-right: 0.1em;
+                  padding-top: 0.1em;
+                  color: #b25800;
+                  font-family: 'Playfair Display', serif;
+              }
               .chapter-content img {
                   padding-right: 15px;
                   max-width: 100%;
@@ -306,19 +324,19 @@ if (tocPageNumbers.length > 0) {
               <!-- Dedication -->
               <div class="section page-break">
                   <h2>Dedication</h2>
-                  <div>${book.htmlContent?.additionalHtml?.dedication || ''}</div>
+                  <p>${book.htmlContent?.additionalHtml?.dedication || ''}</p>
               </div>
               
               <!-- Preface -->
               <div class="section page-break">
                   <h2>Preface</h2>
-                  <div>${book.htmlContent?.additionalHtml?.preface || ''}</div>
+                  <p>${book.htmlContent?.additionalHtml?.preface || ''}</p>
               </div>
               
               <!-- Introduction -->
               <div class="section page-break">
                   <h2>Introduction</h2>
-                  <div>${book.htmlContent?.additionalHtml?.introduction || ''}</div>
+                  <p>${book.htmlContent?.additionalHtml?.introduction || ''}</p>
               </div>
               
               ${includeToc ? this.generateTableOfContents(chapterPageNumbers) : ''}
@@ -332,19 +350,19 @@ if (tocPageNumbers.length > 0) {
               
               <!-- Index -->
               <div class="section page-break">
-                  <div>${book.htmlContent?.indexHtml || ''}</div>
+                  <p>${book.htmlContent?.indexHtml || ''}</p>
               </div>
               
               <!-- Glossary -->
               <div class="section page-break">
                   <h2>Glossary</h2>
-                  <div>${book.htmlContent?.glossaryHtml || ''}</div>
+                  <p>${book.htmlContent?.glossaryHtml || ''}</p>
               </div>
               
               <!-- References -->
               <div class="section page-break">
                   <h2>References</h2>
-                  <div>${book.htmlContent?.referencesHtml || ''}</div>
+                  <p>${book.htmlContent?.referencesHtml || ''}</p>
               </div>
               
               <div class="footer">

@@ -22,18 +22,24 @@ export class BookCoverDTO {
   bookTitle: string;
 
   @IsString()
+  @IsOptional()
+  subtitle?: string;
+
+  @IsString()
+  @IsOptional()
+  authorName?: string;
+
+  @IsString()
   genre: string;
 
   @IsString()
   @IsOptional()
   coreIdea?: string;
 
-
   @IsString()
   @IsOptional()
   targetAudience?: string;
 
-  
   @IsString()
   @IsOptional()
   numberOfImages: string;
