@@ -30,6 +30,7 @@ export class BookCoverDTO {
   authorName?: string;
 
   @IsString()
+  @IsOptional()
   genre: string;
 
   @IsString()

@@ -4,7 +4,6 @@ import { Repository } from "typeorm";
 import {_} from "lodash";
 import { AiAssistant, AiAssistantType } from "./entities/ai-assistant.entity";
 import { ChatOpenAI, OpenAI } from "@langchain/openai";
-import { ApiKeysService } from "src/api-keys/api-keys.service";
 import { AiAssistantDto, AiAssistantMessage } from "./dto/ai-assistant.dto";
 import { UsersService } from "src/users/users.service";
 import { ConfigService } from "@nestjs/config";
@@ -16,7 +15,7 @@ import { SettingsService } from "src/settings/settings.service";
 import { BookChapterService } from "src/book-chapter/book-chapter.service";
 import { SubscriptionService } from "src/subscription/subscription.service";
 import { UsageType } from "src/subscription/entities/usage.entity";
-import { UserRole } from "src/users/entities/user.entity";
+import { User, UserRole } from "src/users/entities/user.entity";
 import { ApiKey } from "src/api-keys/entities/api-key.entity";
 @Injectable()
 export class AiAssistantService {
@@ -175,7 +174,7 @@ export class AiAssistantService {
     }
 
 
-    private async generateCoverImage(prompt: string, bookTitle: string): Promise<string> {
+    private async generateCoverImage(prompt: string, bookTitle: string,user: User): Promise<string> {
       try {
         const requestData = {
           prompt,
@@ -188,7 +187,9 @@ export class AiAssistantService {
         };
      
         const postResponse = await axios.post(
-          "https://queue.fal.run/fal-ai/flux/dev",
+           user.role===UserRole.USER?!this.userKeyRecord.package?this.settingPrompt.coverImageDomainUrl: this.userKeyRecord?.package?.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+       
+          // "https://queue.fal.run/fal-ai/flux/dev",
           requestData,
           {
             headers: {
@@ -266,7 +267,8 @@ export class AiAssistantService {
                 try {
                   const imageUrl = await this.generateCoverImage(
                     prompt,
-                    input.bookCoverInfo.bookTitle
+                    input.bookCoverInfo.bookTitle,
+                    user
                   );
                   if(this.userInfo.role===UserRole.USER){ 
                   await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package?.id??null, 0,1);  
@@ -439,15 +441,15 @@ export class AiAssistantService {
             .replace('${subtitle}', info?.subtitle || "");
         }
         // Fallback to default prompt
-        return `Design a visually striking and professional front cover for "${info.bookTitle}"
-        - **Core Idea**:${info?.bookInformation}
+        return `Design a visually striking and professional front cover as a standalone 2D graphic for "${info.bookTitle} "
+        - **Core Idea**:${info?.coreIdea}
         - **Target Audience**:${info?.targetAudience}
         - Genre: ${info?.genre || ""}
         - **SubTitle**: ${info?.subtitle || ""}
+        - **Language**: English
         - **Author**: ${info?.authorName || ""}
-        - Core Idea: ${info?.coreIdea || "Subtle business-related icons for a sleek finish"}
         - **System Prompt**:${this.settingPrompt.coverImagePrompt}
-        - Show Front cover image (no show back cover image)
+        
         `
         // `Design a book front cover image 
         // - Book Titled "${info?.bookTitle || "Untitled"}". 
