@@ -407,7 +407,9 @@ export class BookGenerationService {
             throw new UnauthorizedException("exceeded maximum image generation limit")
           }
           const postResponse = await axios.post(
-          user.role===UserRole.USER?!this.userKeyRecord.package?this.settingPrompt.coverImageDomainUrl: this.userKeyRecord?.package?.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+          // user.role===UserRole.USER?!this.userKeyRecord.package?this.settingPrompt.coverImageDomainUrl: this.userKeyRecord?.package?.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+           this.configService.get<string>("BASE_URL_FAL_AI"),
+
          requestData,
             {
               headers: {

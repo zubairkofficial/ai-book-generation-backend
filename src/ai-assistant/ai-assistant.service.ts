@@ -187,9 +187,10 @@ export class AiAssistantService {
         };
      
         const postResponse = await axios.post(
-           user.role===UserRole.USER?!this.userKeyRecord.package?this.settingPrompt.coverImageDomainUrl: this.userKeyRecord?.package?.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
-       
-          // "https://queue.fal.run/fal-ai/flux/dev",
+          //  user.role===UserRole.USER?!this.userKeyRecord.package?this.settingPrompt.coverImageDomainUrl: this.userKeyRecord?.package?.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+            this.configService.get<string>("BASE_URL_FAL_AI"),
+
+          // "https://queue.fal.run/fal-ai/ideogram/v2",
           requestData,
           {
             headers: {
