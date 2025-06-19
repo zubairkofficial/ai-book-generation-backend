@@ -272,7 +272,7 @@ export class AiAssistantService {
                     user
                   );
                   if(this.userInfo.role===UserRole.USER){ 
-                  await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package?.id??null, 0,1);  
+                  await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord.package?.id??null, 0,4);  
                   await this.subscriptionService.trackTokenUsage(user.id,input.bookCoverInfo.bookTitle,UsageType.IMAGE,{aiAssistantCoverImage:imageUrl});
                  }
                   imageUrls.push(imageUrl);

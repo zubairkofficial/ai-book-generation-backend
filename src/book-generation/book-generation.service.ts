@@ -726,7 +726,7 @@ if(user.role===UserRole.USER){
                 additionalData: book.additionalData,
               });
               if(user.role===UserRole.USER){
-               await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord?.package?.id??null, 0,1);  
+               await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord?.package?.id??null, 0,4);  
                await this.subscriptionService.trackTokenUsage(user.id,"coverImage",UsageType.IMAGE,{coverImageUrl:coverImagePath},book);
       }
             })
