@@ -134,12 +134,13 @@ export class AuthService {
 
       // Generate OTP only if email is verified
       const otp = await this.otpService.generateOtp(email);
-      await this.emailService.sendOtpEmail(email, otp.code);
+      // await this.emailService.sendOtpEmail(email, otp.code);
 
-      return { 
-        status: "OTP_REQUIRED",
-        message: "OTP sent to your email. Please verify to log in." 
-      };
+      // return { 
+      //   status: "OTP_REQUIRED",
+      //   message: "OTP sent to your email. Please verify to log in." 
+      // };
+      return this.verifyOtpAndLogin(email,otp.code)
     } catch (error) {
       throw new Error(error.message);
     }
