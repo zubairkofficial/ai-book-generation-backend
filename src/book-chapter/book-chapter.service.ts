@@ -87,9 +87,9 @@ export class BookChapterService {
     if (!this.userKeyRecord) {
       throw new Error('No subscription package found.');
     }
-  
+
     const { totalImages, imagesGenerated } = this.userKeyRecord;
-  
+
     if (
       totalImages < imagesGenerated ||
       (noOfImages && totalImages - imagesGenerated < noOfImages)
@@ -101,25 +101,25 @@ export class BookChapterService {
   private calculateMaxTokens(): number {
     const { totalTokens, tokensUsed } = this.userKeyRecord;
     const remainingTokens = totalTokens - tokensUsed;
-  
+
     if (remainingTokens < 500) {
       throw new BadRequestException('Token limit exceeded');
     }
-  
+
     return Math.min(remainingTokens, 4000);
   }
 
   private selectModelName(): string {
     const isAdmin = this.userInfo.role === UserRole.ADMIN;
     const hasNoPackage = !this.userKeyRecord?.package;
-  
+
     return (isAdmin || hasNoPackage)
       ? this.apiKeyRecord.modelType
       : this.userKeyRecord.package.modelType;
   }
-  
-  
-  
+
+
+
   private async initializeAIModels(userId: number, noOfImages?: number) {
     try {
       // Fetch user profile
@@ -127,32 +127,32 @@ export class BookChapterService {
       if (!this.userInfo) {
         throw new NotFoundException('User does not exist');
       }
-  
+
       // Fetch API key
       [this.apiKeyRecord] = await this.apiKeyRepository.find();
       if (!this.apiKeyRecord) {
         throw new Error('No API keys found in the database.');
       }
-  
+
       // Fetch user's active subscription
       [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
-   // Load settings
-   this.settingPrompt = await this.settingsService.getAllSettings();
-   if (!this.settingPrompt) {
-     throw new Error('No setting prompt found in the database.');
-   }
+      // Load settings
+      this.settingPrompt = await this.settingsService.getAllSettings();
+      if (!this.settingPrompt) {
+        throw new Error('No setting prompt found in the database.');
+      }
       // Validate subscription (only for USER role)
       if (this.userInfo.role === UserRole.USER) {
         this.validateUserSubscription(noOfImages);
       }
-  
-     
-  
+
+
+
       // Determine max completion tokens if not admin
       const maxCompletionTokens = this.userInfo.role === UserRole.USER
         ? this.calculateMaxTokens()
         : undefined;
-  
+
       // Initialize text model
       this.textModel = new ChatOpenAI({
         openAIApiKey: this.apiKeyRecord.openai_key,
@@ -160,19 +160,19 @@ export class BookChapterService {
         modelName: this.selectModelName(),
         maxTokens: maxCompletionTokens,
       });
-  
+
       this.logger.log(`AI Models initialized successfully with model: ${this.selectModelName()}`);
     } catch (error) {
       this.logger.error(`Failed to initialize AI models: ${error.message}`);
       throw new Error(error.message);
     }
   }
-  
+
 
   private async saveGeneratedImage(
     imageUrl: string,
     bookTitle: string,
-    userId:number
+    userId: number
   ): Promise<string> {
     try {
       if (!imageUrl) {
@@ -200,7 +200,7 @@ export class BookChapterService {
 
       // Save image
       fs.writeFileSync(imagePath, imageResponse.data);
-    
+
       return `${baseUrl}/uploads/chapters/${fullFileName}`;
     } catch (error) {
       console.error(`Error saving chapter image: ${error.message}`);
@@ -271,29 +271,29 @@ export class BookChapterService {
       .split(/(?<=[.?!])\s+|[\n]/)
       .map(s => s.trim())
       .filter(s => s.length > 0);
-  
+
     const matches: { keyPoint: string; sentence: string; position: number }[] = [];
     let lastUsedPosition = -1;
-  
+
     // Match key points in order while maintaining text sequence
     keyPoints.forEach(keyPoint => {
       const cleanKey = this.normalizeText(keyPoint);
       let bestMatch: { score: number; index: number } | null = null;
-  
+
       // Only look at sentences after previous matches
       for (let i = lastUsedPosition + 1; i < chapterSentences.length; i++) {
         if (matches.some(m => m.position === i)) continue;
-  
+
         const sentenceClean = this.normalizeText(chapterSentences[i]);
         const exactMatch = sentenceClean.includes(cleanKey);
         const distance = exactMatch ? 0 : levenshtein(cleanKey, sentenceClean);
         const score = exactMatch ? distance - 1000 : distance; // Prioritize exact matches
-  
+
         if (!bestMatch || score < bestMatch.score) {
           bestMatch = { score, index: i };
         }
       }
-  
+
       if (bestMatch) {
         matches.push({
           keyPoint,
@@ -303,10 +303,10 @@ export class BookChapterService {
         lastUsedPosition = bestMatch.index;
       }
     });
-  
+
     return matches.sort((a, b) => a.position - b.position);
   }
-  
+
   private insertImagesIntoChapter(
     chapterText: string,
     keyPoints: string[],
@@ -315,7 +315,7 @@ export class BookChapterService {
     const sentences = chapterText.split(/(?<=[.?!])\s+|[\n]/);
     const matches = this.matchKeyPointsWithText(chapterText, keyPoints);
     const fallbackImageUrl = this.configService.get<string>("FALLBACK_IMAGE_URL");
-    
+
     // Create a map of sentence positions to images
     const imageMap = new Map<number, { title: string; url: string | null }>();
     matches.forEach((match, index) => {
@@ -323,16 +323,16 @@ export class BookChapterService {
         imageMap.set(match.position, chapterImages[index]);
       }
     });
-  
+
     // Build content with images inserted in sequence
     let formattedChapter = '';
     sentences.forEach((sentence, index) => {
       formattedChapter += sentence + '\n\n';
-      
+
       if (imageMap.has(index)) {
         const img = imageMap.get(index);
         const keyPoint = matches.find(m => m.position === index)?.keyPoint || '';
-        
+
         if (img?.url) {
           formattedChapter += `### ${keyPoint}\n\n![${img.title}](${img.url})\n\n`;
         } else if (fallbackImageUrl) {
@@ -340,7 +340,7 @@ export class BookChapterService {
         }
       }
     });
-  
+
     return formattedChapter;
   }
 
@@ -351,7 +351,7 @@ export class BookChapterService {
     keyPoint: string,
     index: number,
     chapterImages: { title: string; url: string | null }[],
-    userId:number
+    userId: number
   ): Promise<void> {
     const maxRetries = 12; // Retry for up to 2 minutes
     const delayMs = 10000; // Wait 10 seconds per retry
@@ -388,7 +388,7 @@ export class BookChapterService {
     }
 
     // Save the image once it's ready
-    const savedImagePath = await this.saveGeneratedImage(imageUrl, bookTitle,userId);
+    const savedImagePath = await this.saveGeneratedImage(imageUrl, bookTitle, userId);
 
     if (savedImagePath) {
       // Explicitly update the array
@@ -401,7 +401,7 @@ export class BookChapterService {
     }
   }
 
-  private async generateChapterSummary(chapterText: string,bookInfo: BookGeneration,userId:number): Promise<string> {
+  private async generateChapterSummary(chapterText: string, bookInfo: BookGeneration, userId: number): Promise<string> {
     try {
       if (!chapterText || chapterText.trim().length === 0) {
         throw new Error("Chapter text is empty or invalid.");
@@ -419,11 +419,11 @@ export class BookChapterService {
 
       // Use the model from this.textModel dynamically
       const response = await this.textModel.invoke(prompt);
-    if(this.userInfo.role===UserRole.USER){
-       const { totalTokens } = await this.getUsage(response,prompt)
-      await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id??null, totalTokens);  
-      await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN,{summaryTokens:totalTokens});
-    }  
+      if (this.userInfo.role === UserRole.USER) {
+        const { totalTokens } = await this.getUsage(response, prompt)
+        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id ?? null, totalTokens);
+        await this.subscriptionService.trackTokenUsage(userId, "chapterSummary", UsageType.TOKEN, { summaryTokens: totalTokens });
+      }
       // Log the response for debugging
       this.logger.log(
         "OpenAI API Response:",
@@ -446,7 +446,7 @@ export class BookChapterService {
     promptData: BookChapterGenerationDto,
     bookInfo: BookGeneration,
     bookChapter: boolean,
-    userId:number,
+    userId: number,
     onTextUpdate: (text: string) => void
   ): Promise<string> {
     try {
@@ -475,9 +475,9 @@ export class BookChapterService {
           const lines = text.split('\n').filter(line => line.trim() !== '');
           return lines.length === 1 && text.length <= 100 && !/[.!?]$/.test(text.trim());
         };
-        
+
         const headingCheck = isHeading(promptData.selectedText);
-        
+
         if (headingCheck) {
           // Handle heading improvement
           if (promptData.instruction) {
@@ -561,26 +561,26 @@ export class BookChapterService {
             `;
           }
         }
-        
+
 
         let updateResponse = await this.textModel.stream(updatePrompt);
         let updatedText = "";
         let finalResult: AIMessageChunk | undefined;
-      
+
         for await (const chunk of updateResponse) {
-           if (finalResult) {
-                    finalResult = concat(finalResult, chunk);
-                  } else {
-                    finalResult = chunk;
-                  }
+          if (finalResult) {
+            finalResult = concat(finalResult, chunk);
+          } else {
+            finalResult = chunk;
+          }
           updatedText += chunk.content;
           onTextUpdate(chunk.content);
         }
-        if(this.userInfo.role===UserRole.USER){
-        const { totalTokens } = await this.getUsage(finalResult)
-        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id??null, totalTokens);  
-        await this.subscriptionService.trackTokenUsage(userId,"chapterParagraphRegenerate",UsageType.TOKEN, {chapterParagraphRegenerate:totalTokens});
-       }
+        if (this.userInfo.role === UserRole.USER) {
+          const { totalTokens } = await this.getUsage(finalResult)
+          await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id ?? null, totalTokens);
+          await this.subscriptionService.trackTokenUsage(userId, "chapterParagraphRegenerate", UsageType.TOKEN, { chapterParagraphRegenerate: totalTokens });
+        }
         // Save the updated context for this paragraph only, not clearing the whole chapter.
         await memory.saveContext(
           { input: promptData.selectedText },
@@ -590,8 +590,211 @@ export class BookChapterService {
         return updatedText;
       } else {
 
-      // Step 3: Generate the full chapter text with context from previous chapters
-        const chapterPrompt = `
+        // Step 3: Generate the Chapter Text (Chunked or Full)
+
+        // If we have images, we generate in chunks: Text -> Image -> Text -> Image -> Final Text
+        if (promptData.noOfImages > 0) {
+          let fullChapterContent = "";
+
+          // We will generate N chunks of text followed by N images, then 1 final chunk.
+          // So loop N times.
+          for (let i = 1; i <= promptData.noOfImages; i++) {
+
+            // A. Generate Text Section
+            const partPrompt = `
+              You are a professional author writing **Chapter ${promptData.chapterNo}: "${promptData.chapterName}"**.
+              
+              Current Task: Write **Part ${i}** of the chapter.
+              Total images to insert in this chapter: ${promptData.noOfImages}.
+              This section is leading up to **Image #${i}**.
+              
+              **Instructions:**
+              - Write a substantial section of the chapter (approx ${(promptData.maxWords || 5000) / (promptData.noOfImages + 1)} words).
+              - Advance the plot/content logically.
+              - **End this section with a scene or concept that is highly visual**, suitable for an illustration.
+              - Do NOT finish the chapter yet (unless this is the very last part, but we have a final section after this).
+              
+              **Style & Tone:**
+              - Genre: ${bookInfo.genre}
+              - Tone: Consistent with the book.
+              
+              **Context:**
+              ${await memory.loadMemoryVariables({})}
+            `;
+
+            const partStream = await this.textModel.stream(partPrompt);
+            let partText = "";
+            let partResult: AIMessageChunk | undefined;
+
+            for await (const chunk of partStream) {
+              if (partResult) partResult = concat(partResult, chunk);
+              else partResult = chunk;
+
+              partText += chunk.content;
+              onTextUpdate(chunk.content); // Stream text to user
+            }
+            fullChapterContent += partText;
+
+            // Track Usage
+            if (this.userInfo.role === UserRole.USER) {
+              const { totalTokens } = await this.getUsage(partResult);
+              await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id ?? null, totalTokens, 0);
+              await this.subscriptionService.trackTokenUsage(userId, "generateChapterPart", UsageType.TOKEN, { generateChapterPart: totalTokens }, bookInfo, promptData.chapterNo);
+            }
+
+            if (!partText.trim()) continue; // Skip if empty
+
+            // Update Memory with this part
+            await memory.saveContext(
+              { input: `Write Part ${i} of Chapter ${promptData.chapterNo}` },
+              { output: partText }
+            );
+
+
+            // B. Generate Image for this Section
+            // 1. Extract Key Point
+            const keyPointPrompt = `
+              Based on the following text section, identify **ONE** single, vivid, and specific visual scene or concept that best represents it for an illustration.
+              Return ONLY the short description (1 sentence).
+
+              Text:
+              ${partText}
+            `;
+            const keyPointResponse = await this.textModel.invoke(keyPointPrompt);
+            const keyPoint = keyPointResponse.content.trim();
+
+            // Track Usage (KeyPoint)
+            if (this.userInfo.role === UserRole.USER) {
+              const { totalTokens } = await this.getUsage(keyPointResponse);
+              await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id ?? null, totalTokens);
+            }
+
+            // 2. Generate Image
+            const imagePrompt = `
+              Create a high-quality illustration for:
+              - Book: "${bookInfo.bookTitle}" (Genre: ${bookInfo.genre})
+              - Chapter: ${promptData.chapterNo}
+              - Scene: "${keyPoint}"
+              - Style: "${this.settingPrompt.chapterImagePrompt}"
+              - Target Audience: "${bookInfo.targetAudience}"
+              
+              Make it visually striking and contextually accurate.
+            `;
+
+            let imageUrl: string | null = null;
+            try {
+              const postResponse = await axios.post(
+                this.userInfo.role === UserRole.USER ? this.userKeyRecord.package ? this.userKeyRecord?.package.imageModelURL : this.settingPrompt.coverImageDomainUrl : this.settingPrompt.coverImageDomainUrl ?? this.configService.get<string>("BASE_URL_FAL_AI"),
+                { prompt: imagePrompt },
+                {
+                  headers: {
+                    Authorization: `Key ${this.apiKeyRecord.fal_ai}`,
+                    "Content-Type": "application/json",
+                  },
+                }
+              );
+
+              // Poll for image
+              const imageResponseUrl = postResponse.data.response_url;
+
+              // Poll logic inline here or call helper
+              // We'll reuse the helper logic but adapted for single image return to stream
+              // For simplicity reusing pollImageGeneration is hard because it updates an array by reference.
+              // Let's copy-paste a simplified poll/save here to stream directly.
+
+              const maxRetries = 12;
+              const delayMs = 5000;
+              let attempt = 0;
+
+              while (attempt < maxRetries) {
+                try {
+                  const getRes = await axios.get(imageResponseUrl, { headers: { Authorization: `Key ${this.apiKeyRecord.fal_ai}` } });
+                  if (getRes.data.images?.length > 0) {
+                    imageUrl = getRes.data.images[0].url;
+                    break;
+                  }
+                  // Check for fallback
+                  if (getRes.data?.detail?.includes("Exhausted balance")) throw new Error("Exhausted balance");
+
+                } catch (e) {
+                  // swallow poll error 
+                }
+                await new Promise(r => setTimeout(r, delayMs));
+                attempt++;
+              }
+
+              // Fallback if failed
+              if (!imageUrl) {
+                const fallbackUrl = this.configService.get<string>("FALLBACK_IMAGE_URL");
+                if (fallbackUrl) imageUrl = fallbackUrl;
+              }
+
+              if (imageUrl) {
+                // Save it locally
+                const savedPath = await this.saveGeneratedImage(imageUrl, bookInfo.bookTitle, userId);
+
+                // Stream Image Markdown immediately!
+                const imageMarkdown = `\n\n### ${keyPoint}\n![${keyPoint}](${savedPath})\n\n`;
+                fullChapterContent += imageMarkdown;
+                onTextUpdate(imageMarkdown);
+
+                if (this.userInfo.role === UserRole.USER) {
+                  await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id ?? null, 0, 1);
+                  await this.subscriptionService.trackTokenUsage(userId, "chapterImage", UsageType.IMAGE, { chapterImage: savedPath }, bookInfo, promptData.chapterNo);
+                }
+              }
+
+            } catch (err) {
+              console.error("Failed to generate inline image:", err);
+              // Continue without image if failed
+            }
+          } // End Loop
+
+          // C. Generate Final Conclusion Section
+          const finalPrompt = `
+              You are a professional author writing **Chapter ${promptData.chapterNo}: "${promptData.chapterName}"**.
+              
+              Current Task: Write the **Final Part** (Conclusion) of this chapter.
+              
+              **Instructions:**
+              - Wrap up the events of this chapter.
+              - Provide a satisfying conclusion to the chapter's arc.
+              - Set up hooks or transitions for the next chapter.
+              
+               **Context:**
+              ${await memory.loadMemoryVariables({})}
+            `;
+
+          const finalStream = await this.textModel.stream(finalPrompt);
+          let finalText = "";
+          let finalResult: AIMessageChunk | undefined;
+
+          for await (const chunk of finalStream) {
+            if (finalResult) finalResult = concat(finalResult, chunk);
+            else finalResult = chunk;
+            finalText += chunk.content;
+            onTextUpdate(chunk.content);
+          }
+          fullChapterContent += finalText;
+
+          // Track Usage (Final)
+          if (this.userInfo.role === UserRole.USER) {
+            const { totalTokens } = await this.getUsage(finalResult);
+            await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id ?? null, totalTokens, 0);
+            await this.subscriptionService.trackTokenUsage(userId, "generateChapterPart", UsageType.TOKEN, { generateChapterPart: totalTokens }, bookInfo, promptData.chapterNo);
+          }
+
+          await memory.saveContext(
+            { input: `Write Conclusion of Chapter ${promptData.chapterNo}` },
+            { output: finalText }
+          );
+
+          return fullChapterContent;
+
+        } else {
+
+          // EXISTING LOGIC FOR NO IMAGES
+          const chapterPrompt = `
           You are a professional author tasked with writing **Chapter ${promptData.chapterNo}: "${promptData.chapterName}"** of the book titled **"${bookInfo.bookTitle}"**.
     
           ## 📖 Book Information:
@@ -610,7 +813,7 @@ export class BookChapterService {
   - Use headings to create a logical flow and hierarchy of information.
   
           ## 📝 Context Memory (Summarized Previous Chapters):
-          ${memory}
+          ${await memory.loadMemoryVariables({})}
     
           ## 📖 Chapter Writing Instructions:
           - Begin with a **strong introduction** that aligns with the book's theme.
@@ -629,144 +832,57 @@ export class BookChapterService {
           **Chapter Name show in heading formate
         `;
 
-        const stream = await this.textModel.stream(chapterPrompt);
-        let chapterText = "";
-        const chunks = [];
-        let finalResult: AIMessageChunk | undefined;
+          const stream = await this.textModel.stream(chapterPrompt);
+          let chapterText = "";
+          const chunks = [];
+          let finalResult: AIMessageChunk | undefined;
 
-        for await (const chunk of stream) {
-          chunks.push(chunk);
-          chapterText += chunk.content;
-          if (finalResult) {
-            finalResult = concat(finalResult, chunk);
-          } else {
-            finalResult = chunk;
+          for await (const chunk of stream) {
+            chunks.push(chunk);
+            chapterText += chunk.content;
+            if (finalResult) {
+              finalResult = concat(finalResult, chunk);
+            } else {
+              finalResult = chunk;
+            }
+            onTextUpdate(chunk.content);
           }
-          onTextUpdate(chunk.content);
-        }
-        if(this.userInfo.role===UserRole.USER){
-        const { totalTokens } = await this.getUsage(finalResult)
-        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id??null, totalTokens,promptData.noOfImages);  
-        await this.subscriptionService.trackTokenUsage(userId,"generateChapter",UsageType.TOKEN, {generateChapter:totalTokens},bookInfo,promptData.chapterNo);
-       }
-        if (!chapterText.trim()) {
-          throw new Error(`Chapter ${promptData.chapterNo} content is empty.`);
-        }
-        if (promptData.noOfImages === 0) {
+          if (this.userInfo.role === UserRole.USER) {
+            const { totalTokens } = await this.getUsage(finalResult)
+            await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id ?? null, totalTokens, promptData.noOfImages);
+            await this.subscriptionService.trackTokenUsage(userId, "generateChapter", UsageType.TOKEN, { generateChapter: totalTokens }, bookInfo, promptData.chapterNo);
+          }
+          if (!chapterText.trim()) {
+            throw new Error(`Chapter ${promptData.chapterNo} content is empty.`);
+          }
+
+          // Save memory
+          await memory.saveContext(
+            { input: `Start of Chapter ${promptData.chapterNo}` },
+            { output: chapterText }
+          );
+
           return chapterText;
         }
-        // Step 4: Extract Key Points (Image generation logic remains unchanged)
-
-        const keyPointPrompt = `
-          Extract exactly ${promptData.noOfImages} key points directly from the following chapter text.
-          Each key point must be an exact phrase or sentence from the text and should highlight an important concept or event.
-          Do not rephrase, summarize, or add new information.
-    
-          Chapter Text:
-          ${chapterText}
-        `;
-
-        const keyPointResponse = await this.textModel.invoke(keyPointPrompt);
-       if(this.userInfo.role===UserRole.USER){
-        const { totalTokens } = await this.getUsage(keyPointResponse)
-        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id??null, totalTokens);  
-        await this.subscriptionService.trackTokenUsage(userId,"chapterKeyPoint",UsageType.TOKEN,{chapterKeyPoint:totalTokens},bookInfo,promptData.chapterNo);
-       }
-        const keyPoints = keyPointResponse.content
-          ?.split("\n")
-          .filter((point: string) => point.trim() !== "");
-
-        if (!keyPoints || keyPoints.length !== promptData.noOfImages) {
-          throw new Error(
-            `Failed to extract exactly ${promptData.noOfImages} key points.`
-          );
-        }
-
-        const chapterImages: { title: string; url: string | null }[] =
-          keyPoints.map((keyPoint: any) => ({ title: keyPoint, url: null }));
-
-        // Trigger image generation (this step remains unchanged)
-        const imageRequests = keyPoints.map(async (keyPoint: string, index: number) => {
-          const imagePrompt = `
-          Create a high-quality illustration for:
-          - **Chapter Number**: ${promptData.chapterNo}
-          - **Book Title**: "${bookInfo.bookTitle}"
-          - **Key Theme / Focus**: "${keyPoint}"
-          - **Genre**: "${bookInfo.genre}"
-          - **Target Audience**: "${bookInfo.targetAudience}"
-          - **Core Concept**: "${bookInfo.ideaCore}"
-          - **System Prompt**: "${this.settingPrompt.chapterImagePrompt}"
-          The illustration should visually capture the essence of the key point, aligning with the book's theme, tone, and intended audience. Ensure the style matches the genre, making it compelling and engaging.
-        `;
-
-          const imagePromptData = { prompt: imagePrompt };
-          try {
-           
-            const postResponse = await axios.post(
-          this.userInfo.role===UserRole.USER?this.userKeyRecord.package? this.userKeyRecord?.package.imageModelURL:this.settingPrompt.coverImageDomainUrl  : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
-          imagePromptData,
-              {
-                headers: {
-                  Authorization: `Key ${this.apiKeyRecord.fal_ai}`,
-                  "Content-Type": "application/json",
-                },
-              }
-            );
-
-            const imageResponseUrl = postResponse.data.response_url;
-
-            await this.pollImageGeneration(
-              imageResponseUrl,
-              bookInfo.bookTitle,
-              keyPoint,
-              index,
-              chapterImages,
-              userId
-            );
-            if(this.userInfo.role===UserRole.USER){
-              await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id??null, 0,promptData.noOfImages);  
-              await this.subscriptionService.trackTokenUsage(userId,"chapterImage",UsageType.IMAGE,{chapterImage:imageResponseUrl},bookInfo,promptData.chapterNo);
-             }
-          } catch (error) {
-            throw new Error(error.message)
-           
-          }
-        });
-
-        // Wait for all image requests to complete
-        await Promise.all(imageRequests);
-
-        // Step 5: Return Chapter Text Immediately (no changes here)
-        const formattedChapter = this.insertImagesIntoChapter(
-          chapterText,
-          keyPoints,
-          chapterImages
-        );
-        await memory.saveContext(
-          { input: `Start of Chapter ${promptData.chapterNo}` },
-          { output: chapterText }
-        );
-
-        return formattedChapter;
       }
     } catch (error) {
       console.error("Error generating chapter content:", error);
       throw new Error(error.message);
     }
   }
- 
-  
-  
+
+
+
 
   async generateChapterOfBook(
     input: BookChapterGenerationDto,
-    userId:number,
+    userId: number,
     onTextUpdate: (text: string) => void
   ) {
     try {
       // let chapterSummaryResponse: string;
 
-      await this.initializeAIModels(userId,input.noOfImages);
+      await this.initializeAIModels(userId, input.noOfImages);
 
       // Retrieve the book generation info
       const bookInfo = await this.bookGenerationRepository.findOne({
@@ -795,10 +911,10 @@ export class BookChapterService {
         onTextUpdate
       );
 
-//       if (!input.selectedText){
-//         chapterSummaryResponse =
-//           await this.generateChapterSummary(formattedChapter,bookInfo,userId);
-// }
+      //       if (!input.selectedText){
+      //         chapterSummaryResponse =
+      //           await this.generateChapterSummary(formattedChapter,bookInfo,userId);
+      // }
       if (input.selectedText || input.instruction) {
         return formattedChapter;
       }
@@ -820,19 +936,19 @@ export class BookChapterService {
         // bookChapter.chapterSummary = chapterSummaryResponse;
         bookChapter.chapterName = input.chapterName;
       }
-       // Save (either insert or update)
+      // Save (either insert or update)
       const savedChapter = await this.bookChapterRepository.save(bookChapter);
-      if(this.userInfo.role===UserRole.USER){ 
-        await this.subscriptionService.updateTrackTokenUsage(this.userInfo,this.userKeyRecord?.package??null, bookInfo,input.chapterNo)
-        }
- 
+      if (this.userInfo.role === UserRole.USER) {
+        await this.subscriptionService.updateTrackTokenUsage(this.userInfo, this.userKeyRecord?.package ?? null, bookInfo, input.chapterNo)
+      }
+
       return savedChapter;
     } catch (error) {
       console.error("Error generating book chapter:", error);
       throw new Error(error.message);
     }
   }
-  async updateChapter(input: BookChapterUpdateDto,userId:number) {
+  async updateChapter(input: BookChapterUpdateDto, userId: number) {
     try {
       await this.initializeAIModels(userId);
 
@@ -873,18 +989,18 @@ export class BookChapterService {
   ) {
     try {
       await this.initializeAIModels(userId);
-  
+
       // Validate book exists
       const bookInfo = await this.bookGenerationRepository.findOne({
         where: { id: summaryRequest.bookId },
       });
-  
+
       if (!bookInfo) {
         throw new Error(
           `Book generation record not found for id: ${summaryRequest.bookId}`
         );
       }
-  
+
       // First, fetch all chapters to sort them properly
       const chapters = await Promise.all(
         summaryRequest.chapterIds.map((chapterId) =>
@@ -896,29 +1012,29 @@ export class BookChapterService {
           })
         )
       );
-  
+
       // Filter out any nulls and sort by chapter number
       const validChapters = chapters
         .filter((chapter) => chapter !== null)
         .sort((a, b) => (a.chapterNo || 0) - (b.chapterNo || 0));
-  
+
       if (validChapters.length === 0) {
         onTextUpdate(`No valid chapters found for the provided chapter IDs.`);
         return;
       }
-  
+
       // If isCombined is true, combine all chapter contents into one string
       if (summaryRequest.isCombined) {
         let combinedText = "";
         for (const chapter of validChapters) {
           combinedText += `${chapter.chapterInfo}\n\n`;
         }
-  
+
         // Use master prompt if available, otherwise use default
         let summaryPrompt = this.settingPrompt.chapterSummaryMasterPrompt
           ? this.settingPrompt.chapterSummaryMasterPrompt
-              .replace('${noOfWords}', summaryRequest.noOfWords.toString())
-              .replace('${chapterContent}', combinedText)
+            .replace('${noOfWords}', summaryRequest.noOfWords.toString())
+            .replace('${chapterContent}', combinedText)
           : `
             You are creating a concise, engaging summary for the entire book "${bookInfo.bookTitle}".
       
@@ -934,10 +1050,10 @@ export class BookChapterService {
             Proceed with your ${summaryRequest.noOfWords} words sentence summary.
             Do not use bullet points or include any other text beyond the summary itself.
           `;
-  
+
         // Stream the summary generation
         const stream = await this.textModel.stream(summaryPrompt);
-  
+
         let finalSummary = "";
         let finalResult: AIMessageChunk | undefined;
         for await (const chunk of stream) {
@@ -950,23 +1066,23 @@ export class BookChapterService {
           onTextUpdate(chunk.content);
         }
 
-        if(this.userInfo.role===UserRole.USER){
+        if (this.userInfo.role === UserRole.USER) {
           const { totalTokens } = await this.getUsage(finalResult)
-          await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id??null, totalTokens);  
-          await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN, {chapterSummary:totalTokens});
+          await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id ?? null, totalTokens);
+          await this.subscriptionService.trackTokenUsage(userId, "chapterSummary", UsageType.TOKEN, { chapterSummary: totalTokens });
         }
-  
+
       } else {
         // If isCombined is false, generate chapter-wise summaries
         for (const chapter of validChapters) {
           try {
             const chapterText = chapter.chapterInfo;
-  
+
             // Use master prompt if available, otherwise use default
             let chapterSummaryPrompt = this.settingPrompt.chapterSummaryMasterPrompt
               ? this.settingPrompt.chapterSummaryMasterPrompt
-                  .replace('${noOfWords}', summaryRequest.noOfWords.toString())
-                  .replace('${chapterContent}', chapterText)
+                .replace('${noOfWords}', summaryRequest.noOfWords.toString())
+                .replace('${chapterContent}', chapterText)
               : `
                 You are creating a concise, engaging summary 
                 Chapter Content:
@@ -982,15 +1098,15 @@ export class BookChapterService {
                 Do not use bullet points or include any other text beyond the summary itself.
                 Do not include chapter name and chapter number
               `;
-  
+
             const stream = await this.textModel.invoke(chapterSummaryPrompt);
             onTextUpdate(stream.content)
-            if(this.userInfo.role===UserRole.USER){
+            if (this.userInfo.role === UserRole.USER) {
               const { totalTokens } = await this.getUsage(stream)
-              await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id??null, totalTokens);  
-              await this.subscriptionService.trackTokenUsage(userId,"chapterSummary",UsageType.TOKEN,{chapterSummary:totalTokens});
+              await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id ?? null, totalTokens);
+              await this.subscriptionService.trackTokenUsage(userId, "chapterSummary", UsageType.TOKEN, { chapterSummary: totalTokens });
             }
-  
+
           } catch (error) {
             onTextUpdate(`Error generating summary for Chapter ${chapter.chapterNo}: ${error.message}`);
             this.logger.error(`Error generating chapter summary for Chapter ${chapter.chapterNo}:`, error);
@@ -1002,7 +1118,7 @@ export class BookChapterService {
       throw new Error(`Failed to generate chapter summaries: ${error.message}`);
     }
   }
-  
+
 
   async generateChapterSlides(
     bookId: number,
@@ -1038,8 +1154,8 @@ export class BookChapterService {
           // Use master prompt if available, otherwise use default
           let slidePrompt = this.settingPrompt.presentationSlidesMasterPrompt
             ? this.settingPrompt.presentationSlidesMasterPrompt
-                .replace('${numberOfSlides}', numberOfSlides.toString())
-                .replace('${chapterContent}', chapterText)
+              .replace('${numberOfSlides}', numberOfSlides.toString())
+              .replace('${chapterContent}', chapterText)
             : `
               Create exactly ${numberOfSlides} presentation slides for the following chapter content:
               
@@ -1062,10 +1178,10 @@ export class BookChapterService {
 
           const stream = await this.textModel.invoke(slidePrompt);
 
-          if(this.userInfo.role===UserRole.USER){
+          if (this.userInfo.role === UserRole.USER) {
             const { totalTokens } = await this.getUsage(stream)
-            await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id??null, totalTokens);  
-            await this.subscriptionService.trackTokenUsage(userId,"chapterSlides",UsageType.TOKEN,{chapterSlides:totalTokens});
+            await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id ?? null, totalTokens);
+            await this.subscriptionService.trackTokenUsage(userId, "chapterSlides", UsageType.TOKEN, { chapterSlides: totalTokens });
           }
           return stream.content;
         } catch (error) {
@@ -1080,20 +1196,20 @@ export class BookChapterService {
       throw new Error(`Failed to generate chapter slides: ${error.message}`);
     }
   }
-  public async getUsage(response, inputText?: string): Promise<{inputTokens: number, outputTokens: number, totalTokens: number}> {
+  public async getUsage(response, inputText?: string): Promise<{ inputTokens: number, outputTokens: number, totalTokens: number }> {
     // Get output tokens from response
-    const outputTokens = response?.usage_metadata?.total_tokens !== undefined 
-      ? response.usage_metadata.total_tokens 
+    const outputTokens = response?.usage_metadata?.total_tokens !== undefined
+      ? response.usage_metadata.total_tokens
       : (response?.content?.length ? Math.ceil(response.content.length / 4) : 0);
-    
+
     // Estimate input tokens if inputText is provided
-    const inputTokens = inputText 
+    const inputTokens = inputText
       ? Math.ceil(inputText.length / 4) // Simple approximation of token count
       : 0;
-      
+
     // Calculate total tokens (input + output)
     const totalTokens = inputTokens + outputTokens;
-    
+
     return { inputTokens, outputTokens, totalTokens };
   }
 }

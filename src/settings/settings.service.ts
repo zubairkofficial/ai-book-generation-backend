@@ -10,7 +10,7 @@ export class SettingsService {
   constructor(
     @InjectRepository(Settings)
     private readonly settingsRepository: Repository<Settings>,
-  ) {}
+  ) { }
 
   async create(userID: number, createSettingsDto: UpdateSettingsDto): Promise<Settings> {
     const settings = this.settingsRepository.create({
@@ -37,7 +37,8 @@ export class SettingsService {
         bookCoverMasterPrompt: '',
         writingAssistantMasterPrompt: '',
         chapterSummaryMasterPrompt: '',
-        presentationSlidesMasterPrompt: ''
+        presentationSlidesMasterPrompt: '',
+        emailVerificationEnabled: true
       });
       return this.settingsRepository.save(defaultSettings);
     }
@@ -72,7 +73,7 @@ export class SettingsService {
 
       // Save the settings
       const savedSettings = await this.settingsRepository.save(settings);
-      
+
       if (!savedSettings) {
         throw new Error('Failed to save settings');
       }
@@ -95,26 +96,26 @@ export class SettingsService {
   }
 
   async updateTokenConversionSettings(dto: TokenConversionDto) {
-  try {
-    
-  
-    let settings = await this.getAllSettings();
+    try {
 
-    settings.creditsPerModelToken = +dto.creditsPerModelToken;
-    settings.creditsPerImageToken = +dto.creditsPerImageToken;
 
-    await this.settingsRepository.save(settings);
+      let settings = await this.getAllSettings();
 
-    return {
-      message: 'Token conversion settings updated successfully',
-      settings: {
-        creditsPerModelToken: settings.creditsPerModelToken,
-        creditsPerImageToken: settings.creditsPerImageToken
-      }
-    };
-  } catch (error) {
-    console.error('Error in updateTokenConversionSettings:', error);
-    throw new Error('Failed to update token conversion settings'); 
-  }
+      settings.creditsPerModelToken = +dto.creditsPerModelToken;
+      settings.creditsPerImageToken = +dto.creditsPerImageToken;
+
+      await this.settingsRepository.save(settings);
+
+      return {
+        message: 'Token conversion settings updated successfully',
+        settings: {
+          creditsPerModelToken: settings.creditsPerModelToken,
+          creditsPerImageToken: settings.creditsPerImageToken
+        }
+      };
+    } catch (error) {
+      console.error('Error in updateTokenConversionSettings:', error);
+      throw new Error('Failed to update token conversion settings');
+    }
   }
 }

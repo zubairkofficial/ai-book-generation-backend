@@ -18,7 +18,7 @@ export class Settings extends BaseEntity {
 
   @Column({ nullable: true })
   chapterImageModel: string;
-  
+
   @Column({ nullable: true })
   chapterImageDomainUrl: string;
 
@@ -39,16 +39,19 @@ export class Settings extends BaseEntity {
 
   @Column()
   userID: number;
-  
+
   @Column({ type: 'int', default: 1 })
   creditsPerModelToken: number;
 
   @Column({ type: 'int', default: 1 })
   creditsPerImageToken: number;
 
+  @Column({ default: true })
+  emailVerificationEnabled: boolean;
+
   @OneToOne(() => User, (user) => user.settings, {
     onDelete: "CASCADE",
   })
-  @JoinColumn({name: 'userID'})
+  @JoinColumn({ name: 'userID' })
   user: User;
 }

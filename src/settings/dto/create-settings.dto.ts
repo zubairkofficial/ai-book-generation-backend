@@ -60,4 +60,8 @@ export class CreateSettingsDto {
   @IsOptional()
   @IsString()
   presentationSlidesMasterPrompt?: string;
+
+  @ApiProperty({ required: false, description: 'Enable or disable email verification' })
+  @IsOptional()
+  emailVerificationEnabled?: boolean;
 }

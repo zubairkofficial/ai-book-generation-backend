@@ -12,24 +12,25 @@ import { BookGeneration } from './entities/book-generation.entity';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
 import { BookChapterService } from 'src/book-chapter/book-chapter.service';
 import { BookChapter } from 'src/book-chapter/entities/book-chapter.entity';
+import { Usage } from 'src/subscription/entities/usage.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([BookGeneration, ApiKey,BookChapter]),
+    TypeOrmModule.forFeature([BookGeneration, ApiKey, BookChapter, Usage]),
     UsersModule,
     SettingsModule,
     forwardRef(() => BookHtmlContentModule), // Use forwardRef to avoid circular dependency
- SubscriptionModule,
+    SubscriptionModule,
   ],
   controllers: [BookGenerationController],
   providers: [
-    BookGenerationService, 
-    ChapterPlotChain, 
+    BookGenerationService,
+    ChapterPlotChain,
     EventsChain,
     MarkdownConverter,
     BookChapterService,
-    
+
   ],
   exports: [BookGenerationService, TypeOrmModule],
 })
-export class BookGenerationModule {}
+export class BookGenerationModule { }

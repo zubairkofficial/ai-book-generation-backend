@@ -6,16 +6,15 @@ export class ApiKey extends BaseEntity {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @Column({ nullable: true })
   openai_key: string;
 
-
-  @Column({nullable:true})
+  @Column({ nullable: true })
   fal_ai: string;
 
-  @Column({nullable:true})
+  @Column({ nullable: true })
   stripe_key: string;
 
-  @Column()
+  @Column({ nullable: true })
   model: string;
 }

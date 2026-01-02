@@ -37,7 +37,7 @@ import { SettingsService } from "src/settings/settings.service";
 import { BookHtmlContent } from "src/book-html-content/entities/book-html-content.entity";
 import { MarkdownConverter } from "src/utils/markdown-converter.util";
 import { SubscriptionService } from "src/subscription/subscription.service";
-import { UsageType } from "src/subscription/entities/usage.entity";
+import { Usage, UsageType } from "src/subscription/entities/usage.entity";
 import { BookChapterService } from "src/book-chapter/book-chapter.service";
 import { User, UserRole } from "src/users/entities/user.entity";
 
@@ -59,6 +59,10 @@ export class BookGenerationService {
     private apiKeyRepository: Repository<ApiKey>,
     @InjectRepository(BookHtmlContent)
     private bookHtmlContentRepository: Repository<BookHtmlContent>,
+    @InjectRepository(Usage)
+    private usageRepository: Repository<Usage>,
+    @InjectRepository(BookChapter) // Inject BookChapter repository just in case
+    private bookChapterRepository: Repository<BookChapter>,
     private readonly markdownConverter: MarkdownConverter,
     private readonly userService: UsersService,
     private readonly settingsService: SettingsService,
@@ -66,6 +70,37 @@ export class BookGenerationService {
     private readonly bookChapterService: BookChapterService
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
+  }
+
+
+
+  async deleteBookById(id: number) {
+    try {
+      const book = await this.bookGenerationRepository.findOne({ where: { id } });
+
+      if (!book) {
+        throw new NotFoundException(`Book with ID ${id} not found`);
+      }
+
+      // Manually delete dependent entities to avoid FK violations
+      await this.bookHtmlContentRepository.delete({ book: { id } });
+      await this.usageRepository.delete({ bookGeneration: { id } });
+      await this.bookChapterRepository.delete({ bookGeneration: { id } });
+
+      const result = await this.bookGenerationRepository.delete(id);
+
+      if (result.affected === 0) {
+        throw new NotFoundException(`Book with ID ${id} could not be deleted`);
+      }
+
+      return { message: 'Book deleted successfully' };
+    } catch (error) {
+      this.logger.error(`Error deleting book with ID ${id}: ${error.message}`);
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(error.message);
+    }
   }
   // private async initializeAIModels(userId:number,images?:number) {
   //   try {
@@ -82,8 +117,8 @@ export class BookGenerationService {
   //     if(user.role===UserRole.USER && !this.userKeyRecord){
   //       throw new Error("No subscribe any package");
   //     }
-      
-      
+
+
   //     if(user.role===UserRole.USER &&( this.userKeyRecord.totalImages<this.userKeyRecord.imagesGenerated || ((this.userKeyRecord.totalImages-this.userKeyRecord.imagesGenerated)< images) ) ){
   //       throw new UnauthorizedException("exceeded maximum image generation limit")
   //     }
@@ -123,9 +158,9 @@ export class BookGenerationService {
     if (!this.userKeyRecord) {
       throw new Error('No subscription package found.');
     }
-  
+
     const { totalImages, imagesGenerated } = this.userKeyRecord;
-  
+
     if (
       totalImages < imagesGenerated ||
       (noOfImages && totalImages - imagesGenerated < noOfImages)
@@ -137,60 +172,60 @@ export class BookGenerationService {
   private calculateMaxTokens(): number {
     const { totalTokens, tokensUsed } = this.userKeyRecord;
     const remainingTokens = totalTokens - tokensUsed;
-  
+
     if (remainingTokens < 500) {
       throw new BadRequestException('Token limit exceeded');
     }
-  
+
     return Math.min(remainingTokens, 4000);
   }
 
-  private selectModelName(user:UserInterface): string {
+  private selectModelName(user: UserInterface): string {
     const isAdmin = user.role === UserRole.ADMIN;
     const hasNoPackage = !this.userKeyRecord?.package;
-  
+
     return (isAdmin || hasNoPackage)
       ? this.apiKeyRecord.modelType
       : this.userKeyRecord.package.modelType;
   }
-  
-  
-  
+
+
+
   private async initializeAIModels(userId: number, noOfImages?: number) {
     try {
-      
+
       // Fetch user profile
-     let user = await this.userService.getProfile(userId);
+      let user = await this.userService.getProfile(userId);
       if (!user) {
         throw new NotFoundException('User does not exist');
       }
-  
+
       // Fetch API key
       [this.apiKeyRecord] = await this.apiKeyRepository.find();
       if (!this.apiKeyRecord) {
         throw new Error('No API keys found in the database.');
       }
-  
+
       // Fetch user's active subscription
       [this.userKeyRecord] = await this.subscriptionService.getUserActiveSubscription(userId);
-  
-       // Load settings
-       this.settingPrompt = await this.settingsService.getAllSettings();
-       if (!this.settingPrompt) {
-         throw new Error('No setting prompt found in the database.');
-       }
+
+      // Load settings
+      this.settingPrompt = await this.settingsService.getAllSettings();
+      if (!this.settingPrompt) {
+        throw new Error('No setting prompt found in the database.');
+      }
       // Validate subscription (only for USER role)
       if (user.role === UserRole.USER) {
         this.validateUserSubscription(noOfImages);
       }
-  
-     
-  
+
+
+
       // Determine max completion tokens if not admin
       const maxCompletionTokens = user.role === UserRole.USER
         ? this.calculateMaxTokens()
         : undefined;
-  
+
       // Initialize text model
       this.textModel = new ChatOpenAI({
         openAIApiKey: this.apiKeyRecord.openai_key,
@@ -198,7 +233,7 @@ export class BookGenerationService {
         modelName: this.selectModelName(user),
         maxTokens: maxCompletionTokens,
       });
-  
+
       this.logger.log(`AI Models initialized successfully with model: ${this.selectModelName(user)}`);
     } catch (error) {
       this.logger.error(`Failed to initialize AI models: ${error.message}`);
@@ -231,6 +266,11 @@ export class BookGenerationService {
   }
 
   private async generateBookImage(responseUrl, promptData): Promise<string> {
+    // If responseUrl is already a local path (fallback from regenerateBookCover), return it immediately
+    if (responseUrl && (responseUrl.startsWith('covers/') || !responseUrl.startsWith('http'))) {
+      return responseUrl;
+    }
+
     try {
       const maxRetries = 12;
       const delayMs = 10000;
@@ -296,14 +336,14 @@ export class BookGenerationService {
 
       let coverPrompt =
         coverType === "front"
-        ? `Design a visually striking and professional front cover for "${promptData.bookTitle}"
+          ? `Design a visually striking and professional front cover for "${promptData.bookTitle}"
         - **Core Idea**:${promptData.bookInformation}
         - **Target Audience**:${promptData.targetAudience}
         - **Language**:${promptData.language}
         - **System Prompt**:${this.settingPrompt.coverImagePrompt}
         - Show Front cover image (no show back cover image)
         `
-         : `Generate a professional back cover for "${promptData.bookTitle}".`;
+          : `Generate a professional back cover for "${promptData.bookTitle}".`;
 
       if (promptData.bookInformation) {
         coverPrompt += ` The book explores the following theme: ${promptData.bookInformation}.`;
@@ -326,12 +366,12 @@ export class BookGenerationService {
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          if(user.role===UserRole.USER && this.userKeyRecord.imagesGenerated >= this.userKeyRecord.totalImages ){
+          if (user.role === UserRole.USER && this.userKeyRecord.imagesGenerated >= this.userKeyRecord.totalImages) {
             throw new UnauthorizedException("exceeded maximum image generation limit")
           }
           const postResponse = await axios.post(
-            user.role===UserRole.USER?this.userKeyRecord.package.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
-          imageParameters,
+            user.role === UserRole.USER ? this.userKeyRecord.package.imageModelURL : this.settingPrompt.coverImageDomainUrl ?? this.configService.get<string>("BASE_URL_FAL_AI"),
+            imageParameters,
             {
               headers: {
                 Authorization: `Key ${this.apiKeyRecord.fal_ai}`,
@@ -349,6 +389,38 @@ export class BookGenerationService {
             );
           }
         } catch (error) {
+          // Check for exhausted balance or user locked error
+          if (error.response?.data?.detail?.includes("Exhausted balance") || error.response?.data?.detail?.includes("User is locked")) {
+            this.logger.warn(`⚠️ Fal.ai balance exhausted. Using fallback placeholder image.`);
+            // Return a placeholder image URL provided by placehold.co or similar
+            // We'll mimic the "upload" behavior by saving a placeholder file if needed, 
+            // or just return a relative path to a static asset if user prefers.
+            // For now, let's download a placeholder from a public URL and save it like a normal generated image.
+
+            try {
+              const placeholderUrl = "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?q=80&w=2730&auto=format&fit=crop";
+              // Or use a more generic book cover placeholder
+
+              const sanitizedFileName = promptData.bookTitle.replace(/[^a-z0-9]/gi, "_").toLowerCase();
+              const fullFileName = `${sanitizedFileName}_fallback_${Date.now()}.jpg`;
+              const imagePath = path.join(this.uploadsDir, "covers", fullFileName);
+
+              // Download placeholder
+              const fallbackResponse = await axios.get(placeholderUrl, { responseType: 'arraybuffer' });
+
+              fs.mkdirSync(path.dirname(imagePath), { recursive: true });
+              fs.writeFileSync(imagePath, fallbackResponse.data);
+
+              return `covers/${fullFileName}`;
+
+            } catch (fallbackError) {
+              this.logger.error(`Failed to handle fallback: ${fallbackError.message}`);
+              // Even fallback failed? Return null or throw. 
+              // Let's throw the original error if fallback fails.
+              throw error;
+            }
+          }
+
           if (error.response) {
             this.logger.warn(
               `⚠️ API error (Attempt ${attempt}): ${JSON.stringify(error.response.data)}`
@@ -376,7 +448,7 @@ export class BookGenerationService {
   private async generateBookCover(
     promptData: BookGenerationDto,
     user: User
-    
+
   ): Promise<string> {
     try {
       const maxRetries = 5; // Retry up to 5 times
@@ -403,14 +475,14 @@ export class BookGenerationService {
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          if(user.role===UserRole.USER && this.userKeyRecord.imagesGenerated >= this.userKeyRecord?.totalImages ){
+          if (user.role === UserRole.USER && this.userKeyRecord.imagesGenerated >= this.userKeyRecord?.totalImages) {
             throw new UnauthorizedException("exceeded maximum image generation limit")
           }
           const postResponse = await axios.post(
-          // user.role===UserRole.USER?!this.userKeyRecord.package?this.settingPrompt.coverImageDomainUrl: this.userKeyRecord?.package?.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
-           this.configService.get<string>("BASE_URL_FAL_AI"),
+            // user.role===UserRole.USER?!this.userKeyRecord.package?this.settingPrompt.coverImageDomainUrl: this.userKeyRecord?.package?.imageModelURL : this.settingPrompt.coverImageDomainUrl ??  this.configService.get<string>("BASE_URL_FAL_AI"),
+            this.configService.get<string>("BASE_URL_FAL_AI"),
 
-         requestData,
+            requestData,
             {
               headers: {
                 Authorization: `Key ${this.apiKeyRecord.fal_ai}`,
@@ -463,7 +535,7 @@ export class BookGenerationService {
     Write a heartfelt and meaningful dedication for the book titled "${promptData.bookTitle}". 
     Consider the book's central  core idea: "${promptData.bookInformation || "Not specified"}".
     The dedication should be general enough to resonate with a wide audience but still feel personal and authentic. 
-    It can express gratitude or motivation, depending on the tone of the book ${promptData.authorName??"Cyberify"} && ${promptData.authorBio}.
+    It can express gratitude or motivation, depending on the tone of the book ${promptData.authorName ?? "Cyberify"} && ${promptData.authorBio}.
   `;
 
       const prefacePrompt = `
@@ -537,32 +609,32 @@ export class BookGenerationService {
         this.textModel.invoke(introductionPrompt),
         this.textModel.invoke(tableOfContentsPrompt),
       ]);
-if(user.role===UserRole.USER){
-      // Fixed getUsage function that safely extracts token count
-      const getUsage = (response) => {
-        // Check if response has usage_metadata and it has a total_tokens property
-        if (response?.usage_metadata?.total_tokens !== undefined) {
-          return response.usage_metadata.total_tokens;
+      if (user.role === UserRole.USER) {
+        // Fixed getUsage function that safely extracts token count
+        const getUsage = (response) => {
+          // Check if response has usage_metadata and it has a total_tokens property
+          if (response?.usage_metadata?.total_tokens !== undefined) {
+            return response.usage_metadata.total_tokens;
+          }
+          // Fallback to a reasonable estimate if not available
+          return response?.content?.length ? Math.ceil(response.content.length / 4) : 0;
+        };
+
+        const totalTokens =
+          getUsage(coverPageResponse) +
+          getUsage(dedication) +
+          getUsage(preface) +
+          getUsage(introduction) +
+          getUsage(tableOfContentsResponse);
+        const metadata = {
+          coverPage: getUsage(coverPageResponse),
+          dedication: getUsage(dedication),
+          preface: getUsage(preface),
+          introduction: getUsage(introduction),
+          tableOfContentsResponse: getUsage(tableOfContentsResponse)
         }
-        // Fallback to a reasonable estimate if not available
-        return response?.content?.length ? Math.ceil(response.content.length / 4) : 0;
-      };
-  
-      const totalTokens = 
-        getUsage(coverPageResponse) + 
-        getUsage(dedication) + 
-        getUsage(preface) + 
-        getUsage(introduction) + 
-        getUsage(tableOfContentsResponse);
-        const metadata={
-         coverPage: getUsage(coverPageResponse) ,
-         dedication: getUsage(dedication) ,
-         preface: getUsage(preface) ,
-         introduction: getUsage(introduction) ,
-         tableOfContentsResponse: getUsage(tableOfContentsResponse)
-        }
-      await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord?.package?.id??null, totalTokens);  
-      await this.subscriptionService.trackTokenUsage(user.id,"bookContent",UsageType.TOKEN,metadata);
+        await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord?.package?.id ?? null, totalTokens);
+        await this.subscriptionService.trackTokenUsage(user.id, "bookContent", UsageType.TOKEN, metadata);
       }
       return {
         coverPageResponse: coverPageResponse.content,
@@ -583,14 +655,14 @@ if(user.role===UserRole.USER){
 
 
 
- 
 
-  private async createBookContent(promptData: BookGenerationDto,user) {
+
+  private async createBookContent(promptData: BookGenerationDto, user) {
     try {
       // Run introduction & end-of-book content generation **in parallel**
       const [introContent] = await Promise.all([
-        this.introductionContent(promptData,user),
-        
+        this.introductionContent(promptData, user),
+
       ]);
 
       return {
@@ -631,10 +703,10 @@ if(user.role===UserRole.USER){
     else return await this.bookGenerationRepository.count();
   }
   async getAllBooksForLandingPage() {
-    
-  return await this.bookGenerationRepository.find({
-    order: { createdAt: 'DESC' },
-  });
+
+    return await this.bookGenerationRepository.find({
+      order: { createdAt: 'DESC' },
+    });
   }
 
   async generateAndSaveBook(
@@ -642,19 +714,19 @@ if(user.role===UserRole.USER){
     promptData: BookGenerationDto
   ): Promise<BookGeneration> {
     try {
-     
-      await this.initializeAIModels(userId,1); // Ensure API keys are loaded before generating content
 
-      const user=await this.userService.getProfile(userId)
-      if(!user){
+      await this.initializeAIModels(userId, 1); // Ensure API keys are loaded before generating content
+
+      const user = await this.userService.getProfile(userId)
+      if (!user) {
         throw new NotFoundException('user not exist')
       }
       // **Run AI Content & Image Generation in Parallel**
       const [bookContentResult, coverImageResult] = await Promise.allSettled([
-        this.createBookContent(promptData,user), // Generate book content
-        this.generateBookCover(promptData,user), // Generate front cover (URL)
+        this.createBookContent(promptData, user), // Generate book content
+        this.generateBookCover(promptData, user), // Generate front cover (URL)
       ]);
-      
+
       // **Extract book content**
       if (bookContentResult.status !== "fulfilled") {
         throw new Error(
@@ -694,11 +766,11 @@ if(user.role===UserRole.USER){
       // **Save book immediately**
       const savedBook = await this.bookGenerationRepository.save(book);
 
-      if(user.role===UserRole.USER){ 
-       await this.subscriptionService.updateTrackTokenUsage(user,this.userKeyRecord.package, savedBook)
-       }
+      if (user.role === UserRole.USER) {
+        await this.subscriptionService.updateTrackTokenUsage(user, this.userKeyRecord.package, savedBook)
+      }
 
-       this.logger.log(
+      this.logger.log(
         `📖 Book saved successfully for user ${userId}: ${promptData.bookTitle}`
       );
 
@@ -725,10 +797,10 @@ if(user.role===UserRole.USER){
               await this.bookGenerationRepository.update(savedBook.id, {
                 additionalData: book.additionalData,
               });
-              if(user.role===UserRole.USER){
-               await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord?.package?.id??null, 0,4);  
-               await this.subscriptionService.trackTokenUsage(user.id,"coverImage",UsageType.IMAGE,{coverImageUrl:coverImagePath},book);
-      }
+              if (user.role === UserRole.USER) {
+                await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord?.package?.id ?? null, 0, 4);
+                await this.subscriptionService.trackTokenUsage(user.id, "coverImage", UsageType.IMAGE, { coverImageUrl: coverImagePath }, book);
+              }
             })
             .catch((error) =>
               this.logger.error(
@@ -737,7 +809,7 @@ if(user.role===UserRole.USER){
             )
         );
 
-      
+
       }
 
       // **Process Image Downloads in Background**
@@ -748,8 +820,8 @@ if(user.role===UserRole.USER){
       return savedBook;
     } catch (error) {
       // Handle subscription-related errors
-      if (error instanceof BadRequestException && 
-         (error.message.includes('Token limit exceeded') || 
+      if (error instanceof BadRequestException &&
+        (error.message.includes('Token limit exceeded') ||
           error.message.includes('Image generation limit exceeded'))) {
         throw new BadRequestException('Subscription limit reached: ' + error.message);
       }
@@ -765,14 +837,14 @@ if(user.role===UserRole.USER){
   ): Promise<BookGeneration> {
     try {
       const book = await this.findOneWithHtmlContent(input.bookGenerationId);
-      if(!book){
+      if (!book) {
         throw new NotFoundException('book not exist')
       }
-      const user=await this.userService.getProfile(userId)
-      if(!user){
+      const user = await this.userService.getProfile(userId)
+      if (!user) {
         throw new NotFoundException('user not exist')
       }
-     
+
       // **Immediately save book metadata (Images still downloading)**
       book.user = user;
       book.additionalData = {
@@ -802,52 +874,52 @@ if(user.role===UserRole.USER){
 
   private async updateHtmlContent(book: BookGeneration): Promise<void> {
     // Get or create HTML content entity
-   try{
-    let htmlContent = book.htmlContent;
-    if (!htmlContent) {
-      htmlContent = new BookHtmlContent();
-      htmlContent.book = book;
+    try {
+      let htmlContent = book.htmlContent;
+      if (!htmlContent) {
+        htmlContent = new BookHtmlContent();
+        htmlContent.book = book;
+      }
+
+      // Convert Markdown to HTML for updated fields
+      htmlContent.glossaryHtml = book.glossary
+        ? await this.markdownConverter.convert(book.glossary)
+        : htmlContent.glossaryHtml;
+
+      htmlContent.indexHtml = book.index
+        ? await this.markdownConverter.convert(book.index)
+        : htmlContent.indexHtml;
+
+      htmlContent.referencesHtml = book.references
+        ? await this.markdownConverter.convert(book.references)
+        : htmlContent.referencesHtml;
+
+      // Update additional HTML content
+      htmlContent.additionalHtml = {
+        ...htmlContent.additionalHtml,
+        tableOfContents: book.additionalData?.tableOfContents
+          ? await this.markdownConverter.convert(book.additionalData.tableOfContents)
+          : htmlContent.additionalHtml?.tableOfContents,
+        dedication: book.additionalData?.dedication
+          ? await this.markdownConverter.convert(book.additionalData.dedication)
+          : htmlContent.additionalHtml?.dedication,
+        preface: book.additionalData?.preface
+          ? await this.markdownConverter.convert(book.additionalData.preface)
+          : htmlContent.additionalHtml?.preface,
+        introduction: book.additionalData?.introduction
+          ? await this.markdownConverter.convert(book.additionalData.introduction)
+          : htmlContent.additionalHtml?.introduction,
+      };
+
+      // Save HTML content
+      await this.bookHtmlContentRepository.save(htmlContent);
     }
-  
-    // Convert Markdown to HTML for updated fields
-    htmlContent.glossaryHtml = book.glossary 
-      ?await this.markdownConverter.convert(book.glossary)
-      : htmlContent.glossaryHtml;
-  
-    htmlContent.indexHtml = book.index 
-      ?await this.markdownConverter.convert(book.index)
-      : htmlContent.indexHtml;
-  
-    htmlContent.referencesHtml = book.references 
-      ?await this.markdownConverter.convert(book.references)
-      : htmlContent.referencesHtml;
-  
-    // Update additional HTML content
-    htmlContent.additionalHtml = {
-      ...htmlContent.additionalHtml,
-      tableOfContents: book.additionalData?.tableOfContents 
-        ?await this.markdownConverter.convert(book.additionalData.tableOfContents)
-        : htmlContent.additionalHtml?.tableOfContents,
-      dedication: book.additionalData?.dedication 
-        ?await this.markdownConverter.convert(book.additionalData.dedication)
-        : htmlContent.additionalHtml?.dedication,
-      preface: book.additionalData?.preface 
-        ?await this.markdownConverter.convert(book.additionalData.preface)
-        : htmlContent.additionalHtml?.preface,
-      introduction: book.additionalData?.introduction 
-        ?await this.markdownConverter.convert(book.additionalData.introduction)
-        : htmlContent.additionalHtml?.introduction,
-    };
-  
-    // Save HTML content
-    await this.bookHtmlContentRepository.save(htmlContent);
-  }
-  catch (error) {
-    this.logger.error(
-      `❌ Error generating and saving book html content: ${error.message}`
-    );
-    throw new Error(error.message);
-  }
+    catch (error) {
+      this.logger.error(
+        `❌ Error generating and saving book html content: ${error.message}`
+      );
+      throw new Error(error.message);
+    }
 
   }
 
@@ -864,7 +936,7 @@ if(user.role===UserRole.USER){
       throw new Error(error.message); // Handle any errors that occur
     }
   }
- 
+
   async generateBookEndContent(
     input: BRGDTO,
     onTextUpdate: (text: string) => void,
@@ -877,29 +949,29 @@ if(user.role===UserRole.USER){
       where: { id: input.bookId },
       relations: ['bookChapter']
     });
-  
+
     if (!book) {
       throw new NotFoundException(`Book with ID ${input.bookId} not found`);
     }
-  
-   
+
+
     // 3. Validate chapters exist
     if (!book.bookChapter || book.bookChapter.length === 0) {
       throw new BadRequestException('Book has no chapters to analyze');
     }
-  
+
     // 4. Extract chapter content
     const chaptersContent = book.bookChapter
-      .map((chap:BookChapter) => chap.chapterInfo)
+      .map((chap: BookChapter) => chap.chapterInfo)
       .join('\n\n');
-  
+
     // 5. Generate appropriate content
     let generatedContent: string;
     const prompt = this.getContentPrompt(input, chaptersContent);
-  
+
     try {
       const aiResponse = await this.textModel.stream(prompt);
-    
+
       let finalResult: AIMessageChunk | undefined;
       let finalSummary = "";
       for await (const chunk of aiResponse) {
@@ -909,24 +981,24 @@ if(user.role===UserRole.USER){
           finalResult = chunk;
         }
         finalSummary += chunk.content;
-       
+
         onTextUpdate(chunk.content);
       }
       console.log(finalResult?.usage_metadata);
 
-      if(user.role===UserRole.USER){
-      const { totalTokens } = finalResult?.usage_metadata?.total_tokens 
-        ? { totalTokens: finalResult.usage_metadata.total_tokens }
-        : await this.bookChapterService.getUsage(finalResult);
-      await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord?.package?.id??null, totalTokens);  
-      await this.subscriptionService.trackTokenUsage(user.id,input.currentContent?`${input.contentType}ParagraphRegenerate`: input.contentType,UsageType.TOKEN, {[input.contentType]:totalTokens});
-     }
+      if (user.role === UserRole.USER) {
+        const { totalTokens } = finalResult?.usage_metadata?.total_tokens
+          ? { totalTokens: finalResult.usage_metadata.total_tokens }
+          : await this.bookChapterService.getUsage(finalResult);
+        await this.subscriptionService.updateSubscription(user.id, this.userKeyRecord?.package?.id ?? null, totalTokens);
+        await this.subscriptionService.trackTokenUsage(user.id, input.currentContent ? `${input.contentType}ParagraphRegenerate` : input.contentType, UsageType.TOKEN, { [input.contentType]: totalTokens });
+      }
 
       generatedContent = finalSummary;
     } catch (error) {
       throw new InternalServerErrorException(error.message);
     }
-  
+
     // 6. Update and save book
     switch (input.contentType) {
       case ContentType.GLOSSARY:
@@ -939,51 +1011,51 @@ if(user.role===UserRole.USER){
         book.references = generatedContent;
         break;
     }
-    if(book.index&&book.references&&book.glossary){ book.type=BookType.COMPLETE}
+    if (book.index && book.references && book.glossary) { book.type = BookType.COMPLETE }
 
-    
+
     const savedBook = await this.bookGenerationRepository.save(book);
-  
-  // Convert all content to HTML
-  if(savedBook.type===BookType.COMPLETE){
-    const htmlContent = new BookHtmlContent();
-  htmlContent.book = savedBook;
-  
-  // Convert main content
-  htmlContent.glossaryHtml =await this.markdownConverter.convert(savedBook.glossary || '');
-  htmlContent.indexHtml =await this.markdownConverter.convert(savedBook.index || '');
-  htmlContent.referencesHtml =await this.markdownConverter.convert(savedBook.references || '');
 
-  // Convert additional content
-  htmlContent.additionalHtml = {
-    tableOfContents: savedBook.additionalData?.tableOfContents 
-      ?await this.markdownConverter.convert(savedBook.additionalData.tableOfContents)
-      : '',
-    dedication: savedBook.additionalData?.dedication
-      ?await this.markdownConverter.convert(savedBook.additionalData.dedication)
-      : '',
-    preface: savedBook.additionalData?.preface
-      ?await this.markdownConverter.convert(savedBook.additionalData.preface)
-      : '',
-    introduction: savedBook.additionalData?.introduction
-      ?await this.markdownConverter.convert(savedBook.additionalData.introduction)
-      : '',
-  };
+    // Convert all content to HTML
+    if (savedBook.type === BookType.COMPLETE) {
+      const htmlContent = new BookHtmlContent();
+      htmlContent.book = savedBook;
 
-  // Convert chapters
-  htmlContent.chaptersHtml = await Promise.all(book.bookChapter.map(async (chapter) => ({
-    chapterNo: chapter.chapterNo,
-    chapterName: chapter.chapterName,
-    contentHtml: await this.markdownConverter.convert(chapter.chapterInfo || '')
-  })));
+      // Convert main content
+      htmlContent.glossaryHtml = await this.markdownConverter.convert(savedBook.glossary || '');
+      htmlContent.indexHtml = await this.markdownConverter.convert(savedBook.index || '');
+      htmlContent.referencesHtml = await this.markdownConverter.convert(savedBook.references || '');
 
-  // Save HTML content
-  await this.bookHtmlContentRepository.save(htmlContent);
-}
-  return savedBook;
+      // Convert additional content
+      htmlContent.additionalHtml = {
+        tableOfContents: savedBook.additionalData?.tableOfContents
+          ? await this.markdownConverter.convert(savedBook.additionalData.tableOfContents)
+          : '',
+        dedication: savedBook.additionalData?.dedication
+          ? await this.markdownConverter.convert(savedBook.additionalData.dedication)
+          : '',
+        preface: savedBook.additionalData?.preface
+          ? await this.markdownConverter.convert(savedBook.additionalData.preface)
+          : '',
+        introduction: savedBook.additionalData?.introduction
+          ? await this.markdownConverter.convert(savedBook.additionalData.introduction)
+          : '',
+      };
+
+      // Convert chapters
+      htmlContent.chaptersHtml = await Promise.all(book.bookChapter.map(async (chapter) => ({
+        chapterNo: chapter.chapterNo,
+        chapterName: chapter.chapterName,
+        contentHtml: await this.markdownConverter.convert(chapter.chapterInfo || '')
+      })));
+
+      // Save HTML content
+      await this.bookHtmlContentRepository.save(htmlContent);
+    }
+    return savedBook;
 
   }
-  
+
   private getContentPrompt(
     input: BRGDTO,
     chaptersContent: string,
@@ -1012,7 +1084,7 @@ if(user.role===UserRole.USER){
         Additional instructions: ${input.additionalInfo}
         Chapters content: ${chaptersContent}
       `,
-  
+
       [ContentType.INDEX]: `
         Create a detailed book index. Requirements:
         - List topics and subtopics
@@ -1021,7 +1093,7 @@ if(user.role===UserRole.USER){
         Additional instructions: ${input.additionalInfo}
         Chapters content: ${chaptersContent}
       `,
-  
+
       [ContentType.REFERENCE]: `
         Generate references in APA format. Guidelines:
         - Include both real and book-specific citations
@@ -1031,8 +1103,8 @@ if(user.role===UserRole.USER){
         Chapters content: ${chaptersContent}
       `
     };
-  
-    
+
+
     return basePrompts[input.contentType];
   }
 
@@ -1107,8 +1179,8 @@ if(user.role===UserRole.USER){
     };
   }
 
-  async regenerateBookImage(user:UserInterface,input: RegenerateImage) {
-    await this.initializeAIModels(user.id,1); // Ensure API keys are loaded before generating content
+  async regenerateBookImage(user: UserInterface, input: RegenerateImage) {
+    await this.initializeAIModels(user.id, 1); // Ensure API keys are loaded before generating content
 
     const getBook = await this.bookGenerationRepository.findOne({
       where: { id: input.bookId },
@@ -1131,65 +1203,55 @@ if(user.role===UserRole.USER){
     };
     let imageUrl;
     if (input.imageType == "cover")
-      imageUrl = await this.regenerateBookCover(promptData, "front",user);
-    else imageUrl = await this.regenerateBookCover(promptData, "back",user);
+      imageUrl = await this.regenerateBookCover(promptData, "front", user);
+    else imageUrl = await this.regenerateBookCover(promptData, "back", user);
+
+    let newImagePath: string;
+
     if (input.imageType === "cover") {
-      this.generateBookImage(imageUrl, promptData)
-        .then(async (backCoverPath) => {
-          // Retrieve the current book record
-          const book = await this.bookGenerationRepository.findOne({
-            where: { id: getBook.id },
-          });
-          if (!book) return;
+      newImagePath = await this.generateBookImage(imageUrl, promptData);
 
-          // Update `additionalData`
-          book.additionalData = {
-            ...book.additionalData,
-            coverImageUrl: backCoverPath,
-          };
-
-          // Save the updated record
-          await this.bookGenerationRepository.update(book.id, {
-            additionalData: book.additionalData,
-          });
-        })
-        .catch((error) =>
-          this.logger.error(`❌ Failed to save back cover: ${error.message}`)
-        );
+      // Update `additionalData`
+      const book = await this.bookGenerationRepository.findOne({
+        where: { id: getBook.id },
+      });
+      if (book) {
+        book.additionalData = {
+          ...book.additionalData,
+          coverImageUrl: newImagePath,
+        };
+        await this.bookGenerationRepository.update(book.id, {
+          additionalData: book.additionalData,
+        });
+      }
     } else {
-      this.generateBookImage(imageUrl, promptData)
-        .then(async (backCoverPath) => {
-          // Retrieve the current book record
-          const book = await this.bookGenerationRepository.findOne({
-            where: { id: getBook.id },
-          });
-          if (!book) return;
+      newImagePath = await this.generateBookImage(imageUrl, promptData);
 
-          // Update `additionalData`
-          book.additionalData = {
-            ...book.additionalData,
-            backCoverImageUrl: backCoverPath,
-          };
-
-          // Save the updated record
-          await this.bookGenerationRepository.update(book.id, {
-            additionalData: book.additionalData,
-          });
-        })
-        .catch((error) =>
-          this.logger.error(`❌ Failed to save back cover: ${error.message}`)
-        );
+      // Update `additionalData`
+      const book = await this.bookGenerationRepository.findOne({
+        where: { id: getBook.id },
+      });
+      if (book) {
+        book.additionalData = {
+          ...book.additionalData,
+          backCoverImageUrl: newImagePath,
+        };
+        await this.bookGenerationRepository.update(book.id, {
+          additionalData: book.additionalData,
+        });
+      }
     }
+
+    return {
+      message: 'Book successfully updated.',
+      data: {
+        imagePath: newImagePath,
+        imageType: input.imageType
+      }
+    };
   }
 
-  async deleteBookById(id: number) {
-    try {
-      const getBookById = await this.getBook(id);
-      return this.bookGenerationRepository.remove(getBookById);
-    } catch (error) {
-      throw new Error(error.message);
-    }
-  }
+
   async getBooksByType(type: string, user: UserInterface) {
     try {
       const query = this.bookGenerationRepository
@@ -1262,9 +1324,9 @@ if(user.role===UserRole.USER){
 
   async getRecentActivities(userId: number): Promise<RecentActivity[]> {
     const books = await this.bookGenerationRepository.find({
-        where: { user: { id: userId } },
-        relations: ['bookChapter'], // Join the BookChapter entity
-        order: { createdAt: 'DESC' },
+      where: { user: { id: userId } },
+      relations: ['bookChapter'], // Join the BookChapter entity
+      order: { createdAt: 'DESC' },
     });
 
     let latestCreatedActivity: RecentActivity | null = null;
@@ -1272,112 +1334,112 @@ if(user.role===UserRole.USER){
     let latestEditedActivity: RecentActivity | null = null;
 
     for (const book of books) {
-        // Create 'Created' activity for the book if it's complete
+      // Create 'Created' activity for the book if it's complete
+      if (book.type === BookType.COMPLETE) {
+        const createdActivity: RecentActivity = {
+          bookTitle: book.bookTitle,
+          actionType: 'created',
+          timestamp: book.createdAt.toISOString(),
+          bookId: book.id,
+        };
+
+        // Check if this is the latest 'Created' activity
+        if (!latestCreatedActivity || new Date(createdActivity.timestamp) > new Date(latestCreatedActivity.timestamp)) {
+          latestCreatedActivity = createdActivity;
+        }
+      }
+
+      // Create 'Started' activity for the book if it's incomplete
+      if (book.type === BookType.INCOMPLETE) {
+        const startedActivity: RecentActivity = {
+          bookTitle: book.bookTitle,
+          actionType: 'started',
+          timestamp: book.createdAt.toISOString(),
+          bookId: book.id,
+        };
+
+        // Check if this is the latest 'Started' activity
+        if (!latestStartedActivity || new Date(startedActivity.timestamp) > new Date(latestStartedActivity.timestamp)) {
+          latestStartedActivity = startedActivity;
+        }
+      }
+
+      // Check for chapter activities
+      for (const chapter of book.bookChapter) {
+        // Create 'Created' activity for the chapter only if the book is complete
         if (book.type === BookType.COMPLETE) {
-            const createdActivity: RecentActivity = {
-                bookTitle: book.bookTitle,
-                actionType: 'created',
-                timestamp: book.createdAt.toISOString(),
-                bookId: book.id,
-            };
+          const chapterCreatedActivity: RecentActivity = {
+            bookTitle: book.bookTitle || 'Unnamed Chapter',
+            actionType: 'created',
+            timestamp: chapter.createdAt.toISOString(),
+            bookId: book.id,
+          };
 
-            // Check if this is the latest 'Created' activity
-            if (!latestCreatedActivity || new Date(createdActivity.timestamp) > new Date(latestCreatedActivity.timestamp)) {
-                latestCreatedActivity = createdActivity;
-            }
+          // Check if this is the latest 'Created' activity for chapters
+          if (!latestCreatedActivity || new Date(chapterCreatedActivity.timestamp) > new Date(latestCreatedActivity.timestamp)) {
+            latestCreatedActivity = chapterCreatedActivity;
+          }
         }
 
-        // Create 'Started' activity for the book if it's incomplete
-        if (book.type === BookType.INCOMPLETE) {
-            const startedActivity: RecentActivity = {
-                bookTitle: book.bookTitle,
-                actionType: 'started',
-                timestamp: book.createdAt.toISOString(),
-                bookId: book.id,
-            };
+        // Create 'Edited' activity for the chapter if updated after creation
+        if (chapter.updatedAt > chapter.createdAt) {
+          const chapterEditedActivity: RecentActivity = {
+            bookTitle: book.bookTitle || 'Unnamed Chapter',
+            actionType: 'edited',
+            timestamp: chapter.updatedAt.toISOString(),
+            bookId: book.id,
+          };
 
-            // Check if this is the latest 'Started' activity
-            if (!latestStartedActivity || new Date(startedActivity.timestamp) > new Date(latestStartedActivity.timestamp)) {
-                latestStartedActivity = startedActivity;
-            }
+          // Check if this is the latest 'Edited' activity for chapters
+          if (!latestEditedActivity || new Date(chapterEditedActivity.timestamp) > new Date(latestEditedActivity.timestamp)) {
+            latestEditedActivity = chapterEditedActivity;
+          }
         }
+      }
 
-        // Check for chapter activities
-        for (const chapter of book.bookChapter) {
-            // Create 'Created' activity for the chapter only if the book is complete
-            if (book.type === BookType.COMPLETE) {
-                const chapterCreatedActivity: RecentActivity = {
-                    bookTitle: book.bookTitle || 'Unnamed Chapter',
-                    actionType: 'created',
-                    timestamp: chapter.createdAt.toISOString(),
-                    bookId: book.id,
-                };
+      // Check if the book has been edited after creation
+      if (book.updatedAt > book.createdAt) {
+        const bookEditedActivity: RecentActivity = {
+          bookTitle: book.bookTitle,
+          actionType: 'edited',
+          timestamp: book.updatedAt.toISOString(),
+          bookId: book.id,
+        };
 
-                // Check if this is the latest 'Created' activity for chapters
-                if (!latestCreatedActivity || new Date(chapterCreatedActivity.timestamp) > new Date(latestCreatedActivity.timestamp)) {
-                    latestCreatedActivity = chapterCreatedActivity;
-                }
-            }
-
-            // Create 'Edited' activity for the chapter if updated after creation
-            if (chapter.updatedAt > chapter.createdAt) {
-                const chapterEditedActivity: RecentActivity = {
-                    bookTitle: book.bookTitle || 'Unnamed Chapter',
-                    actionType: 'edited',
-                    timestamp: chapter.updatedAt.toISOString(),
-                    bookId: book.id,
-                };
-
-                // Check if this is the latest 'Edited' activity for chapters
-                if (!latestEditedActivity || new Date(chapterEditedActivity.timestamp) > new Date(latestEditedActivity.timestamp)) {
-                    latestEditedActivity = chapterEditedActivity;
-                }
-            }
+        // Check if this is the latest 'Edited' activity for the book
+        if (!latestEditedActivity || new Date(bookEditedActivity.timestamp) > new Date(latestEditedActivity.timestamp)) {
+          latestEditedActivity = bookEditedActivity;
         }
-
-        // Check if the book has been edited after creation
-        if (book.updatedAt > book.createdAt) {
-            const bookEditedActivity: RecentActivity = {
-                bookTitle: book.bookTitle,
-                actionType: 'edited',
-                timestamp: book.updatedAt.toISOString(),
-                bookId: book.id,
-            };
-
-            // Check if this is the latest 'Edited' activity for the book
-            if (!latestEditedActivity || new Date(bookEditedActivity.timestamp) > new Date(latestEditedActivity.timestamp)) {
-                latestEditedActivity = bookEditedActivity;
-            }
-        }
+      }
     }
 
     // Combine the latest 'Created', 'Started', and 'Edited' activities
     const activities: RecentActivity[] = [latestCreatedActivity, latestStartedActivity, latestEditedActivity]
-        .filter(activity => activity !== null) as RecentActivity[];
+      .filter(activity => activity !== null) as RecentActivity[];
 
     // Sort activities by timestamp descending
     activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     return activities;
-}
-
-
-async findOneWithHtmlContent(id: number): Promise<BookGeneration> {
- try {
-  
- 
-  return this.bookGenerationRepository.findOne({
-    where: { id },
-    relations: ['htmlContent']
-  });
-}
-  catch (error) {
-    this.logger.error(
-      `❌ Error get  book with htmlContent: ${error.message}`
-    );
-    throw new Error(error.message);
   }
-}
+
+
+  async findOneWithHtmlContent(id: number): Promise<BookGeneration> {
+    try {
+
+
+      return this.bookGenerationRepository.findOne({
+        where: { id },
+        relations: ['htmlContent']
+      });
+    }
+    catch (error) {
+      this.logger.error(
+        `❌ Error get  book with htmlContent: ${error.message}`
+      );
+      throw new Error(error.message);
+    }
+  }
 
 
 }

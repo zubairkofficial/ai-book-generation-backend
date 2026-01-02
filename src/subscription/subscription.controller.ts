@@ -1,14 +1,14 @@
-import { 
-  Controller, 
-  Post, 
-  Body, 
-  Get, 
-  Param, 
-  UseGuards, 
-  Req, 
-  Query, 
-  ParseBoolPipe, 
-  DefaultValuePipe, 
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Param,
+  UseGuards,
+  Req,
+  Query,
+  ParseBoolPipe,
+  DefaultValuePipe,
   Put
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -26,7 +26,7 @@ import { UpdatePackageDto } from './dto/update-package.dto';
 @ApiBearerAuth('JWT-auth')
 @Controller('subscription')
 export class SubscriptionController {
-  constructor(private readonly subscriptionService: SubscriptionService) {}
+  constructor(private readonly subscriptionService: SubscriptionService) { }
 
   // ADMIN: Create a new package
   @Post('packages')
@@ -34,9 +34,9 @@ export class SubscriptionController {
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Create a new subscription package (Admin only)' })
   @ApiResponse({ status: 201, description: 'Package created successfully' })
-  async createPackage( @Req() request: RequestWithUser, @Body() createPackageDto: CreatePackageDto) {
+  async createPackage(@Req() request: RequestWithUser, @Body() createPackageDto: CreatePackageDto) {
     const userId = request.user.id;
-    return this.subscriptionService.createPackage(+userId,createPackageDto);
+    return this.subscriptionService.createPackage(+userId, createPackageDto);
   }
 
   // Get all available packages
@@ -62,17 +62,17 @@ export class SubscriptionController {
     return this.subscriptionService.subscribeToPackage(userId, subscribeDto);
   }
   @Post('unsubscribe/:id')
-  @UseGuards(JwtAuthGuard,RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.USER)
   @ApiOperation({ summary: 'Subscribe to a package' })
   @ApiResponse({ status: 201, description: 'Subscription created successfully' })
   async unSubscribeToPackage(
     @Req() request: RequestWithUser,
-    @Param("id") id:number
-  
+    @Param("id") id: number
+
   ) {
     const userId = request.user.id;
-    return this.subscriptionService.unSubscribeToPackage(id,userId);
+    return this.subscriptionService.unSubscribeToPackage(id, userId);
   }
 
   // USER: Get current subscription info
@@ -86,30 +86,30 @@ export class SubscriptionController {
   }
 
   @Put('packages/:id')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
-@ApiOperation({ summary: 'Update a subscription package (Admin only)' })
-@ApiResponse({ status: 200, description: 'Package updated successfully' })
-async updatePackage(
-  @Param('id') id: number,
-  @Req() request: RequestWithUser,
-  @Body() updatePackageDto: UpdatePackageDto
-) {
-  const userId = request.user.id;
-  return this.subscriptionService.updatePackage(+id, +userId, updatePackageDto);
-}
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Update a subscription package (Admin only)' })
+  @ApiResponse({ status: 200, description: 'Package updated successfully' })
+  async updatePackage(
+    @Param('id') id: number,
+    @Req() request: RequestWithUser,
+    @Body() updatePackageDto: UpdatePackageDto
+  ) {
+    const userId = request.user.id;
+    return this.subscriptionService.updatePackage(+id, +userId, updatePackageDto);
+  }
 
-@Post('free-subscription')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
-@ApiOperation({ summary: 'Create a free subscription package (Admin only)' })
-@ApiResponse({ status: 200, description: 'Package create successfully' })
-async createFreeSubscription(
-  @Body() input: FreeSubscriptionPackageDto
-) {
- 
-  return this.subscriptionService.createFreeSubscription(input);
-}
+  @Post('free-subscription')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Create a free subscription package (Admin only)' })
+  @ApiResponse({ status: 200, description: 'Package create successfully' })
+  async createFreeSubscription(
+    @Body() input: FreeSubscriptionPackageDto
+  ) {
 
-  
+    return this.subscriptionService.createFreeSubscription(input);
+  }
+
+
 } 

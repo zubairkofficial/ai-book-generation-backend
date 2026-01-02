@@ -19,6 +19,7 @@ import { Roles } from "src/decorators/roles.decorator";
 import { AdminCreateUserDto } from '../dto/admin-create-user.dto';
 import { SubscriptionStatus } from "src/subscription/entities/user-subscription.entity";
 import { SubscriptionService } from "src/subscription/subscription.service";
+import { SettingsService } from "src/settings/settings.service";
 @Injectable()
 export class AuthService {
   constructor(
@@ -28,8 +29,9 @@ export class AuthService {
     private readonly emailService: EmailService,
     private readonly cryptoService: CryptoService, // Inject CryptoService
     private readonly configService: ConfigService, // Inject ConfigService
-    private readonly userSubscriptionService:SubscriptionService,
-  ) {}
+    private readonly userSubscriptionService: SubscriptionService,
+    private readonly settingsService: SettingsService,
+  ) { }
 
   async signUp(signUpDto: SignUpDto) {
     try {
@@ -38,6 +40,10 @@ export class AuthService {
       if (getUser) {
         throw new ConflictException("User with this email already exists");
       }
+
+      const settings = await this.settingsService.getAllSettings();
+      const isVerificationEnabled = settings?.emailVerificationEnabled ?? true;
+
       // Hash the password using CryptoService
       const hashedPassword = await this.cryptoService.encrypt(password);
 
@@ -46,7 +52,30 @@ export class AuthService {
         name,
         email,
         password: hashedPassword,
+        isEmailVerified: false, // Always create as unverified
       });
+
+      if (!isVerificationEnabled) {
+        // If verification is disabled, treat as immediate login
+        const payload = { email: user.email, id: user.id, role: user.role };
+        const accessToken = this.jwtService.sign(payload, {
+          expiresIn: this.configService.get<string>("ACCESS_TOKEN_EXPIRES_IN"),
+        });
+
+        // Assign free subscription logic if needed (similar to adminCreateUser)
+        const startDate = new Date();
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 30); // 30 days subscription as buffer/default? 
+        // Actually, relying on Sidebar/Frontend logic or subsequent 'subscription' page flow. 
+        // But strict login returns tokens.
+
+        return {
+          user,
+          accessToken,
+          message: "User registered successfully.",
+          shouldRedirect: true
+        };
+      }
 
       // Send email verification
       const token = this.jwtService.sign({ email });
@@ -110,7 +139,7 @@ export class AuthService {
       }
 
       // Check if user is admin
-      if(user.role=='admin'){
+      if (user.role == 'admin') {
         const payload = { email: user.email, id: user.id, role: user.role };
         const accessToken = this.jwtService.sign(payload, {
           expiresIn: this.configService.get<string>("ACCESS_TOKEN_EXPIRES_IN"),
@@ -119,18 +148,24 @@ export class AuthService {
       }
 
       // Check if email is verified
-      if (!user.isEmailVerified) {
+      /*
+      const settings = await this.settingsService.getAllSettings();
+      const isVerificationEnabled = settings?.emailVerificationEnabled ?? true;
+
+      // Only enforce verification if the setting is enabled
+      if (!user.isEmailVerified && isVerificationEnabled) {
         // Generate new verification token and send email
         const token = this.jwtService.sign({ email });
         const baseUrl = this.configService.get<string>("BASE_URL");
         const verifyLink = `${baseUrl}/auth/verify-email?token=${token}`;
         await this.emailService.sendVerificationEmail(user, verifyLink);
 
-        return { 
+        return {
           status: "UNVERIFIED_EMAIL",
-          message: "Please verify your email first. A verification email has been sent." 
+          message: "Please verify your email first. A verification email has been sent."
         };
       }
+      */
 
       // Generate OTP only if email is verified
       const otp = await this.otpService.generateOtp(email);
@@ -140,7 +175,7 @@ export class AuthService {
       //   status: "OTP_REQUIRED",
       //   message: "OTP sent to your email. Please verify to log in." 
       // };
-      return this.verifyOtpAndLogin(email,otp.code)
+      return this.verifyOtpAndLogin(email, otp.code)
     } catch (error) {
       throw new Error(error.message);
     }
@@ -185,11 +220,16 @@ export class AuthService {
     }
 
     // Check if email is verified
-    if (!user.isEmailVerified) {
+    /*
+    const settings = await this.settingsService.getAllSettings();
+    const isVerificationEnabled = settings?.emailVerificationEnabled ?? true;
+
+    if (!user.isEmailVerified && isVerificationEnabled) {
       throw new ForbiddenException(
         "Please verify your email before logging in."
       );
     }
+    */
 
     // Verify password
     const isPasswordValid = await this.cryptoService.compare(
@@ -339,7 +379,7 @@ export class AuthService {
       });
       // Return the frontend URL for redirection
       const frontendUrl = this.configService.get<string>("FRONTEND_URL");
-      return `${frontendUrl}${user.role==='admin'?'/':'/subscription'}?accessToken=${accessToken}&user=${JSON.stringify(user)}`; // Redirect to a success page
+      return `${frontendUrl}${user.role === 'admin' ? '/' : '/subscription'}?accessToken=${accessToken}&user=${JSON.stringify(user)}`; // Redirect to a success page
     } catch (error) {
       throw new UnauthorizedException(error.message);
     }
@@ -454,7 +494,7 @@ export class AuthService {
   async adminCreateUser(dto: AdminCreateUserDto) {
     try {
       const { name, email, password, imageToken, modelToken, isEmailVerified } = dto;
-      
+
       // Check if user exists
       const existingUser = await this.usersService.findByEmail(email);
       if (existingUser) {
