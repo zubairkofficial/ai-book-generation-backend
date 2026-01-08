@@ -13,7 +13,7 @@
         "test": "jest",
         "test:watch": "jest --watch",
         "test:cov": "jest --coverage",
-        "typeorm": "ts-node ./node_modules/typeorm/cli",
+        "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli",
         "migration:run": "npm run typeorm migration:run -- -d ./src/config/typeorm.config.ts",
         "migration:generate": "npm run typeorm -- -d ./src/config/typeorm.config.ts migration:generate",
         "migration:create": "npm run typeorm -- migration:create",

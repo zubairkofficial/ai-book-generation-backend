@@ -334,9 +334,9 @@ export class BookChapterService {
         const keyPoint = matches.find(m => m.position === index)?.keyPoint || '';
 
         if (img?.url) {
-          formattedChapter += `### ${keyPoint}\n\n![${img.title}](${img.url})\n\n`;
+          formattedChapter += `\n\n![${img.title}](${img.url})\n\n`;
         } else if (fallbackImageUrl) {
-          formattedChapter += `### ${keyPoint}\n\n![Fallback Image](${fallbackImageUrl})\n\n`;
+          formattedChapter += `\n\n![Fallback Image](${fallbackImageUrl})\n\n`;
         }
       }
     });
@@ -734,7 +734,7 @@ export class BookChapterService {
                 const savedPath = await this.saveGeneratedImage(imageUrl, bookInfo.bookTitle, userId);
 
                 // Stream Image Markdown immediately!
-                const imageMarkdown = `\n\n### ${keyPoint}\n![${keyPoint}](${savedPath})\n\n`;
+                const imageMarkdown = `\n\n![${keyPoint}](${savedPath})\n\n`;
                 fullChapterContent += imageMarkdown;
                 onTextUpdate(imageMarkdown);
 

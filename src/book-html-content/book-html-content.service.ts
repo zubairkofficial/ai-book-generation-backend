@@ -23,23 +23,31 @@ export class BookHtmlContentService {
   async generatePdf(id: number) {
     const book = await this.bookGenerationService.findOneWithHtmlContent(+id);
 
-    // const browser = await puppeteer.launch();
-    const browser = await puppeteer.launch({
-      headless: true,
-      pipe: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-      ],
-      timeout: 60000, // Increase to 60 seconds
-    });
-    const page = await browser.newPage();
-
+    let browser;
     try {
+      // Launch browser with proper configuration
+      browser = await puppeteer.launch({
+        headless: true,
+        executablePath: '/snap/bin/chromium',
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-software-rasterizer',
+          '--disable-extensions',
+          '--no-first-run',
+          '--no-zygote',
+          '--single-process',
+        ],
+        timeout: 60000,
+      });
+
+      const page = await browser.newPage();
+
       // Step 1: Generate initial HTML without TOC for page number calculation
       const initialHtml = this.generateBookHtml(book, false);
-      await page.setContent(initialHtml, { waitUntil: 'networkidle0' });
+      await page.setContent(initialHtml, { waitUntil: 'domcontentloaded', timeout: 600000 });
       await page.emulateMediaType('screen');
 
       // Step 2: Calculate page numbers for chapters
@@ -47,7 +55,7 @@ export class BookHtmlContentService {
 
       // Step 3: Generate final HTML with accurate TOC
       const finalHtml = this.generateBookHtml(book, true, chapterPageNumbers);
-      await page.setContent(finalHtml, { waitUntil: 'networkidle0' });
+      await page.setContent(finalHtml, { waitUntil: 'domcontentloaded', timeout: 600000 });
       await page.emulateMediaType('screen');
 
       // Step 4: Generate PDF with proper page numbering
@@ -59,7 +67,7 @@ export class BookHtmlContentService {
         headerTemplate: '<div style="padding-top: 5px;"></div>',
         footerTemplate: `<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; padding-top: 30px; font-size: 12px; color: #777;">
                           <span style="margin-top: 20px; text-align: center;">
-                             <span class="pageNumber"></span> 
+                             <span class="pageNumber"></span>
                           </span>
                         </div>`,
         timeout: 0,
@@ -69,10 +77,12 @@ export class BookHtmlContentService {
       if (!pdfBuffer || pdfBuffer.length === 0) {
         throw new Error('Failed to generate PDF content');
       }
+
       const pdfPromise = pdfLib.getDocument(pdfBuffer)
       const pdf = await pdfPromise.promise
       const outline = await pdf.getOutline();
       const tocPageNumbers = [];
+
       for (const item of outline) {
         if (item.title === 'Table of Contents') continue;
         const pageIndex = await pdf.getPageIndex(item.dest[0]);
@@ -85,7 +95,7 @@ export class BookHtmlContentService {
       // Regenerate PDF with updated TOC
       if (tocPageNumbers.length > 0) {
         const finalHtml = this.generateBookHtml(book, true, tocPageNumbers);
-        await page.setContent(finalHtml, { waitUntil: 'networkidle0' });
+        await page.setContent(finalHtml, { waitUntil: 'networkidle0', timeout: 60000 });
         pdfBuffer = await page.pdf(
           {
             margin: { top: '40px', right: '10px', bottom: '40px', left: '10px' },
@@ -95,7 +105,7 @@ export class BookHtmlContentService {
             headerTemplate: '<div style="padding-top: 5px;"></div>',
             footerTemplate: `<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; padding-top: 30px; font-size: 12px; color: #777;">
                         <span style="margin-top: 20px; text-align: center;">
-                           <span class="pageNumber"></span> 
+                           <span class="pageNumber"></span>
                         </span>
                       </div>`,
             timeout: 0,
@@ -103,10 +113,17 @@ export class BookHtmlContentService {
           }
         );
       }
-      return { book, pdfBuffer };
-    } finally {
+
       await page.close();
-      await browser.close();
+      return { book, pdfBuffer };
+
+    } catch (error) {
+      console.error('PDF Generation Error:', error);
+      throw new Error(`Failed to generate PDF: ${error.message}`);
+    } finally {
+      if (browser) {
+        await browser.close();
+      }
     }
   }
 
@@ -145,7 +162,7 @@ export class BookHtmlContentService {
           <title>${book.ideaCore}</title>
           <style>
               @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=Playfair+Display:wght@400;700&display=swap');
-              
+
               body {
                   font-family: 'Times New Roman', Times, serif;
                   margin: 0;
@@ -155,7 +172,7 @@ export class BookHtmlContentService {
                   line-height: 1.4;
               }
               .container {
-                  max-width: 100%;  
+                  max-width: 100%;
               }
               .cover {
                   display: flex;
@@ -279,7 +296,7 @@ export class BookHtmlContentService {
               .page-break {
                   page-break-after: always;
               }
-              
+
               .toc a {
                   color: #e67e22;
                   text-decoration: none;
@@ -296,7 +313,7 @@ export class BookHtmlContentService {
                   padding-top: 20px;
                   margin-top: 20px;
               }
-              
+
               /* New TOC styles */
               .toc-entry {
                   display: flex;
@@ -320,51 +337,51 @@ export class BookHtmlContentService {
                 <h1>${book.ideaCore}</h1>
                 <div class="author">By ${book?.authorName}</div>
               </div>
-              
+
               <!-- Dedication -->
               <div class="section page-break">
                   <h2>Dedication</h2>
                   <p>${book.htmlContent?.additionalHtml?.dedication || ''}</p>
               </div>
-              
+
               <!-- Preface -->
               <div class="section page-break">
                   <h2>Preface</h2>
                   <p>${book.htmlContent?.additionalHtml?.preface || ''}</p>
               </div>
-              
+
               <!-- Introduction -->
               <div class="section page-break">
                   <h2>Introduction</h2>
                   <p>${book.htmlContent?.additionalHtml?.introduction || ''}</p>
               </div>
-              
+
               ${includeToc ? this.generateTableOfContents(chapterPageNumbers) : ''}
-              
+
               <!-- Chapters -->
               ${(book.htmlContent?.chaptersHtml || []).map((chapter, index) => `
                   <div id="chapter-${index + 1}" class="section chapter-content page-break">
                       <div>${chapter.contentHtml || ''}</div>
                   </div>
               `).join('')}
-              
+
               <!-- Index -->
               <div class="section page-break">
                   <p>${book.htmlContent?.indexHtml || ''}</p>
               </div>
-              
+
               <!-- Glossary -->
               <div class="section page-break">
                   <h2>Glossary</h2>
                   <p>${book.htmlContent?.glossaryHtml || ''}</p>
               </div>
-              
+
               <!-- References -->
               <div class="section page-break">
                   <h2>References</h2>
                   <p>${book.htmlContent?.referencesHtml || ''}</p>
               </div>
-              
+
               <div class="footer">
                   © ${new Date().getFullYear()} | All Rights Reserved
               </div>
