@@ -109,14 +109,197 @@ export class BookChapterService {
     return Math.min(remainingTokens, 4000);
   }
 
+  async regenerateChapterImage(
+    userId: number,
+    bookGenerationId: number,
+    chapterNo: number,
+    originalImageUrl: string,
+    newPrompt?: string
+  ): Promise<string> {
+    try {
+      if (!originalImageUrl) {
+        throw new Error("Original image URL is required");
+      }
+
+      await this.initializeAIModels(userId);
+
+      // Verify book and chapter exist
+      const bookChapter = await this.bookChapterRepository.findOne({
+        where: {
+          bookGeneration: { id: bookGenerationId },
+          chapterNo: chapterNo,
+        },
+        relations: ["bookGeneration"],
+      });
+
+      if (!bookChapter) {
+        throw new Error("Chapter not found");
+      }
+
+      const bookInfo = bookChapter.bookGeneration;
+
+      // 1. Construct Prompt
+      // If user provided a specific prompt, use it.
+      // Otherwise, we might want to try to infer context, but for regeneration, a manual prompt is best.
+      // If no prompt, fallback to a generic one or error? Let's assume user provides one, or we use a generic style.
+      const imagePrompt = `
+        Create a high-quality illustration for:
+        - Book: "${bookInfo.bookTitle}" (Genre: ${bookInfo.genre})
+        - Chapter: ${chapterNo}
+        ${newPrompt ? `- Specific Instruction: "${newPrompt}"` : ""}
+        - Style: "${this.settingPrompt.chapterImagePrompt}"
+        
+        Make it visually striking and contextually accurate.
+      `;
+
+      // 2. Call Image Generation API (Fal.ai)
+      let imageUrl: string | null = null;
+
+      const postResponse = await axios.post(
+        this.userInfo.role === UserRole.USER
+          ? this.userKeyRecord.package ? this.userKeyRecord?.package.imageModelURL : this.settingPrompt.coverImageDomainUrl
+          : this.settingPrompt.coverImageDomainUrl ?? this.configService.get<string>("BASE_URL_FAL_AI"),
+        { prompt: imagePrompt },
+        {
+          headers: {
+            Authorization: `Key ${this.apiKeyRecord.fal_ai}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const imageResponseUrl = postResponse.data.response_url;
+
+      // Poll for result
+      const maxRetries = 60; // 60 * 2s = 120s
+      const delayMs = 2000;
+      let attempt = 0;
+
+      while (attempt < maxRetries) {
+        try {
+          const getRes = await axios.get(imageResponseUrl, { headers: { Authorization: `Key ${this.apiKeyRecord.fal_ai}` } });
+          if (getRes.data.images?.length > 0) {
+            imageUrl = getRes.data.images[0].url;
+            break;
+          }
+          if (getRes.data?.detail?.includes("Exhausted balance")) throw new Error("Exhausted balance");
+        } catch (e) {
+          // ignore poll error
+        }
+        await new Promise(r => setTimeout(r, delayMs));
+        attempt++;
+      }
+
+      if (!imageUrl) {
+        throw new Error("Failed to generate image or timed out.");
+      }
+
+      // 3. Save Image Locally
+      const savedPath = await this.saveGeneratedImage(imageUrl, bookInfo.bookTitle, userId);
+
+      // 4. Update Markdown Content
+      // Replace the old URL with the new saved path
+      // We need to be careful about matching. The markdown has format: ![AltText](URL)
+      // We will look for explicit URL match.
+
+      // We need to use 'savedPath' which is the full URL to the new image.
+      // The content stores the image with the full URL.
+
+      // Handle potential encoding differences or relative paths if any
+      // For now, simple string replacement of the specific URL.
+      if (bookChapter.chapterInfo.includes(originalImageUrl)) {
+        bookChapter.chapterInfo = bookChapter.chapterInfo.replace(originalImageUrl, savedPath);
+        await this.bookChapterRepository.save(bookChapter);
+      } else {
+        // Fallback: try to find by filename if full URL doesn't match?
+        // Or throw warning?
+        this.logger.warn(`Could not find exact original URL "${originalImageUrl}" in chapter content to replace.`);
+        // We still return the new image, maybe client can handle if it was just a mismatch in stored vs sent
+      }
+
+      // Track usage
+      if (this.userInfo.role === UserRole.USER) {
+        // Assuming 0 tokens for image gen itself in tracking, or estimated? 
+        // Existing logic used 0 tokens, 1 image count.
+        await this.subscriptionService.updateSubscription(userId, this.userKeyRecord?.package?.id ?? null, 0, 1);
+        await this.subscriptionService.trackTokenUsage(userId, "chapterImageRegenerate", UsageType.IMAGE, { chapterImage: savedPath }, bookInfo, chapterNo);
+      }
+
+      return savedPath;
+
+    } catch (error) {
+      this.logger.error(`Error regenerating chapter image: ${error.message}`);
+      throw new Error(error.message);
+    }
+  }
+
+  async uploadChapterImage(
+    userId: number,
+    bookGenerationId: number,
+    chapterNo: number,
+    originalImageUrl: string,
+    file: Express.Multer.File
+  ): Promise<string> {
+    try {
+      // Validate inputs
+      if (!file) throw new Error("No file provided");
+      if (!originalImageUrl) throw new Error("Original image URL required for replacement");
+
+      // Fetch Chapter
+      const bookChapter = await this.bookChapterRepository.findOne({
+        where: {
+          bookGeneration: { id: bookGenerationId },
+          chapterNo: chapterNo,
+        },
+      });
+
+      if (!bookChapter) {
+        throw new Error("Chapter not found");
+      }
+
+      // Save uploaded file
+      const dirPath = path.join(this.uploadsDir, "chapters");
+      const baseUrl = this.configService.get<string>("BASE_URL");
+
+      // Unique filename
+      const timestamp = Date.now();
+      const ext = path.extname(file.originalname);
+      const filename = `manual_upload_${bookGenerationId}_${chapterNo}_${timestamp}${ext}`;
+      const filePath = path.join(dirPath, filename);
+
+      fs.writeFileSync(filePath, file.buffer);
+      const newImageUrl = `${baseUrl}/uploads/chapters/${filename}`;
+
+      // Update Content
+      if (bookChapter.chapterInfo.includes(originalImageUrl)) {
+        bookChapter.chapterInfo = bookChapter.chapterInfo.replace(originalImageUrl, newImageUrl);
+        await this.bookChapterRepository.save(bookChapter);
+      } else {
+        this.logger.warn(`Could not find original URL "${originalImageUrl}" to replace in content.`);
+      }
+
+      return newImageUrl;
+
+    } catch (error) {
+      this.logger.error(`Error uploading chapter image: ${error.message}`);
+      throw new Error(error.message);
+    }
+  }
+
+
+
   private selectModelName(): string {
     const isAdmin = this.userInfo.role === UserRole.ADMIN;
     const hasNoPackage = !this.userKeyRecord?.package;
 
-    return (isAdmin || hasNoPackage)
-      ? this.apiKeyRecord.modelType
-      : this.userKeyRecord.package.modelType;
+    const model = (isAdmin || hasNoPackage)
+      ? this.apiKeyRecord?.modelType
+      : this.userKeyRecord?.package?.modelType;
+
+    return model || "gpt-4o";
   }
+
+
 
 
 
@@ -159,6 +342,7 @@ export class BookChapterService {
         temperature: 0.4,
         modelName: this.selectModelName(),
         maxTokens: maxCompletionTokens,
+        timeout: 600000, // 10 minutes timeout to prevent Premature Close errors
       });
 
       this.logger.log(`AI Models initialized successfully with model: ${this.selectModelName()}`);
@@ -214,54 +398,7 @@ export class BookChapterService {
       .replace(/\s+/g, " ")
       .trim();
   }
-  // private insertImagesIntoChapter(
-  //   chapterText: string,
-  //   keyPoints: string[],
-  //   chapterImages: { title: string; url: string | null }[]
-  // ): string {
-  //   let formattedChapter = "";
-  //   const chapterTextParts = chapterText.split("\n");
-  //   const fallbackImageUrl = this.configService.get<string>("FALLBACK_IMAGE_URL");
 
-  //   const matchedKeyPoints = this.matchKeyPointsWithText(
-  //     chapterText,
-  //     keyPoints
-  //   );
-
-  //   for (let i = 0; i < chapterTextParts.length; i++) {
-  //     formattedChapter += chapterTextParts[i] + "\n\n";
-
-  //     const normalizedTextPart = this.normalizeText(chapterTextParts[i]);
-
-  //     // First pass: exact match check
-  //     let imageIndex = matchedKeyPoints.findIndex((key) => {
-  //       const normalizedKey = this.normalizeText(key);
-  //       return normalizedTextPart.includes(normalizedKey);
-  //     });
-
-  //     // Second pass: similarity check if no exact match
-  //     if (imageIndex === -1) {
-  //       imageIndex = matchedKeyPoints.findIndex((key) => {
-  //         const normalizedKey = this.normalizeText(key);
-  //         const distance = levenshtein(normalizedTextPart, normalizedKey);
-  //         return distance <= 5; // Allow small differences
-  //       });
-  //     }
-
-  //     if (imageIndex !== -1) {
-  //       const img = chapterImages[imageIndex];
-  //       if (img?.url) {
-  //         formattedChapter += `### ${img.title}\n\n`;
-  //         formattedChapter += `![${img.title}](${img.url})\n\n`;
-  //       } else if (fallbackImageUrl) {
-  //         formattedChapter += `### ${img.title}\n\n`;
-  //         formattedChapter += `![Fallback Image](${fallbackImageUrl})\n\n`;
-  //       }
-  //     }
-  //   }
-
-  //   return formattedChapter;
-  // }
 
   private matchKeyPointsWithText(
     chapterText: string,
@@ -353,8 +490,8 @@ export class BookChapterService {
     chapterImages: { title: string; url: string | null }[],
     userId: number
   ): Promise<void> {
-    const maxRetries = 12; // Retry for up to 2 minutes
-    const delayMs = 10000; // Wait 10 seconds per retry
+    const maxRetries = 60; // Retry for up to 2 minutes
+    const delayMs = 2000; // Wait 2 seconds per retry
 
     let attempt = 0;
     let imageUrl: string | null = null;
@@ -602,25 +739,25 @@ export class BookChapterService {
 
             // A. Generate Text Section
             const partPrompt = `
-              You are a professional author writing **Chapter ${promptData.chapterNo}: "${promptData.chapterName}"**.
+              You are a professional author writing ** Chapter ${promptData.chapterNo}: "${promptData.chapterName}" **.
               
-              Current Task: Write **Part ${i}** of the chapter.
-              Total images to insert in this chapter: ${promptData.noOfImages}.
-              This section is leading up to **Image #${i}**.
+              Current Task: Write ** Part ${i}** of the chapter.
+              This section should naturally flow into a visual scene.
               
-              **Instructions:**
-              - Write a substantial section of the chapter (approx ${(promptData.maxWords || 5000) / (promptData.noOfImages + 1)} words).
-              - Advance the plot/content logically.
-              - **End this section with a scene or concept that is highly visual**, suitable for an illustration.
-              - Do NOT finish the chapter yet (unless this is the very last part, but we have a final section after this).
+              ** Instructions:**
+              - Write a substantial section of the chapter(approx ${(promptData.maxWords || 5000) / (promptData.noOfImages + 1)} words).
+          - Advance the plot / content logically.
+              - ** End this section with a scene or concept that is highly visual **.
+              - Do NOT finish the chapter yet(unless this is the very last part).
+              - ** STRICTLY FORBIDDEN:** Do NOT write "Image #1", "Image Description", or any meta - text describing illustrations.Write ONLY the story text.
               
-              **Style & Tone:**
-              - Genre: ${bookInfo.genre}
-              - Tone: Consistent with the book.
+              ** Style & Tone:**
+            - Genre: ${bookInfo.genre}
+          - Tone: Consistent with the book.
               
-              **Context:**
-              ${await memory.loadMemoryVariables({})}
-            `;
+              ** Context:**
+            ${await memory.loadMemoryVariables({})}
+          `;
 
             const partStream = await this.textModel.stream(partPrompt);
             let partText = "";
@@ -646,7 +783,7 @@ export class BookChapterService {
 
             // Update Memory with this part
             await memory.saveContext(
-              { input: `Write Part ${i} of Chapter ${promptData.chapterNo}` },
+              { input: `Write Part ${i} of Chapter ${promptData.chapterNo} ` },
               { output: partText }
             );
 
@@ -654,12 +791,12 @@ export class BookChapterService {
             // B. Generate Image for this Section
             // 1. Extract Key Point
             const keyPointPrompt = `
-              Based on the following text section, identify **ONE** single, vivid, and specific visual scene or concept that best represents it for an illustration.
-              Return ONLY the short description (1 sentence).
+              Based on the following text section, identify ** ONE ** single, vivid, and specific visual scene or concept that best represents it for an illustration.
+              Return ONLY the short description(1 sentence).
 
-              Text:
+            Text:
               ${partText}
-            `;
+          `;
             const keyPointResponse = await this.textModel.invoke(keyPointPrompt);
             const keyPoint = keyPointResponse.content.trim();
 
@@ -671,12 +808,13 @@ export class BookChapterService {
 
             // 2. Generate Image
             const imagePrompt = `
-              Create a high-quality illustration for:
-              - Book: "${bookInfo.bookTitle}" (Genre: ${bookInfo.genre})
+              Create a high - quality illustration for:
+            - Book: "${bookInfo.bookTitle}"(Genre: ${bookInfo.genre})
               - Chapter: ${promptData.chapterNo}
-              - Scene: "${keyPoint}"
-              - Style: "${this.settingPrompt.chapterImagePrompt}"
+          - Scene: "${keyPoint}"
+            - Style: "${this.settingPrompt.chapterImagePrompt}"
               - Target Audience: "${bookInfo.targetAudience}"
+              ${promptData.imagePrompt ? `- Additional Guidance: "${promptData.imagePrompt}"` : ""}
               
               Make it visually striking and contextually accurate.
             `;
@@ -688,7 +826,7 @@ export class BookChapterService {
                 { prompt: imagePrompt },
                 {
                   headers: {
-                    Authorization: `Key ${this.apiKeyRecord.fal_ai}`,
+                    Authorization: `Key ${this.apiKeyRecord.fal_ai} `,
                     "Content-Type": "application/json",
                   },
                 }
@@ -702,13 +840,13 @@ export class BookChapterService {
               // For simplicity reusing pollImageGeneration is hard because it updates an array by reference.
               // Let's copy-paste a simplified poll/save here to stream directly.
 
-              const maxRetries = 12;
-              const delayMs = 5000;
+              const maxRetries = 60;
+              const delayMs = 2000;
               let attempt = 0;
 
               while (attempt < maxRetries) {
                 try {
-                  const getRes = await axios.get(imageResponseUrl, { headers: { Authorization: `Key ${this.apiKeyRecord.fal_ai}` } });
+                  const getRes = await axios.get(imageResponseUrl, { headers: { Authorization: `Key ${this.apiKeyRecord.fal_ai} ` } });
                   if (getRes.data.images?.length > 0) {
                     imageUrl = getRes.data.images[0].url;
                     break;
@@ -734,7 +872,7 @@ export class BookChapterService {
                 const savedPath = await this.saveGeneratedImage(imageUrl, bookInfo.bookTitle, userId);
 
                 // Stream Image Markdown immediately!
-                const imageMarkdown = `\n\n![${keyPoint}](${savedPath})\n\n`;
+                const imageMarkdown = `\n\n![${keyPoint}](${savedPath}) \n\n`;
                 fullChapterContent += imageMarkdown;
                 onTextUpdate(imageMarkdown);
 
@@ -752,17 +890,23 @@ export class BookChapterService {
 
           // C. Generate Final Conclusion Section
           const finalPrompt = `
-              You are a professional author writing **Chapter ${promptData.chapterNo}: "${promptData.chapterName}"**.
+              You are a professional author writing ** Chapter ${promptData.chapterNo}: "${promptData.chapterName}" **.
               
-              Current Task: Write the **Final Part** (Conclusion) of this chapter.
+              Current Task: Write the ** Final Part ** (Conclusion) of this chapter.
               
-              **Instructions:**
-              - Wrap up the events of this chapter.
+              ** Instructions:**
+            - Wrap up the events of this chapter.
               - Provide a satisfying conclusion to the chapter's arc.
-              - Set up hooks or transitions for the next chapter.
+            - Set up hooks or transitions for the next chapter.
               
-               **Context:**
+               ** Context:**
               ${await memory.loadMemoryVariables({})}
+
+              ** STRICT OUTPUT RULES:**
+              - ** Do NOT ** output apologies(e.g., "I'm sorry", "I cannot").
+              - ** Do NOT ** output meta - commentary(e.g., "Here is the conclusion", "Feel free to modify").
+              - ** Do NOT ** mention missing context.If context is missing, improvise a suitable ending based on the Chapter Title.
+              - Output ** ONLY ** the story content.
             `;
 
           const finalStream = await this.textModel.stream(finalPrompt);
@@ -785,7 +929,7 @@ export class BookChapterService {
           }
 
           await memory.saveContext(
-            { input: `Write Conclusion of Chapter ${promptData.chapterNo}` },
+            { input: `Write Conclusion of Chapter ${promptData.chapterNo} ` },
             { output: finalText }
           );
 
@@ -795,42 +939,47 @@ export class BookChapterService {
 
           // EXISTING LOGIC FOR NO IMAGES
           const chapterPrompt = `
-          You are a professional author tasked with writing **Chapter ${promptData.chapterNo}: "${promptData.chapterName}"** of the book titled **"${bookInfo.bookTitle}"**.
+          You are a professional author tasked with writing ** Chapter ${promptData.chapterNo}: "${promptData.chapterName}" ** of the book titled ** "${bookInfo.bookTitle}" **.
     
           ## 📖 Book Information:
-          - **Genre**: ${bookInfo.genre}
-          - **Author**: ${bookInfo.authorName || "A knowledgeable expert"}
-          - **Core Idea**: ${bookInfo.ideaCore || "A detailed and insightful book on the subject."}
-          - **Target Audience**: ${bookInfo.targetAudience || "Professionals, students, and knowledge seekers."}
-          - **Language**: The book is written in ${bookInfo.language || "English"}.
+          - ** Genre **: ${bookInfo.genre}
+          - ** Author **: ${bookInfo.authorName || "A knowledgeable expert"}
+          - ** Core Idea **: ${bookInfo.ideaCore || "A detailed and insightful book on the subject."}
+          - ** Target Audience **: ${bookInfo.targetAudience || "Professionals, students, and knowledge seekers."}
+          - ** Language **: The book is written in ${bookInfo.language || "English"}.
           ## 🎯 Writing Style:
           - Clearly structure the content using Markdown:
-          Based on the genre **"${bookInfo.genre}"**, adopt an appropriate writing style.
-          - Use a **tone** and **structure** that aligns with the genre.
-  - Adapt the complexity and depth based on the **target audience**.
-  - Organize the content with clear section headings (# Heading) and subheadings (## Subheading) throughout the chapter.
+            Based on the genre ** "${bookInfo.genre}" **, adopt an appropriate writing style.
+          - Use a ** tone ** and ** structure ** that aligns with the genre.
+  - Adapt the complexity and depth based on the ** target audience **.
+  - Organize the content with clear section headings(# Heading) and subheadings(## Subheading) throughout the chapter.
   - Each major concept, theme, or section should have its own heading.
   - Use headings to create a logical flow and hierarchy of information.
   
-          ## 📝 Context Memory (Summarized Previous Chapters):
+          ## 📝 Context Memory(Summarized Previous Chapters):
           ${await memory.loadMemoryVariables({})}
     
           ## 📖 Chapter Writing Instructions:
-          - Begin with a **strong introduction** that aligns with the book's theme.
-          - **Your writing must contain between ${promptData.minWords || 5000} and ${promptData.maxWords || 20000} words**.
-          - **DO NOT** generate content below the minimum word count.
-          - **DO NOT** exceed the maximum word count.
-     - **IMPORTANT**: Structure the chapter with appropriate headings and subheadings that guide the reader through the content.
+          - Begin with a ** strong introduction ** that aligns with the book's theme.
+            - ** Your writing must contain between ${promptData.minWords || 5000} and ${promptData.maxWords || 20000} words **.
+          - ** DO NOT ** generate content below the minimum word count.
+          - ** DO NOT ** exceed the maximum word count.
+     - ** IMPORTANT **: Structure the chapter with appropriate headings and subheadings that guide the reader through the content.
 
           ## 🔍 Additional Guidance:
           ${promptData.additionalInfo || "Follow the established style, tone, and pacing from previous chapters."}
-    
+
           ---
         
+          ** STRICT OUTPUT RULES:**
+          - ** Do NOT ** output apologies(e.g., "I'm sorry").
+          - ** Do NOT ** output meta - commentary(e.g., "Here is the chapter").
+          - Output ** ONLY ** the story content.
+
           **📝 Begin Chapter ${promptData.chapterNo}:**
-          **Always return chapter content in Paragraph format**
-          **Chapter Name show in heading formate
-        `;
+          ** Always return chapter content in Paragraph format **
+          ** Chapter Name show in heading format **
+            `;
 
           const stream = await this.textModel.stream(chapterPrompt);
           let chapterText = "";
@@ -858,7 +1007,7 @@ export class BookChapterService {
 
           // Save memory
           await memory.saveContext(
-            { input: `Start of Chapter ${promptData.chapterNo}` },
+            { input: `Start of Chapter ${promptData.chapterNo} ` },
             { output: chapterText }
           );
 
@@ -880,7 +1029,7 @@ export class BookChapterService {
     onTextUpdate: (text: string) => void
   ) {
     try {
-      // let chapterSummaryResponse: string;
+      let chapterSummaryResponse: string;
 
       await this.initializeAIModels(userId, input.noOfImages);
 
@@ -911,10 +1060,10 @@ export class BookChapterService {
         onTextUpdate
       );
 
-      //       if (!input.selectedText){
-      //         chapterSummaryResponse =
-      //           await this.generateChapterSummary(formattedChapter,bookInfo,userId);
-      // }
+      if (!input.selectedText) {
+        chapterSummaryResponse =
+          await this.generateChapterSummary(formattedChapter, bookInfo, userId);
+      }
       if (input.selectedText || input.instruction) {
         return formattedChapter;
       }
@@ -924,7 +1073,7 @@ export class BookChapterService {
         bookChapter.chapterInfo = formattedChapter;
         bookChapter.maxWords = input.maxWords;
         bookChapter.minWords = input.minWords;
-        // bookChapter.chapterSummary = chapterSummaryResponse;
+        bookChapter.chapterSummary = chapterSummaryResponse;
       } else {
         // If chapter does not exist, create a new record
         bookChapter = new BookChapter();
@@ -933,7 +1082,7 @@ export class BookChapterService {
         bookChapter.chapterInfo = formattedChapter;
         bookChapter.maxWords = input.maxWords;
         bookChapter.minWords = input.minWords;
-        // bookChapter.chapterSummary = chapterSummaryResponse;
+        bookChapter.chapterSummary = chapterSummaryResponse;
         bookChapter.chapterName = input.chapterName;
       }
       // Save (either insert or update)
@@ -997,7 +1146,7 @@ export class BookChapterService {
 
       if (!bookInfo) {
         throw new Error(
-          `Book generation record not found for id: ${summaryRequest.bookId}`
+          `Book generation record not found for id: ${summaryRequest.bookId} `
         );
       }
 
@@ -1027,7 +1176,7 @@ export class BookChapterService {
       if (summaryRequest.isCombined) {
         let combinedText = "";
         for (const chapter of validChapters) {
-          combinedText += `${chapter.chapterInfo}\n\n`;
+          combinedText += `${chapter.chapterInfo} \n\n`;
         }
 
         // Use master prompt if available, otherwise use default
@@ -1040,9 +1189,9 @@ export class BookChapterService {
       
             Combined Content of All Chapters:
             ${combinedText}
-      
-            Instructions:
-            1. Write exactly ${summaryRequest.noOfWords} words well-crafted sentences that capture the essence of the entire book.
+
+          Instructions:
+          1. Write exactly ${summaryRequest.noOfWords} words well - crafted sentences that capture the essence of the entire book.
             2. Include the most significant plot points, character developments, or key concepts.
             3. Use vivid, engaging language that captures the tone of the original text.
             4. Make the summary flow naturally from sentence to sentence.
@@ -1087,9 +1236,9 @@ export class BookChapterService {
                 You are creating a concise, engaging summary 
                 Chapter Content:
                 ${chapterText}
-        
-                Instructions:
-                1. Write exactly ${summaryRequest.noOfWords} words well-crafted sentences that capture the essence of this chapter.
+
+          Instructions:
+          1. Write exactly ${summaryRequest.noOfWords} words well - crafted sentences that capture the essence of this chapter.
                 2. Include the most significant plot points, character developments, or key concepts from this chapter.
                 3. Use vivid, engaging language that captures the tone of the original text.
                 4. Make the summary flow naturally from sentence to sentence.
@@ -1108,14 +1257,14 @@ export class BookChapterService {
             }
 
           } catch (error) {
-            onTextUpdate(`Error generating summary for Chapter ${chapter.chapterNo}: ${error.message}`);
-            this.logger.error(`Error generating chapter summary for Chapter ${chapter.chapterNo}:`, error);
+            onTextUpdate(`Error generating summary for Chapter ${chapter.chapterNo}: ${error.message} `);
+            this.logger.error(`Error generating chapter summary for Chapter ${chapter.chapterNo}: `, error);
           }
         }
       }
     } catch (error) {
-      this.logger.error(`Error in generateChapterSummaries:`, error);
-      throw new Error(`Failed to generate chapter summaries: ${error.message}`);
+      this.logger.error(`Error in generateChapterSummaries: `, error);
+      throw new Error(`Failed to generate chapter summaries: ${error.message} `);
     }
   }
 
@@ -1135,7 +1284,7 @@ export class BookChapterService {
       });
 
       if (!bookInfo) {
-        throw new Error(`Book generation record not found for id: ${bookId}`);
+        throw new Error(`Book generation record not found for id: ${bookId} `);
       }
 
       for (const chapterId of chapterIds) {
@@ -1145,7 +1294,7 @@ export class BookChapterService {
           });
 
           if (!chapter) {
-            onTextUpdate(`Chapter ID ${chapterId} not found for this book. Skipping.`);
+            onTextUpdate(`Chapter ID ${chapterId} not found for this book.Skipping.`);
             continue;
           }
 
@@ -1161,20 +1310,20 @@ export class BookChapterService {
               
               Chapter Text:
               ${chapterText}
-    
-              Requirements:
-              - Create exactly ${numberOfSlides} slides
-              - Each slide should have a clear title and bullet points
+
+          Requirements:
+          - Create exactly ${numberOfSlides} slides
+            - Each slide should have a clear title and bullet points
               - Keep content concise and focused
-              - Use markdown format for slides
-              - Format each slide as:
+                - Use markdown format for slides
+                  - Format each slide as:
                 # Slide Title
-                - Bullet point 1
-                - Bullet point 2
+            - Bullet point 1
+              - Bullet point 2
                 - Bullet point 3
               
               Generate ${numberOfSlides} slides now:
-            `;
+          `;
 
           const stream = await this.textModel.invoke(slidePrompt);
 
@@ -1185,15 +1334,15 @@ export class BookChapterService {
           }
           return stream.content;
         } catch (error) {
-          onTextUpdate(`\n\nError generating slides for Chapter ID ${chapterId}: ${error.message}\n\n`);
-          this.logger.error(`Error generating slides for Chapter ID ${chapterId}:`, error);
+          onTextUpdate(`\n\nError generating slides for Chapter ID ${chapterId}: ${error.message} \n\n`);
+          this.logger.error(`Error generating slides for Chapter ID ${chapterId}: `, error);
         }
       }
 
       onTextUpdate(`\n\n## All slides completed\n\n`);
     } catch (error) {
-      this.logger.error(`Error in generateChapterSlides:`, error);
-      throw new Error(`Failed to generate chapter slides: ${error.message}`);
+      this.logger.error(`Error in generateChapterSlides: `, error);
+      throw new Error(`Failed to generate chapter slides: ${error.message} `);
     }
   }
   public async getUsage(response, inputText?: string): Promise<{ inputTokens: number, outputTokens: number, totalTokens: number }> {
@@ -1211,5 +1360,6 @@ export class BookChapterService {
     const totalTokens = inputTokens + outputTokens;
 
     return { inputTokens, outputTokens, totalTokens };
+
   }
 }

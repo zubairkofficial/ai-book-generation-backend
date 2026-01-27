@@ -576,23 +576,22 @@ export class BookGenerationService {
     `;
 
       const tableOfContentsPrompt = `
-        Create a list of unique, engaging chapter titles for a book with ${promptData.numberOfChapters} chapters.
-        Each title should reflect the theme of the book and evoke curiosity.
-        The titles should be concise, descriptive, and hint at the main events or ideas in each chapter.
-  
+        Create a list of unique, engaging chapter titles for a book with EXACTLY ${promptData.numberOfChapters} chapters.
+        
         - Title: "${promptData.bookTitle}"
-        - Language: ${promptData.language || "English"}
-        - CoreIdea: ${promptData.bookInformation}
+        - Core Idea: ${promptData.bookInformation}
         - Number of Chapters: ${promptData.numberOfChapters}
-  
+
         ## Output Format (STRICTLY FOLLOW THIS FORMAT):
         Chapter 1: [Title]
-        Chapter 2: [Title]
-        Chapter 3: [Title]
+        ${promptData.numberOfChapters > 1 ? "Chapter 2: [Title]" : ""}
         ...
         Chapter ${promptData.numberOfChapters}: [Title]
-  
-        Continue for all chapters, ensuring each title is creative and fitting for the respective chapter's content.
+
+        IMPORTANT:
+        - Generate EXACTLY ${promptData.numberOfChapters} lines.
+        - Do NOT generate more than ${promptData.numberOfChapters} chapters.
+        - Do NOT include any intro or outro text.
       `;
 
       // **Run all AI calls in parallel** (Faster Execution)
@@ -1430,7 +1429,7 @@ export class BookGenerationService {
 
       return this.bookGenerationRepository.findOne({
         where: { id },
-        relations: ['htmlContent']
+        relations: ['htmlContent', 'bookChapter']
       });
     }
     catch (error) {

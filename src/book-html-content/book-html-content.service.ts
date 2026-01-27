@@ -5,7 +5,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as puppeteer from 'puppeteer';
 import { BookGenerationService } from 'src/book-generation/book-generation.service';
 import { ConfigService } from '@nestjs/config';
-import * as pdfLib from 'pdfjs-lib'
+import * as pdfLib from 'pdfjs-lib';
+import { marked } from 'marked';
 @Injectable()
 export class BookHtmlContentService {
   constructor(
@@ -26,28 +27,27 @@ export class BookHtmlContentService {
     let browser;
     try {
       // Launch browser with proper configuration
+      const executablePath = this.configService.get<string>('PUPPETEER_EXECUTABLE_PATH') || undefined;
+      console.log(`Launching Puppeteer. Executable Path: ${executablePath || 'Auto-bundled'}, Timeout: 0`);
+
       browser = await puppeteer.launch({
         headless: true,
-        executablePath: '/snap/bin/chromium',
+        executablePath: executablePath,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
+          '--disable-dev-shm-usage', // Critical for Docker/Linux containers
           '--disable-gpu',
-          '--disable-software-rasterizer',
           '--disable-extensions',
-          '--no-first-run',
-          '--no-zygote',
-          '--single-process',
         ],
-        timeout: 60000,
+        timeout: 0, // No timeout for long generation
       });
 
       const page = await browser.newPage();
 
       // Step 1: Generate initial HTML without TOC for page number calculation
       const initialHtml = this.generateBookHtml(book, false);
-      await page.setContent(initialHtml, { waitUntil: 'domcontentloaded', timeout: 600000 });
+      await page.setContent(initialHtml, { waitUntil: 'domcontentloaded', timeout: 0 });
       await page.emulateMediaType('screen');
 
       // Step 2: Calculate page numbers for chapters
@@ -55,7 +55,7 @@ export class BookHtmlContentService {
 
       // Step 3: Generate final HTML with accurate TOC
       const finalHtml = this.generateBookHtml(book, true, chapterPageNumbers);
-      await page.setContent(finalHtml, { waitUntil: 'domcontentloaded', timeout: 600000 });
+      await page.setContent(finalHtml, { waitUntil: 'domcontentloaded', timeout: 0 });
       await page.emulateMediaType('screen');
 
       // Step 4: Generate PDF with proper page numbering
@@ -95,7 +95,7 @@ export class BookHtmlContentService {
       // Regenerate PDF with updated TOC
       if (tocPageNumbers.length > 0) {
         const finalHtml = this.generateBookHtml(book, true, tocPageNumbers);
-        await page.setContent(finalHtml, { waitUntil: 'networkidle0', timeout: 60000 });
+        await page.setContent(finalHtml, { waitUntil: 'domcontentloaded', timeout: 0 });
         pdfBuffer = await page.pdf(
           {
             margin: { top: '40px', right: '10px', bottom: '40px', left: '10px' },
@@ -129,7 +129,8 @@ export class BookHtmlContentService {
 
   private async calculateChapterPageNumbers(page: puppeteer.Page, book: any) {
     // Evaluate on the page to get chapter elements and calculate their page numbers
-    return await page.evaluate(() => {
+    // Evaluate on the page to only get page numbers based on ID
+    const pageNumbers = await page.evaluate(() => {
       const chapterElements = document.querySelectorAll('.chapter-content');
       const A4_HEIGHT = 1122; // A4 height in pixels at 96dpi
       const PDF_MARGIN_TOP = 40;
@@ -139,16 +140,20 @@ export class BookHtmlContentService {
         const positionFromTop = rect.top + window.pageYOffset;
         const pageNumber = Math.floor((positionFromTop - PDF_MARGIN_TOP) / A4_HEIGHT) + 1;
 
-        // Get chapter title
-        const headingElement = element.querySelector('h1, h2, h3');
-        const title = headingElement ? headingElement.textContent : `Chapter ${index + 1}`;
-
         return {
           id: `chapter-${index + 1}`,
-          title: title || `Chapter ${index + 1}`,
           pageNumber
         };
       });
+    });
+
+    // Merge with correct chapter titles from DB
+    return pageNumbers.map((item, index) => {
+      const chapter = book.bookChapter && book.bookChapter.find(c => c.chapterNo === (index + 1));
+      return {
+        ...item,
+        title: chapter ? `Chapter ${chapter.chapterNo}: ${chapter.chapterName}` : `Chapter ${index + 1}`
+      };
     });
   }
 
@@ -318,12 +323,42 @@ export class BookHtmlContentService {
               .toc-entry {
                   display: flex;
                   justify-content: space-between;
+                  align-items: flex-start;
                   border-bottom: 1px dotted #ccc;
-                  margin-bottom: 5px;
-                  line-height: 1.8;
+                  margin-bottom: 8px;
+                  line-height: 1.4;
+              }
+              .toc-entry a {
+                  flex: 1;
+                  display: -webkit-box;
+                  -webkit-line-clamp: 2;
+                  -webkit-box-orient: vertical;
+                  overflow: hidden;
+                  text-overflow: ellipsis;
+                  margin-right: 15px;
+                  text-decoration: none;
+                  color: inherit;
               }
               .toc-page-number {
                   font-weight: bold;
+                  white-space: nowrap;
+                  align-self: flex-end;
+                  margin-bottom: 2px;
+              }
+              .index-entry {
+                  margin-bottom: 20px;
+                  page-break-inside: avoid;
+              }
+              .index-entry h3 {
+                  font-size: 18px;
+                  color: #333;
+                  margin-bottom: 8px;
+                  border-bottom: 1px solid #ffc107;
+                  display: inline-block;
+              }
+              .index-content {
+                  font-size: 14px;
+                  line-height: 1.6;
               }
           </style>
       </head>
@@ -332,10 +367,12 @@ export class BookHtmlContentService {
               <!-- Cover Page -->
               <div class="cover page-break">
                 <div class="cover-image">
-                    <img src="${this.configService.get<string>('BASE_URL')}/uploads/${book?.additionalData.coverImageUrl}" alt="${book.ideaCore}">
+                    <img src="${this.configService.get<string>('BASE_URL')}/uploads/${book?.additionalData.coverImageUrl}" alt="${book.bookTitle}">
                 </div>
-                <h1>${book.ideaCore}</h1>
+                <h1 style="font-size: ${(book.bookTitle || '').length > 60 ? '24px' : ((book.bookTitle || '').length > 30 ? '32px' : '42px')}">${book.bookTitle}</h1>
+                ${book.genre ? `<div style="font-size: 18px; color: #666; font-style: italic; margin-bottom: 20px;">${book.genre}</div>` : ''}
                 <div class="author">By ${book?.authorName}</div>
+                ${book.ideaCore && (book.bookTitle || '').length < 100 ? `<div style="font-size: 14px; color: #777; margin: 20px 40px; text-align: center; line-height: 1.5;">${book.ideaCore}</div>` : ''}
               </div>
 
               <!-- Dedication -->
@@ -350,6 +387,7 @@ export class BookHtmlContentService {
                   <p>${book.htmlContent?.additionalHtml?.preface || ''}</p>
               </div>
 
+
               <!-- Introduction -->
               <div class="section page-break">
                   <h2>Introduction</h2>
@@ -358,23 +396,30 @@ export class BookHtmlContentService {
 
               ${includeToc ? this.generateTableOfContents(chapterPageNumbers) : ''}
 
-              <!-- Chapters -->
-              ${(book.htmlContent?.chaptersHtml || []).map((chapter, index) => `
-                  <div id="chapter-${index + 1}" class="section chapter-content page-break">
-                      <div>${chapter.contentHtml || ''}</div>
-                  </div>
-              `).join('')}
-
               <!-- Index -->
               <div class="section page-break">
-                  <p>${book.htmlContent?.indexHtml || ''}</p>
+                  <h2>Index</h2> 
+                  <div class="index-content">
+                    ${(book.bookChapter || []).sort((a, b) => a.chapterNo - b.chapterNo).map(chapter => `
+                      <div class="index-entry">
+                        <h3>Chapter ${chapter.chapterNo}: ${chapter.chapterName || ''}</h3>
+                        <div>${chapter.chapterSummary ? marked.parse(chapter.chapterSummary) : 'Summary not available.'}</div>
+                      </div>
+                    `).join('')}
+                  </div>
               </div>
 
-              <!-- Glossary -->
-              <div class="section page-break">
-                  <h2>Glossary</h2>
-                  <p>${book.htmlContent?.glossaryHtml || ''}</p>
-              </div>
+              <!-- Chapters -->
+              ${(book.htmlContent?.chaptersHtml || []).map((chapter, index) => {
+      const chapterData = book.bookChapter && book.bookChapter.find(c => c.chapterNo === (index + 1));
+      const chapterName = chapterData ? chapterData.chapterName : `Chapter ${index + 1}`;
+      return `
+                      <div id="chapter-${index + 1}" class="section chapter-content page-break">
+                          <h1>Chapter ${index + 1}: ${chapterName}</h1>
+                          <div>${chapter.contentHtml || ''}</div>
+                      </div>
+                  `;
+    }).join('')}
 
               <!-- References -->
               <div class="section page-break">
