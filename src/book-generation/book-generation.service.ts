@@ -334,16 +334,48 @@ export class BookGenerationService {
       const maxRetries = 5;
       const delayMs = 3000;
 
-      let coverPrompt =
-        coverType === "front"
-          ? `Design a visually striking and professional front cover for "${promptData.bookTitle}"
-        - **Core Idea**:${promptData.bookInformation}
-        - **Target Audience**:${promptData.targetAudience}
-        - **Language**:${promptData.language}
-        - **System Prompt**:${this.settingPrompt.coverImagePrompt}
-        - Show Front cover image (no show back cover image)
-        `
-          : `Generate a professional back cover for "${promptData.bookTitle}".`;
+      let finalPrompt = "";
+
+      // Sanitization layer to strip "Prompt Injection" style instructions from data fields
+      const sanitize = (text: string) => {
+        if (!text) return text;
+        return text
+          .replace(/:\s*(include|make|add|show|put|generate|draw|with)\s+.*/gi, '')
+          .replace(/(include|make|add|show|put|generate|draw)\s+.*\s+(on cover|in image|on image|to cover)/gi, '')
+          .replace(/list of chapters|chapter list/gi, '')
+          .trim();
+      };
+
+      const cleanTitle = sanitize(promptData.bookTitle);
+      const cleanAuthor = sanitize(promptData.authorName);
+
+      if (this.settingPrompt.bookCoverMasterPrompt) {
+        finalPrompt = this.settingPrompt.bookCoverMasterPrompt
+          .replace('${bookTitle}', cleanTitle || "Untitled")
+          .replace('${genre}', promptData.genre || "")
+          .replace('${targetAudience}', promptData.targetAudience || "All Ages")
+          .replace('${coreIdea}', promptData.bookInformation || "Subtle business-related icons for a sleek finish")
+          .replace('${systemPrompt}', this.settingPrompt.coverImagePrompt || "")
+          .replace('${authorName}', cleanAuthor || "")
+          .replace('${subtitle}', "");
+      } else {
+        finalPrompt = coverType === "front"
+          ? `Design a visually striking and professional front cover for the book titled "${cleanTitle}"
+        - Visual Concept: ${promptData.bookInformation}
+        - Author name: ${cleanAuthor || "Anonymous"}
+        - Target Audience Context: ${promptData.targetAudience}
+        - Language: ${promptData.language}
+        - Aesthetic Guidelines: ${this.settingPrompt.coverImagePrompt}`
+          : `Generate a professional back cover for "${cleanTitle}".`;
+      }
+
+      let coverPrompt = finalPrompt + `
+        
+        STRICT RULES:
+        1. Only render the literal text "${cleanTitle}" and "${cleanAuthor || ""}" as readable text on the image. (For front cover only)
+        2. DO NOT render metadata labels (e.g., "Visual Concept", "Aesthetic", "Core Idea", "Author name") or any descriptive text about the book internal idea on the image.
+        3. The descriptive info is for visual inspiration only, not for textual representation.
+        `;
 
       if (promptData.bookInformation) {
         coverPrompt += ` The book explores the following theme: ${promptData.bookInformation}.`;
@@ -454,12 +486,46 @@ export class BookGenerationService {
       const maxRetries = 5; // Retry up to 5 times
       const delayMs = 3000; // Wait 3 seconds between retries
 
-      const coverPrompt = `Design a visually striking and professional front cover for "${promptData.bookTitle}"
-          - **Core Idea**:${promptData.bookInformation || "Subtle business-related icons for a sleek finish"}
-          - **Target Audience**:${promptData.targetAudience || "General"}
-          - **Language**:${promptData.language || "All Ages"}
-          - **System Prompt**:${this.settingPrompt.coverImagePrompt}
-          `
+      let finalPrompt = "";
+
+      // Sanitization layer
+      const sanitize = (text: string) => {
+        if (!text) return text;
+        return text
+          .replace(/:\s*(include|make|add|show|put|generate|draw|with)\s+.*/gi, '')
+          .replace(/(include|make|add|show|put|generate|draw)\s+.*\s+(on cover|in image|on image|to cover)/gi, '')
+          .replace(/list of chapters|chapter list/gi, '')
+          .trim();
+      };
+
+      const cleanTitle = sanitize(promptData.bookTitle);
+      const cleanAuthor = sanitize(promptData.authorName);
+
+      if (this.settingPrompt.bookCoverMasterPrompt) {
+        finalPrompt = this.settingPrompt.bookCoverMasterPrompt
+          .replace('${bookTitle}', cleanTitle || "Untitled")
+          .replace('${genre}', promptData.genre || "")
+          .replace('${targetAudience}', promptData.targetAudience || "All Ages")
+          .replace('${coreIdea}', promptData.bookInformation || "Subtle business-related icons for a sleek finish")
+          .replace('${systemPrompt}', this.settingPrompt.coverImagePrompt || "")
+          .replace('${authorName}', cleanAuthor || "")
+          .replace('${subtitle}', "");
+      } else {
+        finalPrompt = `Design a visually striking and professional front cover for "${cleanTitle}"
+          - Visual Theme: ${promptData.bookInformation || "Subtle business-related icons for a sleek finish"}
+          - Author Name: ${cleanAuthor || "Anonymous"}
+          - Target Audience Context: ${promptData.targetAudience || "General"}
+          - Language Context: ${promptData.language || "All Ages"}
+          - Style Requirements: ${this.settingPrompt.coverImagePrompt}`;
+      }
+
+      const coverPrompt = finalPrompt + `
+          
+          STRICT RULES:
+          1. Only render the literal text "${cleanTitle}" and "${cleanAuthor || ""}" as readable text.
+          2. DO NOT render metadata labels (like "Visual Theme", "Context", "Core Idea", "Author name") or any descriptive text on the image.
+          3. All descriptions are for inspiration only, do not print them.
+          `;
 
       const requestData = {
         prompt: coverPrompt,
@@ -966,7 +1032,7 @@ export class BookGenerationService {
 
     // 5. Generate appropriate content
     let generatedContent: string;
-    const prompt = this.getContentPrompt(input, chaptersContent);
+    const prompt = this.getContentPrompt(input, chaptersContent, book);
 
     try {
       const aiResponse = await this.textModel.stream(prompt);
@@ -1058,6 +1124,7 @@ export class BookGenerationService {
   private getContentPrompt(
     input: BRGDTO,
     chaptersContent: string,
+    book: BookGeneration,
   ): string {
     if (input.currentContent) {
       return `
@@ -1075,29 +1142,38 @@ export class BookGenerationService {
     }
     const basePrompts = {
       [ContentType.GLOSSARY]: `
-        Generate a comprehensive glossary based on these chapters. Follow these rules:
-        - List terms alphabetically
-        - Include chapter numbers where terms appear
-        - Provide clear definitions
+        You are an expert indexer. Generate a comprehensive glossary for the book titled "${book.bookTitle}".
+        
+        STRICT RULES:
+        - ONLY use information from the "Chapters content" provided below.
+        - The book has exactly ${book.bookChapter.length} chapters. Do not reference chapters beyond this.
+        - List terms alphabetically.
         - Format: "Term (Chapter X): Definition"
+        
         Additional instructions: ${input.additionalInfo}
         Chapters content: ${chaptersContent}
       `,
 
       [ContentType.INDEX]: `
-        Create a detailed book index. Requirements:
-        - List topics and subtopics
-        - Include imaginary page numbers (start each chapter on new page)
-        - Use standard index formatting
+        You are an expert indexer. Create a detailed book index for the book titled "${book.bookTitle}".
+        
+        STRICT RULES:
+        - ONLY include chapters, topics, and subtopics that exist in the "Chapters content" below.
+        - The current book has exactly ${book.bookChapter.length} chapters. DO NOT hallucinate or create extra chapters.
+        - Use standard index formatting with topics and subtopics.
+        - Include imaginary page numbers (estimated based on content).
+        
         Additional instructions: ${input.additionalInfo}
         Chapters content: ${chaptersContent}
       `,
 
       [ContentType.REFERENCE]: `
-        Generate references in APA format. Guidelines:
-        - Include both real and book-specific citations
-        - Format authors properly
-        - Add publication years
+        Generate a list of references in APA format for the book titled "${book.bookTitle}".
+        
+        STRICT RULES:
+        - ONLY include citations relevant to the "Chapters content" provided.
+        - Format authors and publication years properly.
+        
         Additional instructions: ${input.additionalInfo}
         Chapters content: ${chaptersContent}
       `
