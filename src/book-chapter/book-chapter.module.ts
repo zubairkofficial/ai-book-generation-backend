@@ -24,5 +24,6 @@ import { MarkdownConverter } from 'src/utils/markdown-converter.util';
   ],
   controllers: [BookChapterController],
   providers: [BookChapterService, EventsChain, MarkdownConverter],
+  exports: [BookChapterService],
 })
 export class BookChapterModule { }
