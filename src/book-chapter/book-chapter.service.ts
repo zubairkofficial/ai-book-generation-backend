@@ -27,6 +27,8 @@ import { UsersService } from 'src/users/users.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import { UsageType } from 'src/subscription/entities/usage.entity';
 import { UserRole } from 'src/users/entities/user.entity';
+import { BookHtmlContent } from 'src/book-html-content/entities/book-html-content.entity';
+import { MarkdownConverter } from 'src/utils/markdown-converter.util';
 
 @Injectable()
 export class BookChapterService {
@@ -52,7 +54,10 @@ export class BookChapterService {
 
     private settingsService: SettingsService,
     private userService: UsersService,
-    private readonly subscriptionService: SubscriptionService
+    private readonly subscriptionService: SubscriptionService,
+    @InjectRepository(BookHtmlContent)
+    private bookHtmlContentRepository: Repository<BookHtmlContent>,
+    private readonly markdownConverter: MarkdownConverter,
 
   ) {
     this.uploadsDir = this.setupUploadsDirectory();
@@ -225,6 +230,10 @@ export class BookChapterService {
         await this.subscriptionService.trackTokenUsage(userId, "chapterImageRegenerate", UsageType.IMAGE, { chapterImage: savedPath }, bookInfo, chapterNo);
       }
 
+
+      // 5. Update HTML Content
+      await this.updateChapterHtmlContent(bookChapter);
+
       return savedPath;
 
     } catch (error) {
@@ -277,6 +286,10 @@ export class BookChapterService {
       } else {
         this.logger.warn(`Could not find original URL "${originalImageUrl}" to replace in content.`);
       }
+
+
+      // Update HTML Content
+      await this.updateChapterHtmlContent(bookChapter);
 
       return newImageUrl;
 
@@ -538,6 +551,63 @@ export class BookChapterService {
     }
   }
 
+
+
+  private async updateChapterHtmlContent(bookChapter: BookChapter): Promise<void> {
+    try {
+      // Find the HTML content for this book
+      let htmlContent = await this.bookHtmlContentRepository.findOne({
+        where: { book: { id: bookChapter.bookGeneration.id } }
+      });
+
+      if (!htmlContent) {
+        this.logger.warn(`No BookHtmlContent found for book ID: ${bookChapter.bookGeneration.id}. Skipping HTML update.`);
+        return;
+      }
+
+      // Initialize chaptersHtml if it doesn't exist
+      if (!htmlContent.chaptersHtml) {
+        htmlContent.chaptersHtml = [];
+      }
+
+      // Convert the updated markdown to HTML
+      const newHtml = await this.markdownConverter.convert(bookChapter.chapterInfo);
+
+      // Check if this chapter already exists in the HTML array
+      const chapterIndex = htmlContent.chaptersHtml.findIndex(
+        c => c.chapterNo === bookChapter.chapterNo
+      );
+
+      if (chapterIndex !== -1) {
+        // Update existing entry
+        htmlContent.chaptersHtml[chapterIndex] = {
+          chapterNo: bookChapter.chapterNo,
+          chapterName: bookChapter.chapterName,
+          contentHtml: newHtml
+        };
+      } else {
+        // Add new entry
+        htmlContent.chaptersHtml.push({
+          chapterNo: bookChapter.chapterNo,
+          chapterName: bookChapter.chapterName,
+          contentHtml: newHtml
+        });
+      }
+
+      // Ensure chapters are sorted (optional but good practice)
+      htmlContent.chaptersHtml.sort((a, b) => a.chapterNo - b.chapterNo);
+
+      // Save the updated HTML content
+      await this.bookHtmlContentRepository.save(htmlContent);
+      this.logger.log(`Updated HTML content for chapter ${bookChapter.chapterNo} of book ID ${bookChapter.bookGeneration.id}`);
+
+    } catch (error) {
+      this.logger.error(`Failed to update chapter HTML content: ${error.message}`, error.stack);
+      // We don't want to fail the entire image generation if HTML update fails, 
+      // but we should log it.
+    }
+  }
+
   private async generateChapterSummary(chapterText: string, bookInfo: BookGeneration, userId: number): Promise<string> {
     try {
       if (!chapterText || chapterText.trim().length === 0) {
@@ -796,6 +866,13 @@ export class BookChapterService {
 
             Text:
               ${partText}
+            
+            STRICT RULES:
+              - Must be a PHYSICAL VISUAL SCENE (objects, people, places).
+              - IGNORE metaphors, thoughts, and feelings.
+              - If the text is dialogue, describe the SETTING.
+              - Ensure the scene is strictly related to the main subject of the book: "${bookInfo.bookTitle}".
+              - DO NOT include elements from other domains (e.g., do not show basketball/football if the book is about Cricket/Sachin) unless explicitly central to the scene.
           `;
             const keyPointResponse = await this.textModel.invoke(keyPointPrompt);
             const keyPoint = keyPointResponse.content.trim();
@@ -809,7 +886,8 @@ export class BookChapterService {
             // 2. Generate Image
             const imagePrompt = `
               Create a high - quality illustration for:
-            - Book: "${bookInfo.bookTitle}"(Genre: ${bookInfo.genre})
+            - Book: "${bookInfo.bookTitle}" (Genre: ${bookInfo.genre})
+            - Core Concept: "${bookInfo.ideaCore || bookInfo.bookTitle}"
               - Chapter: ${promptData.chapterNo}
           - Scene: "${keyPoint}"
             - Style: "${this.settingPrompt.chapterImagePrompt}"
